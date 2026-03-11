@@ -20,10 +20,10 @@ class DatabaseService:
             pa.field("text", pa.string())
         ])
         
-        try:
+        if COLLECTION_NAME in self.db.table_names():
             self.table = self.db.open_table(COLLECTION_NAME)
             print(f"Table {COLLECTION_NAME} already exists and opened.")
-        except FileNotFoundError:
+        else:
              # Create table if it doesn't exist
              print(f"Creating table {COLLECTION_NAME} with dim {self.dim}...")
              self.table = self.db.create_table(COLLECTION_NAME, schema=schema)
@@ -77,10 +77,10 @@ class DatabaseService:
                 formatted_paths = ", ".join([f"'{p}'" for p in exclude_paths])
                 query = query.where(f"path NOT IN ({formatted_paths})")
                 
-            df = query.to_pandas()
+            res_list = query.to_list()
             
             results = []
-            for _, row in df.iterrows():
+            for row in res_list:
                 results.append({
                     "path": row["path"],
                     "score": row["_distance"], # LanceDB uses distance
