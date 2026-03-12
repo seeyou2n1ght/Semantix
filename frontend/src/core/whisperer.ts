@@ -76,6 +76,7 @@ export class Whisperer {
         }
 
         console.debug("Semantix Whisperer: Triggering semantic search...");
+        this.showLoading();
 
         const response = await this.plugin.apiClient.semanticSearch({
             vault_id: this.plugin.vaultId,
@@ -90,6 +91,8 @@ export class Whisperer {
                 colorThresholdHigh: this.plugin.settings.colorThresholdHigh,
                 colorThresholdMedium: this.plugin.settings.colorThresholdMedium
             });
+        } else {
+            this.clearLoading();
         }
     }
 
@@ -127,6 +130,26 @@ export class Whisperer {
         const leaf = leaves[0];
         if (leaf && leaf.view instanceof WhispererView) {
             (leaf.view as WhispererView).renderWhispererResults(results, colorSettings);
+        }
+    }
+
+    private showLoading() {
+        const leaves = this.plugin.app.workspace.getLeavesOfType(WHISPERER_VIEW_TYPE);
+        if (leaves.length === 0) return;
+
+        const leaf = leaves[0];
+        if (leaf && leaf.view instanceof WhispererView) {
+            (leaf.view as WhispererView).showLoading();
+        }
+    }
+
+    private clearLoading() {
+        const leaves = this.plugin.app.workspace.getLeavesOfType(WHISPERER_VIEW_TYPE);
+        if (leaves.length === 0) return;
+
+        const leaf = leaves[0];
+        if (leaf && leaf.view instanceof WhispererView) {
+            (leaf.view as WhispererView).clearLoading();
         }
     }
 }

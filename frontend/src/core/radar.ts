@@ -83,10 +83,18 @@ export class OrphanRadar {
     /**
      * 主动触发扫描并更新 RadarView
      */
-    public scanAndRender() {
+    public async scanAndRender() {
+        const leaves = this.plugin.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE);
+        if (leaves.length > 0) {
+            const leaf = leaves[0];
+            if (leaf && leaf.view instanceof RadarView) {
+                (leaf.view as RadarView).showLoading();
+                await new Promise(resolve => setTimeout(resolve, 0));
+            }
+        }
+
         const orphans = this.findOrphans();
         
-        const leaves = this.plugin.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE);
         if (leaves.length > 0) {
             const leaf = leaves[0];
             if (leaf && leaf.view instanceof RadarView) {

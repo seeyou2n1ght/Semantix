@@ -15,6 +15,8 @@ export class RadarView extends ItemView {
     private indexProgressTextEl: HTMLElement;
     private indexProgressBarEl: HTMLElement;
     private orphanContainer: HTMLElement;
+    private orphanResultsEl: HTMLElement;
+    private loadingEl: HTMLElement | null = null;
 
     constructor(leaf: WorkspaceLeaf, plugin: SemantixPlugin) {
         super(leaf);
@@ -115,7 +117,9 @@ export class RadarView extends ItemView {
         });
 
         this.orphanContainer = contentArea.createEl("div", { cls: "semantix-orphan-results" });
-        this.orphanContainer.createEl("p", { text: "Click scan to find orphans.", cls: "semantix-empty-text" });
+        this.orphanContainer.style.transition = "opacity 150ms ease";
+        this.orphanResultsEl = this.orphanContainer.createEl("div", { cls: "semantix-orphan-results-inner" });
+        this.orphanResultsEl.createEl("p", { text: "Click scan to find orphans.", cls: "semantix-empty-text" });
 
         this.updateIndexingProgress(this.plugin.getIndexingState());
     }
@@ -128,15 +132,16 @@ export class RadarView extends ItemView {
      * 渲染孤岛笔记列表
      */
     public renderOrphans(orphans: { file: { path: string; basename: string }; linkCount: number }[]) {
-        if (!this.orphanContainer) return;
-        this.orphanContainer.empty();
+        if (!this.orphanContainer || !this.orphanResultsEl) return;
+        this.clearLoading();
+        this.orphanResultsEl.empty();
 
         if (orphans.length === 0) {
-            this.orphanContainer.createEl("p", { text: "没有发现孤岛笔记 🎉", cls: "semantix-empty-text" });
+            this.orphanResultsEl.createEl("p", { text: "没有发现孤岛笔记 🎉", cls: "semantix-empty-text" });
             return;
         }
 
-        const listEl = this.orphanContainer.createEl("ul", { cls: "semantix-orphan-list" });
+        const listEl = this.orphanResultsEl.createEl("ul", { cls: "semantix-orphan-list" });
         listEl.style.paddingLeft = "20px";
 
         for (const orphan of orphans) {
@@ -251,6 +256,47 @@ export class RadarView extends ItemView {
         if (!this.indexStatusEl) return;
         const suffix = lastUpdated ? ` · ${lastUpdated}` : '';
         this.indexStatusEl.innerText = `Indexed: ${totalNotes}${suffix}`;
+    }
+
+    public showLoading() {
+        if (!this.orphanContainer) return;
+        this.orphanContainer.style.opacity = "0.6";
+        if (this.loadingEl) return;
+
+        const loading = this.orphanContainer.createEl("div", { cls: "semantix-loading" });
+        loading.style.marginTop = "8px";
+
+        for (let i = 0; i < 2; i += 1) {
+            const card = loading.createEl("div");
+            card.style.background = "var(--background-modifier-border)";
+            card.style.borderRadius = "6px";
+            card.style.padding = "10px";
+            card.style.marginBottom = "8px";
+
+            const title = card.createEl("div");
+            title.style.height = "12px";
+            title.style.width = "60%";
+            title.style.background = "var(--background-modifier-border-hover)";
+            title.style.borderRadius = "4px";
+            title.style.marginBottom = "6px";
+
+            const text = card.createEl("div");
+            text.style.height = "10px";
+            text.style.width = "100%";
+            text.style.background = "var(--background-modifier-border-hover)";
+            text.style.borderRadius = "4px";
+        }
+
+        this.loadingEl = loading;
+    }
+
+    public clearLoading() {
+        if (!this.orphanContainer) return;
+        if (this.loadingEl) {
+            this.loadingEl.remove();
+            this.loadingEl = null;
+        }
+        this.orphanContainer.style.opacity = "1";
     }
 
     public updateIndexingProgress(state: { active: boolean; current: number; total: number }) {

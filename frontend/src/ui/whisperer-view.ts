@@ -16,6 +16,8 @@ export class WhispererView extends ItemView {
     private indexProgressTextEl: HTMLElement;
     private indexProgressBarEl: HTMLElement;
     private whispererContainer: HTMLElement;
+    private whispererResultsEl: HTMLElement;
+    private loadingEl: HTMLElement | null = null;
 
     constructor(leaf: WorkspaceLeaf, plugin: SemantixPlugin) {
         super(leaf);
@@ -105,7 +107,9 @@ export class WhispererView extends ItemView {
         contentArea.createEl("h4", { text: "动态灵感" });
         
         this.whispererContainer = contentArea.createEl("div", { cls: "semantix-whisperer-results" });
-        this.whispererContainer.createEl("p", { 
+        this.whispererContainer.style.transition = "opacity 150ms ease";
+        this.whispererResultsEl = this.whispererContainer.createEl("div", { cls: "semantix-whisperer-results-inner" });
+        this.whispererResultsEl.createEl("p", { 
             text: "Waiting for input...", 
             cls: "semantix-empty-text" 
         });
@@ -121,11 +125,12 @@ export class WhispererView extends ItemView {
      * 渲染 Whisperer 的检索结果
      */
     public renderWhispererResults(results: SearchResultItem[], colorSettings?: { colorThresholdHigh: number; colorThresholdMedium: number }) {
-        if (!this.whispererContainer) return;
-        this.whispererContainer.empty();
+        if (!this.whispererContainer || !this.whispererResultsEl) return;
+        this.clearLoading();
+        this.whispererResultsEl.empty();
 
         if (results.length === 0) {
-            this.whispererContainer.createEl("p", { 
+            this.whispererResultsEl.createEl("p", { 
                 text: "没有找到相关度高的笔记。", 
                 cls: "semantix-empty-text" 
             });
@@ -138,7 +143,7 @@ export class WhispererView extends ItemView {
         };
         const settings = colorSettings || defaultSettings;
 
-        const listEl = this.whispererContainer.createEl("ul", { cls: "semantix-result-list" });
+        const listEl = this.whispererResultsEl.createEl("ul", { cls: "semantix-result-list" });
         listEl.style.paddingLeft = "20px";
         listEl.style.marginTop = "0px";
 
@@ -215,6 +220,47 @@ export class WhispererView extends ItemView {
         if (!this.indexStatusEl) return;
         const suffix = lastUpdated ? ` · ${lastUpdated}` : '';
         this.indexStatusEl.innerText = `Indexed: ${totalNotes}${suffix}`;
+    }
+
+    public showLoading() {
+        if (!this.whispererContainer) return;
+        this.whispererContainer.style.opacity = "0.6";
+        if (this.loadingEl) return;
+
+        const loading = this.whispererContainer.createEl("div", { cls: "semantix-loading" });
+        loading.style.marginTop = "8px";
+
+        for (let i = 0; i < 2; i += 1) {
+            const card = loading.createEl("div");
+            card.style.background = "var(--background-modifier-border)";
+            card.style.borderRadius = "6px";
+            card.style.padding = "10px";
+            card.style.marginBottom = "8px";
+
+            const title = card.createEl("div");
+            title.style.height = "12px";
+            title.style.width = "60%";
+            title.style.background = "var(--background-modifier-border-hover)";
+            title.style.borderRadius = "4px";
+            title.style.marginBottom = "6px";
+
+            const text = card.createEl("div");
+            text.style.height = "10px";
+            text.style.width = "100%";
+            text.style.background = "var(--background-modifier-border-hover)";
+            text.style.borderRadius = "4px";
+        }
+
+        this.loadingEl = loading;
+    }
+
+    public clearLoading() {
+        if (!this.whispererContainer) return;
+        if (this.loadingEl) {
+            this.loadingEl.remove();
+            this.loadingEl = null;
+        }
+        this.whispererContainer.style.opacity = "1";
     }
 
     public updateIndexingProgress(state: { active: boolean; current: number; total: number }) {

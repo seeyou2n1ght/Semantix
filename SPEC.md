@@ -54,6 +54,10 @@ Semantix 是一款 Obsidian 侧边栏插件。它通过打通 Obsidian 前端与
 ### 3.2 动态面板区 (Dynamic View Area)
 使用 Tab 或手风琴折叠菜单 (Accordion) 在两个核心功能之间切换：**Real-time Whisperer** 和 **Orphan Radar**。
 
+### 3.3 骨架屏与平滑过渡 (Skeleton UI & Transitions)
+*   **目标**: 在检索与扫描期间保留旧内容并显示骨架占位，避免“清空再填充”的视觉闪烁。
+*   **行为**: 请求开始时降低旧内容透明度，展示灰色占位卡片；数据返回后移除骨架并恢复透明度。
+
 ---
 
 ## 4. 核心功能规范 (Core Features)
