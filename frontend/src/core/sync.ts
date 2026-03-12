@@ -152,6 +152,10 @@ export class SyncManager {
             }
         } finally {
             this.isFlushing = false;
+
+            // 同步完成后刷新侧边栏索引计数
+            this.plugin.checkConnection();
+
             if (this.pendingUpdates.size > 0 || this.pendingDeletes.size > 0) {
                 this.startTimerIfNeeded();
             }
