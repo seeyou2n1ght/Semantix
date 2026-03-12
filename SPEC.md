@@ -49,6 +49,7 @@ Semantix 是一款 Obsidian 侧边栏插件。它通过打通 Obsidian 前端与
     *   🟡 Syncing/Connecting: 正在进行全量/增量索引，或正在建立连接。
     *   🔴 Disconnected: 后端服务不可用，插件主动挂起所有耗时请求。
 *   **交互逻辑**: 启动时自动探活，随后通过轻量级轮询维持状态。断开时自动暂停下游核心功能的触发。
+*   **索引进度展示**: 侧边栏常驻显示 `Indexing: x / n` 与索引统计行，进度与时间戳分行显示，避免拥挤与错位。
 
 ### 3.2 动态面板区 (Dynamic View Area)
 使用 Tab 或手风琴折叠菜单 (Accordion) 在两个核心功能之间切换：**Real-time Whisperer** 和 **Orphan Radar**。
@@ -103,6 +104,7 @@ Semantix 是一款 Obsidian 侧边栏插件。它通过打通 Obsidian 前端与
 ### 5.2 增量批量同步 (Batched Incremental Sync)
 *   **监听事件**: `vault.on('modify')`, `'create'`, `'delete'`, `'rename'`。
 *   **批量策略**: 监听触发后不立即发送请求，而是将变更推入队列（Queue）。利用防抖/定时器（如每隔 60 秒，取决于设置项 `syncInterval`）将队列中的操作打包（Batch）发给后端，降低 API 调用频次。
+*   **进度反馈**: 同步执行期间更新侧边栏索引进度，完成后回到空闲状态。
 
 ### 5.3 灵活的排除规则 (Flexible Exclusions)
 *   利用 Glob 模式（或正则）匹配文件路径，排除不需要进行语义分析的文件。

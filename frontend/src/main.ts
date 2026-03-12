@@ -7,6 +7,13 @@ import { SyncManager } from './core/sync';
 import { Whisperer } from './core/whisperer';
 import { OrphanRadar } from './core/radar';
 
+export type IndexingState = {
+    active: boolean;
+    current: number;
+    total: number;
+    label?: string;
+};
+
 export default class SemantixPlugin extends Plugin {
     settings: SemantixSettings;
     apiClient: ApiClient;
@@ -16,6 +23,7 @@ export default class SemantixPlugin extends Plugin {
     vaultId: string;
     isMobileHibernating: boolean = false;
     private healthTimer: number | null = null;
+    private indexingState: IndexingState = { active: false, current: 0, total: 0 };
 
     async onload() {
         // 1. 加载配置
@@ -191,6 +199,36 @@ export default class SemantixPlugin extends Plugin {
         for (const leaf of this.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE)) {
             if (leaf.view instanceof RadarView) {
                 (leaf.view as RadarView).updateIndexStatus(totalNotes, lastUpdated);
+            }
+        }
+    }
+
+    /**
+     * 更新并广播索引进度
+     */
+    public updateIndexingProgress(current: number, total: number, active: boolean = true, label?: string) {
+        this.indexingState = { active, current, total, label };
+        this.updateAllViewIndexingProgress(this.indexingState);
+    }
+
+    public clearIndexingProgress() {
+        this.indexingState = { active: false, current: 0, total: 0 };
+        this.updateAllViewIndexingProgress(this.indexingState);
+    }
+
+    public getIndexingState(): IndexingState {
+        return this.indexingState;
+    }
+
+    private updateAllViewIndexingProgress(state: IndexingState) {
+        for (const leaf of this.app.workspace.getLeavesOfType(WHISPERER_VIEW_TYPE)) {
+            if (leaf.view instanceof WhispererView) {
+                (leaf.view as WhispererView).updateIndexingProgress(state);
+            }
+        }
+        for (const leaf of this.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE)) {
+            if (leaf.view instanceof RadarView) {
+                (leaf.view as RadarView).updateIndexingProgress(state);
             }
         }
     }

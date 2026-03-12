@@ -10,7 +10,10 @@ export const RADAR_VIEW_TYPE = "semantix-radar-view";
 export class RadarView extends ItemView {
     plugin: SemantixPlugin;
     private indicatorEl: HTMLElement;
+    private statusTextEl: HTMLElement;
     private indexStatusEl: HTMLElement;
+    private indexProgressTextEl: HTMLElement;
+    private indexProgressBarEl: HTMLElement;
     private orphanContainer: HTMLElement;
 
     constructor(leaf: WorkspaceLeaf, plugin: SemantixPlugin) {
@@ -61,14 +64,38 @@ export class RadarView extends ItemView {
         this.indicatorEl.style.marginRight = "10px";
         this.indicatorEl.style.backgroundColor = "var(--color-yellow)";
         
-        const statusText = statusArea.createEl("span", { text: "Connecting..." });
-        statusText.style.fontSize = "0.9em";
-        statusText.style.color = "var(--text-muted)";
+        const statusTextCol = statusArea.createEl("div");
+        statusTextCol.style.display = "flex";
+        statusTextCol.style.flexDirection = "column";
+        statusTextCol.style.gap = "4px";
 
-        this.indexStatusEl = statusArea.createEl("span", { text: "Indexed: -" });
+        this.statusTextEl = statusTextCol.createEl("span", { text: "Connecting..." });
+        this.statusTextEl.style.fontSize = "0.9em";
+        this.statusTextEl.style.color = "var(--text-muted)";
+
+        this.indexStatusEl = statusTextCol.createEl("span", { text: "Indexed: -" });
         this.indexStatusEl.style.fontSize = "0.8em";
-        this.indexStatusEl.style.marginLeft = "10px";
         this.indexStatusEl.style.color = "var(--text-muted)";
+
+        const progressRow = statusTextCol.createEl("div", { cls: "semantix-indexing-row" });
+        progressRow.style.display = "flex";
+        progressRow.style.flexDirection = "column";
+        progressRow.style.gap = "4px";
+
+        this.indexProgressTextEl = progressRow.createEl("span", { text: "Indexing: 0 / 0" });
+        this.indexProgressTextEl.style.fontSize = "0.8em";
+        this.indexProgressTextEl.style.color = "var(--text-muted)";
+
+        const progressBar = progressRow.createEl("div", { cls: "semantix-progress-bar" });
+        progressBar.style.height = "6px";
+        progressBar.style.background = "var(--background-modifier-border)";
+        progressBar.style.borderRadius = "999px";
+        progressBar.style.overflow = "hidden";
+
+        this.indexProgressBarEl = progressBar.createEl("div", { cls: "semantix-progress-bar-fill" });
+        this.indexProgressBarEl.style.height = "100%";
+        this.indexProgressBarEl.style.width = "0%";
+        this.indexProgressBarEl.style.background = "var(--interactive-accent)";
 
         // --- 孤岛雷达区 ---
         const contentArea = wrapper.createEl("div", { cls: "semantix-content-area" });
@@ -89,6 +116,8 @@ export class RadarView extends ItemView {
 
         this.orphanContainer = contentArea.createEl("div", { cls: "semantix-orphan-results" });
         this.orphanContainer.createEl("p", { text: "Click scan to find orphans.", cls: "semantix-empty-text" });
+
+        this.updateIndexingProgress(this.plugin.getIndexingState());
     }
 
     async onClose() {
@@ -204,19 +233,17 @@ export class RadarView extends ItemView {
      * 更新状态指示灯
      */
     public updateStatus(status: 'connected' | 'disconnected' | 'syncing') {
-        if (!this.indicatorEl) return;
-        
-        const statusTextEl = this.indicatorEl.nextSibling as HTMLElement;
+        if (!this.indicatorEl || !this.statusTextEl) return;
 
         if (status === 'connected') {
             this.indicatorEl.style.backgroundColor = "var(--color-green)";
-            statusTextEl.innerText = "Connected";
+            this.statusTextEl.innerText = "Connected";
         } else if (status === 'disconnected') {
             this.indicatorEl.style.backgroundColor = "var(--color-red)";
-            statusTextEl.innerText = "Disconnected";
+            this.statusTextEl.innerText = "Disconnected";
         } else if (status === 'syncing') {
             this.indicatorEl.style.backgroundColor = "var(--color-yellow)";
-            statusTextEl.innerText = "Syncing...";
+            this.statusTextEl.innerText = "Syncing...";
         }
     }
 
@@ -224,5 +251,27 @@ export class RadarView extends ItemView {
         if (!this.indexStatusEl) return;
         const suffix = lastUpdated ? ` · ${lastUpdated}` : '';
         this.indexStatusEl.innerText = `Indexed: ${totalNotes}${suffix}`;
+    }
+
+    public updateIndexingProgress(state: { active: boolean; current: number; total: number }) {
+        if (!this.indexProgressTextEl || !this.indexProgressBarEl) return;
+
+        const total = Math.max(state.total, 0);
+        const current = Math.max(state.current, 0);
+
+        if (state.active && total > 0) {
+            const percent = Math.min(100, Math.round((current / total) * 100));
+            this.indexProgressTextEl.innerText = `Indexing: ${current} / ${total}`;
+            this.indexProgressBarEl.style.width = `${percent}%`;
+            this.indexProgressBarEl.style.background = "var(--interactive-accent)";
+        } else if (state.active && total === 0) {
+            this.indexProgressTextEl.innerText = "Indexing: 0 / 0";
+            this.indexProgressBarEl.style.width = "0%";
+            this.indexProgressBarEl.style.background = "var(--interactive-accent)";
+        } else {
+            this.indexProgressTextEl.innerText = "Indexing: 0 / 0";
+            this.indexProgressBarEl.style.width = "0%";
+            this.indexProgressBarEl.style.background = "var(--text-faint)";
+        }
     }
 }
