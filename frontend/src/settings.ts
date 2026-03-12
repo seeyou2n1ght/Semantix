@@ -3,6 +3,7 @@ import SemantixPlugin from "./main";
 
 export interface SemantixSettings {
     backendUrl: string;
+    apiToken: string;
     whispererScope: 'paragraph' | 'document';
     debounceDelay: number;
     syncBatchInterval: number;
@@ -14,6 +15,7 @@ export interface SemantixSettings {
 
 export const DEFAULT_SETTINGS: SemantixSettings = {
     backendUrl: 'http://localhost:8000',
+    apiToken: '',
     whispererScope: 'paragraph',
     debounceDelay: 2000,
     syncBatchInterval: 60,
@@ -59,6 +61,19 @@ export class SemantixSettingTab extends PluginSettingTab {
                     this.plugin.checkConnection(); // update sidebar indicator
                     btn.setButtonText("测试连接");
                  }));
+
+        new Setting(containerEl)
+            .setName('API Token')
+            .setDesc('可选：后端开启 SEMANTIX_API_TOKEN 时需填写')
+            .addText(text => {
+                text.setPlaceholder('optional');
+                text.setValue(this.plugin.settings.apiToken);
+                text.inputEl.type = 'password';
+                text.onChange(async (value) => {
+                    this.plugin.settings.apiToken = value;
+                    await this.plugin.saveSettings();
+                });
+            });
 
         new Setting(containerEl)
             .setName('Whisperer Scope')

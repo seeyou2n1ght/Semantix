@@ -1,5 +1,7 @@
 import os
-from fastapi import FastAPI, HTTPException
+import time
+import logging
+from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 
@@ -7,22 +9,53 @@ from datetime import datetime
 from models import (
     IndexDocument, BatchIndexRequest, DeleteIndexRequest,
     SemanticSearchRequest, SemanticSearchResponse, SearchResultItem,
-    IndexStatusResponse
+    IndexStatusResponse, MetricsResponse
 )
 from model_svc import model_svc
 from db_svc import DatabaseService
 
+API_TOKEN = os.getenv("SEMANTIX_API_TOKEN", "").strip() or None
+ALLOWED_ORIGINS = [
+    origin.strip() for origin in os.getenv("SEMANTIX_ALLOWED_ORIGINS", "http://localhost,http://127.0.0.1").split(",")
+    if origin.strip()
+]
+LOG_LEVEL = os.getenv("SEMANTIX_LOG_LEVEL", "INFO").upper()
+
+logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger("semantix")
+
+METRICS = {
+    "total_indexed_docs": 0,
+    "total_searches": 0,
+    "last_index_at": None,
+    "last_index_ms": None,
+    "last_search_at": None,
+    "last_search_ms": None
+}
+
+def verify_token(x_semantix_token: str | None = Header(default=None)):
+    if API_TOKEN and x_semantix_token != API_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
 # Initialize FastAPI app
-app = FastAPI(title="Semantix AI Backend", version="0.2.0")
+app = FastAPI(title="Semantix AI Backend", version="0.2.0", dependencies=[Depends(verify_token)])
 
 # Add CORS middleware (Obsidian uses file:// or similar, but we should allow all for local MVP)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def log_requests(request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    duration_ms = (time.perf_counter() - start) * 1000
+    logger.info("%s %s %s %.2fms", request.method, request.url.path, response.status_code, duration_ms)
+    return response
 
 # Initialize Database Service
 # In production, this path could be configurable via env vars
@@ -42,9 +75,13 @@ def get_index_status(vault_id: str = "default"):
     count = db_svc.count_notes(vault_id=vault_id)
     return IndexStatusResponse(
         total_notes=count,
-        last_updated=datetime.now().isoformat(), # Placeholder for actual last touch time
+        last_updated=METRICS["last_index_at"],
         vault_id=vault_id
     )
+
+@app.get("/metrics", response_model=MetricsResponse, tags=["System"])
+def get_metrics():
+    return MetricsResponse(**METRICS)
 
 @app.post("/index/batch", tags=["Index"])
 def batch_index(request: BatchIndexRequest):
@@ -52,6 +89,7 @@ def batch_index(request: BatchIndexRequest):
     if not request.documents:
         return {"status": "success", "indexed": 0}
 
+    start = time.perf_counter()
     paths = [doc.path for doc in request.documents]
     texts = [doc.text for doc in request.documents]
     vault_ids = [doc.vault_id for doc in request.documents]
@@ -79,6 +117,12 @@ def batch_index(request: BatchIndexRequest):
     except Exception as e:
          raise HTTPException(status_code=500, detail=f"Database insertion failed: {str(e)}")
 
+    duration_ms = (time.perf_counter() - start) * 1000
+    METRICS["total_indexed_docs"] += len(paths)
+    METRICS["last_index_at"] = datetime.now().isoformat()
+    METRICS["last_index_ms"] = duration_ms
+    logger.info("Indexed %s docs in %.2fms", len(paths), duration_ms)
+
     return {"status": "success", "indexed": len(paths)}
 
 @app.post("/index/delete", tags=["Index"])
@@ -105,6 +149,7 @@ def semantic_search(request: SemanticSearchRequest):
     if not request.text or len(request.text.strip()) == 0:
         return SemanticSearchResponse(results=[])
 
+    start = time.perf_counter()
     try:
         # Encode the query text
         query_vector = model_svc.encode([request.text])[0]
@@ -121,6 +166,12 @@ def semantic_search(request: SemanticSearchRequest):
         )
     except Exception as e:
          raise HTTPException(status_code=500, detail=f"Database search failed: {str(e)}")
+
+    duration_ms = (time.perf_counter() - start) * 1000
+    METRICS["total_searches"] += 1
+    METRICS["last_search_at"] = datetime.now().isoformat()
+    METRICS["last_search_ms"] = duration_ms
+    logger.info("Search completed in %.2fms", duration_ms)
 
     return SemanticSearchResponse(results=[SearchResultItem(**res) for res in raw_results])
 

@@ -37,3 +37,11 @@ class IndexStatusResponse(BaseModel):
     total_notes: int
     last_updated: Optional[str]
     vault_id: Optional[str] = None
+
+class MetricsResponse(BaseModel):
+    total_indexed_docs: int
+    total_searches: int
+    last_index_at: Optional[str]
+    last_index_ms: Optional[float]
+    last_search_at: Optional[str]
+    last_search_ms: Optional[float]

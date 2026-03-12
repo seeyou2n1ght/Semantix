@@ -21,6 +21,13 @@ export class ApiClient {
         return this.settings.backendUrl.replace(/\/$/, '');
     }
 
+    private getAuthHeaders(): Record<string, string> {
+        if (this.settings.apiToken && this.settings.apiToken.trim() !== '') {
+            return { "X-Semantix-Token": this.settings.apiToken.trim() };
+        }
+        return {};
+    }
+
     /**
      * Test connection to the backend (/health)
      * @returns true if connected, false otherwise
@@ -31,7 +38,8 @@ export class ApiClient {
             const req: RequestUrlParam = {
                 url,
                 method: 'GET',
-                contentType: 'application/json'
+                contentType: 'application/json',
+                headers: this.getAuthHeaders()
             };
             
             const res: RequestUrlResponse = await requestUrl(req);
@@ -61,6 +69,7 @@ export class ApiClient {
                 url: `${this.baseUrl}/index/batch`,
                 method: 'POST',
                 contentType: 'application/json',
+                headers: this.getAuthHeaders(),
                 body: JSON.stringify(payload) // requestUrl requires body string
             });
             if (res.status === 200 && res.json) {
@@ -87,6 +96,7 @@ export class ApiClient {
                 url: `${this.baseUrl}/index/delete`,
                 method: 'POST',
                 contentType: 'application/json',
+                headers: this.getAuthHeaders(),
                 body: JSON.stringify(payload)
             });
             if (res.status === 200 && res.json) {
@@ -113,6 +123,7 @@ export class ApiClient {
                 url: `${this.baseUrl}/search/semantic`,
                 method: 'POST',
                 contentType: 'application/json',
+                headers: this.getAuthHeaders(),
                 body: JSON.stringify(payload)
             });
             if (res.status === 200 && res.json) {
@@ -131,7 +142,8 @@ export class ApiClient {
             const res = await requestUrl({
                 url,
                 method: 'GET',
-                contentType: 'application/json'
+                contentType: 'application/json',
+                headers: this.getAuthHeaders()
             });
             if (res.status === 200 && res.json) {
                 return res.json;
