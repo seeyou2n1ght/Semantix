@@ -1,19 +1,22 @@
+import logging
 import lancedb
 import os
 import pyarrow as pa
 from typing import List, Dict, Any
 
+logger = logging.getLogger("semantix")
+
 COLLECTION_NAME = "semantix_notes"
 
 class DatabaseService:
     def __init__(self, db_path: str = "./semantix_lance", dim: int = 512):
-        print(f"Initializing LanceDB at {db_path}...")
+        logger.info("Initializing LanceDB at %s...", db_path)
         self.db = lancedb.connect(db_path)
         self.dim = dim
         self._init_collection()
 
     def _init_collection(self):
-        # Define the schema explicitly for LanceDB using PyArrow
+        # 使用 PyArrow 显式定义 LanceDB Schema
         schema = pa.schema([
             pa.field("vault_id", pa.string()),
             pa.field("path", pa.string()),
@@ -25,35 +28,35 @@ class DatabaseService:
             self.table = self.db.open_table(COLLECTION_NAME)
             existing_fields = {field.name for field in self.table.schema}
             if "vault_id" not in existing_fields:
-                print("Existing table schema missing vault_id, recreating table...")
+                logger.warning("Existing table schema missing vault_id, recreating table...")
                 self.db.drop_table(COLLECTION_NAME)
                 self.table = self.db.create_table(COLLECTION_NAME, schema=schema)
-                print("Table recreated with vault_id.")
+                logger.info("Table recreated with vault_id.")
             else:
-                print(f"Table {COLLECTION_NAME} already exists and opened.")
+                logger.info("Table %s already exists and opened.", COLLECTION_NAME)
         else:
-             # Create table if it doesn't exist
-             print(f"Creating table {COLLECTION_NAME} with dim {self.dim}...")
+             # 表不存在则创建
+             logger.info("Creating table %s with dim %s...", COLLECTION_NAME, self.dim)
              self.table = self.db.create_table(COLLECTION_NAME, schema=schema)
-             print("Table created.")
+             logger.info("Table created.")
 
     def count_notes(self, vault_id: str = None) -> int:
         try:
             if not self.table: return 0
-            # A simple count, LanceDB natively supports returning length of table
+            # 简单计数，LanceDB 原生支持返回表长度
             if not vault_id:
                 return len(self.table)
-            # MVP: filtered count via materialization
+            # MVP: 通过物化进行过滤计数
             rows = self.table.to_list()
             return sum(1 for row in rows if row.get("vault_id") == vault_id)
         except Exception as e:
-            print(f"Error counting notes: {e}")
+            logger.error("Error counting notes: %s", e)
             return 0
 
     def _escape_sql_string(self, s: str) -> str:
         """
-        Escapes single quotes in a string for use in a SQL-like query.
-        LanceDB uses SQL-like syntax where single quotes are escaped by doubling them.
+        转义字符串中的单引号以用于 SQL-like 查询。
+        LanceDB 使用类 SQL 语法，单引号通过双写转义。
         """
         return s.replace("'", "''")
 
@@ -62,19 +65,19 @@ class DatabaseService:
             return
         
         try:
-            # LanceDB delete uses a SQL-like where clause
+            # LanceDB 的 delete 使用类 SQL 的 where 子句
             formatted_paths = ", ".join([f"'{self._escape_sql_string(p)}'" for p in paths])
             where_clause = f"vault_id = '{self._escape_sql_string(vault_id)}' AND path IN ({formatted_paths})"
             self.table.delete(where_clause)
-            print(f"Deleted {len(paths)} notes from vector DB.")
+            logger.info("Deleted %s notes from vector DB.", len(paths))
         except Exception as e:
-            print(f"Error deleting paths: {e}")
+            logger.error("Error deleting paths: %s", e)
 
     def upsert_documents(self, data: List[Dict[str, Any]]):
         """
-        data items should contain: 'vector', 'path', 'text'
-        LanceDB supports merge_insert (upsert) based on a key (path).
-        We'll use standard insertion after aggressive deletion to mimic upsert safely for MVP.
+        data 中每个条目应包含: 'vector', 'path', 'text'
+        LanceDB 支持基于 key(path) 的 merge_insert (upsert)。
+        MVP 阶段使用先删后插的安全策略模拟 upsert。
         """
         if not data:
             return
@@ -86,18 +89,18 @@ class DatabaseService:
                         .when_matched_update_all() \
                         .when_not_matched_insert_all() \
                         .execute(data)
-                    print(f"Upserted {len(data)} notes.")
+                    logger.info("Upserted %s notes.", len(data))
                     return
                 except Exception as e:
-                    print(f"merge_insert failed, fallback to delete+add: {e}")
+                    logger.warning("merge_insert failed, fallback to delete+add: %s", e)
             paths_to_update = [item['path'] for item in data]
             vault_id = data[0].get("vault_id")
             if vault_id:
                 self.delete_by_paths(vault_id, paths_to_update)
             self.table.add(data)
-            print(f"Inserted {len(data)} notes.")
+            logger.info("Inserted %s notes.", len(data))
         except Exception as e:
-            print(f"Error inserting documents: {e}")
+            logger.error("Error inserting documents: %s", e)
 
     def search(self, vault_id: str, query_vector: List[float], top_k: int = 5, exclude_paths: List[str] = None) -> List[Dict[str, Any]]:
         try:
@@ -123,13 +126,13 @@ class DatabaseService:
                 })
             return results
         except Exception as e:
-            print(f"Error searching: {e}")
+            logger.error("Error searching: %s", e)
             return []
 
     def clear_all(self):
         try:
             self.db.drop_table(COLLECTION_NAME)
             self._init_collection()
-            print("Table cleared and recreated.")
+            logger.info("Table cleared and recreated.")
         except Exception as e:
-             print(f"Error clearing table: {e}")
+             logger.error("Error clearing table: %s", e)

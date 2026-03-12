@@ -95,7 +95,7 @@ def batch_index(request: BatchIndexRequest):
     vault_ids = [doc.vault_id for doc in request.documents]
     
     # 1. Generate embeddings
-    print(f"Generating embeddings for {len(texts)} documents...")
+    logger.info("Generating embeddings for %s documents...", len(texts))
     try:
         embeddings = model_svc.encode(texts)
     except Exception as e:
