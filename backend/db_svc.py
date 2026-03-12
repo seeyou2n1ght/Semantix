@@ -38,13 +38,20 @@ class DatabaseService:
             print(f"Error counting notes: {e}")
             return 0
 
+    def _escape_sql_string(self, s: str) -> str:
+        """
+        Escapes single quotes in a string for use in a SQL-like query.
+        LanceDB uses SQL-like syntax where single quotes are escaped by doubling them.
+        """
+        return s.replace("'", "''")
+
     def delete_by_paths(self, paths: List[str]):
         if not paths:
             return
         
         try:
             # LanceDB delete uses a SQL-like where clause
-            formatted_paths = ", ".join([f"'{p}'" for p in paths])
+            formatted_paths = ", ".join([f"'{self._escape_sql_string(p)}'" for p in paths])
             where_clause = f"path IN ({formatted_paths})"
             self.table.delete(where_clause)
             print(f"Deleted {len(paths)} notes from vector DB.")
@@ -74,7 +81,7 @@ class DatabaseService:
             query = self.table.search(query_vector).metric("cosine").limit(top_k)
             
             if exclude_paths and len(exclude_paths) > 0:
-                formatted_paths = ", ".join([f"'{p}'" for p in exclude_paths])
+                formatted_paths = ", ".join([f"'{self._escape_sql_string(p)}'" for p in exclude_paths])
                 query = query.where(f"path NOT IN ({formatted_paths})")
                 
             res_list = query.to_list()
