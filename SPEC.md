@@ -27,6 +27,7 @@ Semantix 是一款 Obsidian 侧边栏插件。它通过打通 Obsidian 前端与
 
 ### 2.3 API 接口契约 (API Contract Draft)
 *   **`GET /health`**: 探活接口，返回后端状态。
+*   **`GET /metrics`**: 运行指标输出（索引与检索计数、耗时）。
 *   **`POST /index/batch`**: 批量写入/更新笔记 embedding。参数：`[{vault_id, path, text}]`。
 *   **`POST /index/delete`**: 删除指定路径的 embedding。参数：`{vault_id, paths}`。
 *   **`GET /index/status`**: 获取索引统计。参数：`vault_id` (query)。
@@ -107,14 +108,15 @@ Semantix 是一款 Obsidian 侧边栏插件。它通过打通 Obsidian 前端与
 提供丰富的自定义选项（保存在 `data.json`）：
 
 1.  **Backend API URL**: 本地或远程后端服务的接口地址。并提供 `[Test Connection]` 测试按钮。
-2.  **Whisperer Scope**: 动态灵感的作用域下拉菜单 (Current Paragraph 或 Current File)。
-3.  **Debounce Delay**: 输入防抖延迟毫秒数 (500ms - 5000ms)。
-4.  **Sync Batch Interval**: 增量同步批量发送的间隔秒数 (如 30s 到 300s)。
-5.  **Exclusion Rules**: 多行文本框，每行一个需要排除索引的路径模式 (Glob)。
-6.  **Filter Linked Notes**: Token 过滤开关，是否在推荐列表中隐藏当前笔记已链接过的文件。
-7.  **Top N Results**: 呈现的最大相关笔记数量。
-8.  **Enable on Mobile**: 移动端强制工作开关。
-9.  **Vault ID**: 自动生成的 Vault 标识（基于 vault path 哈希）。
+2.  **API Token**: 后端鉴权令牌（可选，若后端开启则需填写）。
+3.  **Whisperer Scope**: 动态灵感的作用域下拉菜单 (Current Paragraph 或 Current File)。
+4.  **Debounce Delay**: 输入防抖延迟毫秒数 (500ms - 5000ms)。
+5.  **Sync Batch Interval**: 增量同步批量发送的间隔秒数 (如 30s 到 300s)。
+6.  **Exclusion Rules**: 多行文本框，每行一个需要排除索引的路径模式 (Glob)。
+7.  **Filter Linked Notes**: Token 过滤开关，是否在推荐列表中隐藏当前笔记已链接过的文件。
+8.  **Top N Results**: 呈现的最大相关笔记数量。
+9.  **Enable on Mobile**: 移动端强制工作开关。
+10. **Vault ID**: 自动生成的 Vault 标识（基于 vault path 哈希）。
 
 ---
 

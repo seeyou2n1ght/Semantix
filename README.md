@@ -36,6 +36,7 @@
 | 方法 | 路径 | 描述 |
 |---|---|---|
 | `GET` | `/health` | 探活，检测后端状态 |
+| `GET` | `/metrics` | 运行指标（索引与检索计数、耗时） |
 | `POST` | `/index/batch` | 批量写入 / 更新笔记 embedding |
 | `POST` | `/index/delete` | 删除指定路径的 embedding |
 | `GET` | `/index/status` | 获取索引统计（按 vault_id） |
@@ -93,6 +94,7 @@ git clone https://github.com/your-org/semantix.git semantix
 | 配置项 | 说明 | 默认值 |
 |---|---|---|
 | Backend API URL | 后端服务地址 | `http://localhost:8000` |
+| API Token | 后端鉴权令牌（可选） | — |
 | Whisperer Scope | 触发检索的上下文范围 | `Current Paragraph` |
 | Debounce Delay | 输入防抖时长 (ms) | `2000` |
 | Sync Batch Interval | 增量同步间隔 (s) | `60` |
@@ -106,6 +108,16 @@ git clone https://github.com/your-org/semantix.git semantix
 
 > **关于 Similarity**  
 > 语义检索结果返回的是“相似度”（数值越大越相似），前端显示为 `Similarity`。
+
+### 4. 后端安全与环境变量
+
+可选配置以下环境变量以提高安全性与可观测性：
+
+| 变量 | 说明 | 示例 |
+|---|---|---|
+| `SEMANTIX_API_TOKEN` | 启用 API 访问令牌校验 | `my-secret-token` |
+| `SEMANTIX_ALLOWED_ORIGINS` | 允许的 CORS Origin 列表（逗号分隔） | `http://localhost,http://127.0.0.1` |
+| `SEMANTIX_LOG_LEVEL` | 日志级别 | `INFO` |
 
 ---
 

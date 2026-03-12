@@ -8,9 +8,10 @@
 *   **通信方案**: 采用 Obsidian 原生的跨域 API `requestUrl` 全面接管了与本地/远程 Python 向量服务跨域通信的问题。
 *   **接口映射**: 严格实现了 `/health` (探活)、`/index/batch` (增量建立索引)、`/index/delete` (删除索引)、`/index/status` (索引统计)、`/index/clear` (清空索引) 和 `/search/semantic` (语义搜索) 六个核心接口以及对应的 TS 类型安全定义。
 *   **Vault 维度**: 所有索引与检索请求均携带 `vault_id`，用于多 Vault 隔离与去重。
+*   **安全策略**: 支持可选的 `SEMANTIX_API_TOKEN` 鉴权，以及 CORS Origin 白名单配置。
 
 ### ⚙️ 设置面板 (`src/settings.ts`)
-*   基于 `PluginSettingTab` 严格实现了 9 项核心配置的 UI 控制，且支持持久化存储到 `data.json`。
+*   基于 `PluginSettingTab` 严格实现了 10 项核心配置的 UI 控制，且支持持久化存储到 `data.json`。
 *   提供了交互式的 **\[测试连接\]** 按钮，一键调通与 Python 后台的握手操作，结果将全局投递在侧边栏界面的指示灯上。
 
 ### 🔄 增量同步调度器 (`src/core/sync.ts`)
