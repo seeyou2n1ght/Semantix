@@ -223,6 +223,13 @@ def confirm_clear_index(request: ClearIndexConfirmRequest):
             status_code=400, detail="Invalid or expired confirmation token"
         )
 
+    token_scope_vault_id = pending_request.get("vault_id")
+    if token_scope_vault_id != vault_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Confirmation token scope mismatch",
+        )
+
     if datetime.now() > pending_request["expires_at"]:
         raise HTTPException(status_code=400, detail="Confirmation token expired")
 

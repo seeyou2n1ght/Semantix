@@ -69,7 +69,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh   # macOS / Linux
 # powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 
 # 克隆仓库并进入后端目录
-git clone https://github.com/your-org/semantix.git
+git clone https://github.com/seeyou2n1ght/Semantix.git
 cd semantix/backend
 
 # 使用 uv 创建虚拟环境并安装依赖（一步完成）
@@ -88,7 +88,7 @@ uv run uvicorn main:app --host 0.0.0.0 --port 8000
 ```bash
 # 在插件目录下克隆
 cd <your-vault>/.obsidian/plugins/
-git clone https://github.com/your-org/semantix.git semantix
+git clone https://github.com/seeyou2n1ght/Semantix.git semantix
 ```
 然后在 Obsidian 设置 → 第三方插件中启用 **Semantix**。
 
@@ -131,6 +131,12 @@ git clone https://github.com/your-org/semantix.git semantix
 | `SEMANTIX_API_TOKEN` | 启用 API 访问令牌校验 | `my-secret-token` |
 | `SEMANTIX_ALLOWED_ORIGINS` | 允许的 CORS Origin 列表（逗号分隔） | `http://localhost,http://127.0.0.1` |
 | `SEMANTIX_LOG_LEVEL` | 日志级别 | `INFO` |
+
+---
+
+## 🧰 生产部署
+
+生产部署建议与运维要点请参见：`D:\Semantix\DEPLOYMENT.md`。
 
 ---
 
