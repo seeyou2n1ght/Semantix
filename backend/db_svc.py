@@ -104,6 +104,7 @@ class DatabaseService:
             logger.info("Deleted %s notes from vector DB.", len(paths))
         except Exception as e:
             logger.error("Error deleting paths: %s", e)
+            raise
 
     def upsert_documents(self, data: List[Dict[str, Any]]):
         """
@@ -126,14 +127,23 @@ class DatabaseService:
                     return
                 except Exception as e:
                     logger.warning("merge_insert failed, fallback to delete+add: %s", e)
-            paths_to_update = [item["path"] for item in data]
-            vault_id = data[0].get("vault_id")
-            if vault_id:
-                self.delete_by_paths(vault_id, paths_to_update)
+
+            # Fallback: delete+add with per-vault scoping to avoid cross-vault stale rows
+            paths_by_vault: Dict[str, List[str]] = {}
+            for item in data:
+                vault_id = item.get("vault_id")
+                if not vault_id:
+                    raise ValueError("Missing vault_id in upsert data")
+                paths_by_vault.setdefault(vault_id, []).append(item["path"])
+
+            for vault_id, paths in paths_by_vault.items():
+                self.delete_by_paths(vault_id, paths)
+
             self.table.add(data)
             logger.info("Inserted %s notes.", len(data))
         except Exception as e:
             logger.error("Error inserting documents: %s", e)
+            raise
 
     def search(
         self,
