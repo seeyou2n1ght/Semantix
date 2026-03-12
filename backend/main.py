@@ -270,23 +270,13 @@ def semantic_search(request: SemanticSearchRequest):
         )
 
     try:
-        # Search in LanceDB
-        if request.with_context:
-            raw_results = db_svc.search_with_context(
-                vault_id=request.vault_id,
-                query_vector=query_vector,
-                top_k=request.top_k,
-                exclude_paths=request.exclude_paths,
-                min_similarity=request.min_similarity,
-            )
-        else:
-            raw_results = db_svc.search(
-                vault_id=request.vault_id,
-                query_vector=query_vector,
-                top_k=request.top_k,
-                exclude_paths=request.exclude_paths,
-                min_similarity=request.min_similarity,
-            )
+        raw_results = db_svc.search(
+            vault_id=request.vault_id,
+            query_vector=query_vector,
+            top_k=request.top_k,
+            exclude_paths=request.exclude_paths or [],
+            min_similarity=request.min_similarity or 0.0,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database search failed: {str(e)}")
 

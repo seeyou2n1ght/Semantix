@@ -29,7 +29,7 @@ export const DEFAULT_SETTINGS: SemantixSettings = {
     minSimilarityThreshold: 0.70,
     colorThresholdHigh: 0.85,
     colorThresholdMedium: 0.75,
-    enableExplainableResults: false,
+    enableExplainableResults: true,
     enableOnMobile: false
 };
 
@@ -143,7 +143,7 @@ export class SemantixSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Explainable Results')
-            .setDesc('开启后返回最匹配的段落片段（默认关闭以减少性能开销）。')
+            .setDesc('返回最匹配的段落片段而非全文开头。默认开启（索引时分块存储，无额外性能开销）。')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.enableExplainableResults)
                 .onChange(async (value) => {
