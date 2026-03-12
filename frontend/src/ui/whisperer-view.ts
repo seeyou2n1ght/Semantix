@@ -13,8 +13,10 @@ export class WhispererView extends ItemView {
     private indicatorEl: HTMLElement;
     private statusTextEl: HTMLElement;
     private indexStatusEl: HTMLElement;
+    private indexTimestampEl: HTMLElement;
     private indexProgressTextEl: HTMLElement;
     private indexProgressBarEl: HTMLElement;
+    private indexProgressRowEl: HTMLElement;
     private whispererContainer: HTMLElement;
     private whispererResultsEl: HTMLElement;
     private loadingEl: HTMLElement | null = null;
@@ -55,41 +57,47 @@ export class WhispererView extends ItemView {
         
         // --- 状态指示灯 ---
         const statusArea = wrapper.createEl("div", { cls: "semantix-status-area" });
-        statusArea.style.display = "flex";
-        statusArea.style.alignItems = "center";
+        statusArea.style.display = "block";
         statusArea.style.padding = "10px";
         statusArea.style.borderBottom = "1px solid var(--background-modifier-border)";
 
-        this.indicatorEl = statusArea.createEl("div");
+        const statusRow = statusArea.createEl("div");
+        statusRow.style.display = "flex";
+        statusRow.style.alignItems = "center";
+        statusRow.style.gap = "8px";
+
+        this.indicatorEl = statusRow.createEl("div");
         this.indicatorEl.style.width = "10px";
         this.indicatorEl.style.height = "10px";
         this.indicatorEl.style.borderRadius = "50%";
-        this.indicatorEl.style.marginRight = "10px";
         this.indicatorEl.style.backgroundColor = "var(--color-yellow)";
         
-        const statusTextCol = statusArea.createEl("div");
-        statusTextCol.style.display = "flex";
-        statusTextCol.style.flexDirection = "column";
-        statusTextCol.style.gap = "4px";
-
-        this.statusTextEl = statusTextCol.createEl("span", { text: "Connecting..." });
+        this.statusTextEl = statusRow.createEl("span", { text: "Connecting..." });
         this.statusTextEl.style.fontSize = "0.9em";
         this.statusTextEl.style.color = "var(--text-muted)";
 
-        this.indexStatusEl = statusTextCol.createEl("span", { text: "Indexed: -" });
+        this.indexStatusEl = statusArea.createEl("span", { text: "Indexed: -" });
         this.indexStatusEl.style.fontSize = "0.8em";
         this.indexStatusEl.style.color = "var(--text-muted)";
+        this.indexStatusEl.style.display = "block";
+        this.indexStatusEl.style.marginTop = "4px";
 
-        const progressRow = statusTextCol.createEl("div", { cls: "semantix-indexing-row" });
-        progressRow.style.display = "flex";
-        progressRow.style.flexDirection = "column";
-        progressRow.style.gap = "4px";
+        this.indexTimestampEl = statusArea.createEl("span", { text: "" });
+        this.indexTimestampEl.style.fontSize = "0.75em";
+        this.indexTimestampEl.style.color = "var(--text-muted)";
+        this.indexTimestampEl.style.display = "none";
 
-        this.indexProgressTextEl = progressRow.createEl("span", { text: "Indexing: 0 / 0" });
+        this.indexProgressRowEl = statusArea.createEl("div", { cls: "semantix-indexing-row" });
+        this.indexProgressRowEl.style.display = "none";
+        this.indexProgressRowEl.style.flexDirection = "column";
+        this.indexProgressRowEl.style.gap = "4px";
+        this.indexProgressRowEl.style.marginTop = "6px";
+
+        this.indexProgressTextEl = this.indexProgressRowEl.createEl("span", { text: "Indexing: 0 / 0" });
         this.indexProgressTextEl.style.fontSize = "0.8em";
         this.indexProgressTextEl.style.color = "var(--text-muted)";
 
-        const progressBar = progressRow.createEl("div", { cls: "semantix-progress-bar" });
+        const progressBar = this.indexProgressRowEl.createEl("div", { cls: "semantix-progress-bar" });
         progressBar.style.height = "6px";
         progressBar.style.background = "var(--background-modifier-border)";
         progressBar.style.borderRadius = "999px";
@@ -218,8 +226,16 @@ export class WhispererView extends ItemView {
 
     public updateIndexStatus(totalNotes: number, lastUpdated?: string) {
         if (!this.indexStatusEl) return;
-        const suffix = lastUpdated ? ` · ${lastUpdated}` : '';
-        this.indexStatusEl.innerText = `Indexed: ${totalNotes}${suffix}`;
+        this.indexStatusEl.innerText = `Indexed: ${totalNotes}`;
+        if (this.indexTimestampEl) {
+            if (lastUpdated) {
+                this.indexTimestampEl.innerText = `Last update: ${lastUpdated}`;
+                this.indexTimestampEl.style.display = "block";
+            } else {
+                this.indexTimestampEl.innerText = "";
+                this.indexTimestampEl.style.display = "none";
+            }
+        }
     }
 
     public showLoading() {
@@ -264,21 +280,19 @@ export class WhispererView extends ItemView {
     }
 
     public updateIndexingProgress(state: { active: boolean; current: number; total: number }) {
-        if (!this.indexProgressTextEl || !this.indexProgressBarEl) return;
+        if (!this.indexProgressTextEl || !this.indexProgressBarEl || !this.indexProgressRowEl) return;
 
         const total = Math.max(state.total, 0);
         const current = Math.max(state.current, 0);
 
         if (state.active && total > 0) {
+            this.indexProgressRowEl.style.display = "flex";
             const percent = Math.min(100, Math.round((current / total) * 100));
             this.indexProgressTextEl.innerText = `Indexing: ${current} / ${total}`;
             this.indexProgressBarEl.style.width = `${percent}%`;
             this.indexProgressBarEl.style.background = "var(--interactive-accent)";
-        } else if (state.active && total === 0) {
-            this.indexProgressTextEl.innerText = "Indexing: 0 / 0";
-            this.indexProgressBarEl.style.width = "0%";
-            this.indexProgressBarEl.style.background = "var(--interactive-accent)";
         } else {
+            this.indexProgressRowEl.style.display = "none";
             this.indexProgressTextEl.innerText = "Indexing: 0 / 0";
             this.indexProgressBarEl.style.width = "0%";
             this.indexProgressBarEl.style.background = "var(--text-faint)";
