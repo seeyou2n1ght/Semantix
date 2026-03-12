@@ -63,13 +63,10 @@ async def batch_index(request: BatchIndexRequest):
         raise HTTPException(status_code=500, detail=f"Embedding generation failed: {str(e)}")
 
     # 2. Prepare data for Milvus
-    data_to_insert = []
-    for i, _ in enumerate(paths):
-        data_to_insert.append({
-            "vector": embeddings[i],
-            "path": paths[i],
-            "text": texts[i]
-        })
+    data_to_insert = [
+        {"vector": v, "path": p, "text": t}
+        for p, t, v in zip(paths, texts, embeddings)
+    ]
     
     # 3. Upsert into database
     try:
