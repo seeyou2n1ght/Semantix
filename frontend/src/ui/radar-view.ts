@@ -1,6 +1,5 @@
-import { ItemView, WorkspaceLeaf } from 'obsidian';
+import { ItemView, WorkspaceLeaf, TFile } from 'obsidian';
 import SemantixPlugin from '../main';
-import { SearchResultItem } from '../api/types';
 
 export const RADAR_VIEW_TYPE = "semantix-radar-view";
 
@@ -147,7 +146,7 @@ export class RadarView extends ItemView {
                 if (isHidden && !loaded) {
                     recsContainer.empty();
                     recsContainer.createEl("span", { text: "Loading..." });
-                    const results = await this.plugin.orphanRadar.getRecommendationsForOrphan(orphan.file as any);
+                    const results = await this.plugin.orphanRadar.getRecommendationsForOrphan(orphan.file as TFile);
                     recsContainer.empty();
                     
                     if (results.length === 0) {
@@ -157,6 +156,8 @@ export class RadarView extends ItemView {
                             const recLi = recsContainer.createEl("div");
                             recLi.style.marginBottom = "4px";
                             recLi.style.fontSize = "0.85em";
+                            recLi.style.display = "flex";
+                            recLi.style.justifyContent = "space-between";
                             
                             const recLink = recLi.createEl("a", { text: this.getBasename(res.path) });
                             recLink.href = "#";
@@ -164,7 +165,14 @@ export class RadarView extends ItemView {
                                 e.preventDefault();
                                 this.plugin.app.workspace.openLinkText(res.path, "", false);
                             });
-                            recLi.createEl("span", { text: ` (${res.score.toFixed(2)})` });
+                            
+                            // 分数标签
+                            const scoreEl = recLi.createEl("span", { 
+                                text: `${Math.round(res.score * 100)}%`,
+                                cls: "semantix-score-badge"
+                            });
+                            scoreEl.style.fontWeight = "bold";
+                            scoreEl.style.color = this.getScoreColor(res.score);
                         }
                     }
                     loaded = true;
@@ -177,6 +185,19 @@ export class RadarView extends ItemView {
         const parts = path.split('/');
         const name = parts.length > 0 ? parts[parts.length - 1] : '';
         return (name || '').replace(/\.md$/, '');
+    }
+
+    private getScoreColor(score: number): string {
+        const thresholdHigh = this.plugin.settings.colorThresholdHigh || 0.85;
+        const thresholdMedium = this.plugin.settings.colorThresholdMedium || 0.75;
+        
+        if (score >= thresholdHigh) {
+            return "var(--color-green)";
+        }
+        if (score >= thresholdMedium) {
+            return "var(--color-blue)";
+        }
+        return "var(--color-yellow)";
     }
 
     /**

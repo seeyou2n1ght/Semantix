@@ -117,7 +117,8 @@ export class ApiClient {
         try {
             const payload: SemanticSearchRequest = {
                 ...request,
-                vault_id: this.vaultId
+                vault_id: this.vaultId,
+                min_similarity: request.min_similarity
             };
             const res = await requestUrl({
                 url: `${this.baseUrl}/search/semantic`,
@@ -156,17 +157,37 @@ export class ApiClient {
     }
 
     /**
-     * 清空向量数据库索引（危险操作）
+     * 清空向量数据库索引（两步确认）
+     * 第一步：请求清空，获取确认 token
+     * 第二步：使用 token 确认清空
      */
     async clearIndex(): Promise<boolean> {
         try {
-            const res = await requestUrl({
-                url: `${this.baseUrl}/index/clear`,
+            const requestRes = await requestUrl({
+                url: `${this.baseUrl}/index/clear/request`,
                 method: 'POST',
                 contentType: 'application/json',
                 headers: this.getAuthHeaders()
             });
-            return res.status === 200;
+            
+            if (requestRes.status !== 200 || !requestRes.json) {
+                return false;
+            }
+            
+            const token = requestRes.json.confirmation_token;
+            if (!token) {
+                return false;
+            }
+            
+            const confirmRes = await requestUrl({
+                url: `${this.baseUrl}/index/clear/confirm`,
+                method: 'POST',
+                contentType: 'application/json',
+                headers: this.getAuthHeaders(),
+                body: JSON.stringify({ confirmation_token: token })
+            });
+            
+            return confirmRes.status === 200;
         } catch (error) {
             console.error("Semantix: Clear index failed.", error);
             return false;

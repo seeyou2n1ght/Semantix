@@ -8,6 +8,7 @@ logger = logging.getLogger("semantix")
 
 COLLECTION_NAME = "semantix_notes"
 
+
 class DatabaseService:
     def __init__(self, db_path: str = "./semantix_lance", dim: int = 512):
         logger.info("Initializing LanceDB at %s...", db_path)
@@ -17,36 +18,59 @@ class DatabaseService:
 
     def _init_collection(self):
         # 使用 PyArrow 显式定义 LanceDB Schema
-        schema = pa.schema([
-            pa.field("vault_id", pa.string()),
-            pa.field("path", pa.string()),
-            pa.field("vector", pa.list_(pa.float32(), self.dim)),
-            pa.field("text", pa.string())
-        ])
-        
+        schema = pa.schema(
+            [
+                pa.field("vault_id", pa.string()),
+                pa.field("path", pa.string()),
+                pa.field("vector", pa.list_(pa.float32(), self.dim)),
+                pa.field("text", pa.string()),
+            ]
+        )
+
         if COLLECTION_NAME in self.db.table_names():
             self.table = self.db.open_table(COLLECTION_NAME)
             existing_fields = {field.name for field in self.table.schema}
             if "vault_id" not in existing_fields:
-                logger.warning("Existing table schema missing vault_id, recreating table...")
+                logger.warning(
+                    "Existing table schema missing vault_id, recreating table..."
+                )
                 self.db.drop_table(COLLECTION_NAME)
                 self.table = self.db.create_table(COLLECTION_NAME, schema=schema)
                 logger.info("Table recreated with vault_id.")
             else:
                 logger.info("Table %s already exists and opened.", COLLECTION_NAME)
         else:
-             # 表不存在则创建
-             logger.info("Creating table %s with dim %s...", COLLECTION_NAME, self.dim)
-             self.table = self.db.create_table(COLLECTION_NAME, schema=schema)
-             logger.info("Table created.")
+            # 表不存在则创建
+            logger.info("Creating table %s with dim %s...", COLLECTION_NAME, self.dim)
+            self.table = self.db.create_table(COLLECTION_NAME, schema=schema)
+            logger.info("Table created.")
 
     def count_notes(self, vault_id: str = None) -> int:
         try:
-            if not self.table: return 0
-            # 简单计数，LanceDB 原生支持返回表长度
+            if not self.table:
+                return 0
             if not vault_id:
                 return len(self.table)
-            # MVP: 通过物化进行过滤计数
+            try:
+                return self.table.count_rows(
+                    f"vault_id = '{self._escape_sql_string(vault_id)}'"
+                )
+            except (AttributeError, TypeError):
+                logger.warning(
+                    "count_rows not available, falling back to filter search"
+                )
+                try:
+                    query = (
+                        self.table.search(None)
+                        .where(f"vault_id = '{self._escape_sql_string(vault_id)}'")
+                        .limit(10_000_000)
+                    )
+                    return len(query.to_list())
+                except Exception:
+                    pass
+            logger.warning(
+                "Using slow fallback for count_notes with vault_id=%s", vault_id
+            )
             rows = self.table.to_list()
             return sum(1 for row in rows if row.get("vault_id") == vault_id)
         except Exception as e:
@@ -63,10 +87,12 @@ class DatabaseService:
     def delete_by_paths(self, vault_id: str, paths: List[str]):
         if not paths:
             return
-        
+
         try:
             # LanceDB 的 delete 使用类 SQL 的 where 子句
-            formatted_paths = ", ".join([f"'{self._escape_sql_string(p)}'" for p in paths])
+            formatted_paths = ", ".join(
+                [f"'{self._escape_sql_string(p)}'" for p in paths]
+            )
             where_clause = f"vault_id = '{self._escape_sql_string(vault_id)}' AND path IN ({formatted_paths})"
             self.table.delete(where_clause)
             logger.info("Deleted %s notes from vector DB.", len(paths))
@@ -81,19 +107,20 @@ class DatabaseService:
         """
         if not data:
             return
-            
+
         try:
             if hasattr(self.table, "merge_insert"):
                 try:
-                    self.table.merge_insert(["vault_id", "path"]) \
-                        .when_matched_update_all() \
-                        .when_not_matched_insert_all() \
-                        .execute(data)
+                    self.table.merge_insert(
+                        ["vault_id", "path"]
+                    ).when_matched_update_all().when_not_matched_insert_all().execute(
+                        data
+                    )
                     logger.info("Upserted %s notes.", len(data))
                     return
                 except Exception as e:
                     logger.warning("merge_insert failed, fallback to delete+add: %s", e)
-            paths_to_update = [item['path'] for item in data]
+            paths_to_update = [item["path"] for item in data]
             vault_id = data[0].get("vault_id")
             if vault_id:
                 self.delete_by_paths(vault_id, paths_to_update)
@@ -102,32 +129,57 @@ class DatabaseService:
         except Exception as e:
             logger.error("Error inserting documents: %s", e)
 
-    def search(self, vault_id: str, query_vector: List[float], top_k: int = 5, exclude_paths: List[str] = None) -> List[Dict[str, Any]]:
+    def search(
+        self,
+        vault_id: str,
+        query_vector: List[float],
+        top_k: int = 5,
+        exclude_paths: List[str] = None,
+        min_similarity: float = 0.0,
+    ) -> List[Dict[str, Any]]:
         try:
             query = self.table.search(query_vector).metric("cosine").limit(top_k)
-            
+
+            # LanceDB 原生距离范围过滤
+            if min_similarity > 0:
+                max_distance = 1.0 - min_similarity
+                query = query.distance_range(upper_bound=max_distance)
+
             where_clauses = [f"vault_id = '{self._escape_sql_string(vault_id)}'"]
             if exclude_paths and len(exclude_paths) > 0:
-                formatted_paths = ", ".join([f"'{self._escape_sql_string(p)}'" for p in exclude_paths])
+                formatted_paths = ", ".join(
+                    [f"'{self._escape_sql_string(p)}'" for p in exclude_paths]
+                )
                 where_clauses.append(f"path NOT IN ({formatted_paths})")
             if where_clauses:
                 query = query.where(" AND ".join(where_clauses))
-                
+
             res_list = query.to_list()
-            
+
             results = []
             for row in res_list:
                 distance = row["_distance"]
                 similarity = 1 - distance
-                results.append({
-                    "path": row["path"],
-                    "score": similarity,
-                    "snippet": row["text"][:200] + "..." if len(row["text"]) > 200 else row["text"]
-                })
+                results.append(
+                    {
+                        "path": row["path"],
+                        "score": similarity,
+                        "snippet": row["text"][:200] + "..."
+                        if len(row["text"]) > 200
+                        else row["text"],
+                    }
+                )
             return results
         except Exception as e:
             logger.error("Error searching: %s", e)
             return []
+
+    def clear_vault(self, vault_id: str):
+        try:
+            self.table.delete(f"vault_id = '{self._escape_sql_string(vault_id)}'")
+            logger.info("Cleared all notes for vault_id=%s", vault_id)
+        except Exception as e:
+            logger.error("Error clearing vault: %s", e)
 
     def clear_all(self):
         try:
@@ -135,4 +187,4 @@ class DatabaseService:
             self._init_collection()
             logger.info("Table cleared and recreated.")
         except Exception as e:
-             logger.error("Error clearing table: %s", e)
+            logger.error("Error clearing table: %s", e)

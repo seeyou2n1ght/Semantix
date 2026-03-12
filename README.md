@@ -36,12 +36,14 @@
 | 方法 | 路径 | 描述 |
 |---|---|---|
 | `GET` | `/health` | 探活，检测后端状态 |
+| `GET` | `/ready` | 就绪探针，检测模型是否加载完成 |
 | `GET` | `/metrics` | 运行指标（索引与检索计数、耗时） |
 | `POST` | `/index/batch` | 批量写入 / 更新笔记 embedding |
 | `POST` | `/index/delete` | 删除指定路径的 embedding |
 | `GET` | `/index/status` | 获取索引统计（按 vault_id） |
-| `POST` | `/index/clear` | 清空索引（危险操作） |
-| `POST` | `/search/semantic` | 语义相关笔记检索 |
+| `POST` | `/index/clear/request` | 请求清空索引，返回确认 token |
+| `POST` | `/index/clear/confirm` | 使用 token 确认清空索引 |
+| `POST` | `/search/semantic` | 语义相关笔记检索（支持 `min_similarity` 阈值） |
 
 ---
 
@@ -100,14 +102,22 @@ git clone https://github.com/your-org/semantix.git semantix
 | Sync Batch Interval | 增量同步间隔 (s) | `60` |
 | Filter Linked Notes | 是否过滤已链接笔记 | `true` |
 | Top N Results | 推荐结果最大数量 | `5` |
+| Minimum Similarity Threshold | 最低相似度截断（0.00-1.00） | `0.70` |
+| High Score Threshold (Green) | 高分颜色阈值 | `0.85` |
+| Medium Score Threshold (Blue) | 中分颜色阈值 | `0.75` |
 | Enable on Mobile | 移动端是否启用 | `false` |
 | Exclusion Rules | 不索引的路径（Glob，每行一个） | — |
 | Vault ID | 自动生成的 Vault 标识（基于 vault path 哈希） | — |
 
 点击 **\[Test Connection\]** 验证与后端的连通性。
 
-> **关于 Similarity**  
-> 语义检索结果返回的是“相似度”（数值越大越相似），前端显示为 `Similarity`。
+> **关于相似度分数**
+> - 语义检索结果返回的是"相似度"（数值越大越相似）
+> - 每个结果卡片显示百分比分数，并根据阈值显示不同颜色：
+>   - 🟢 绿色 (>= 高分阈值)：高度相关
+>   - 🔵 蓝色 (>= 中分阈值)：中度相关
+>   - 🟡 黄色 (< 中分阈值)：边缘相关
+> - 低于 Minimum Similarity Threshold 的结果会被后端过滤，宁缺毋滥
 
 ### 4. 后端安全与环境变量
 
@@ -138,10 +148,10 @@ git clone https://github.com/your-org/semantix.git semantix
   Markdown 降噪（剔除 YAML、代码块、图片语法等）
         │
         ▼
-  POST /search/semantic  →  后端 BGE embedding + LanceDB 检索
-        │
-        ▼
-  侧边栏渲染 Top N 相关笔记（标题 + 相似分 + 摘要）
+POST /search/semantic  →  后端 BGE embedding + LanceDB 检索（distance_range 过滤）
+         │
+         ▼
+   侧边栏渲染 Top N 相关笔记（标题 + 分数颜色标签 + 摘要）
 ```
 
 ### Orphan Node Rescuer
@@ -158,7 +168,9 @@ git clone https://github.com/your-org/semantix.git semantix
 - [x] Orphan Node Rescuer（MVP）
 - [x] 增量批量同步
 - [x] `GET /index/status` 索引统计面板
-- [x] 一键重建索引（`POST /index/clear`）
+- [x] 一键重建索引（两步确认机制）
+- [x] 相似度阈值过滤（LanceDB `distance_range()` 原生支持）
+- [x] 分数颜色标签（可自定义阈值区间）
 - [ ] 孤岛笔记专属长文本推荐算法（`POST /search/recommend_links`）
 - [ ] 侧边栏局部知识图谱可视化
 

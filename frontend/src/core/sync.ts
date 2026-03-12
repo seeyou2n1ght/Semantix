@@ -86,9 +86,8 @@ export class SyncManager {
     private startTimerIfNeeded() {
         if (this.syncTimer !== null || this.isFlushing) return; // 已经在跑了或正在 flush
 
-        const intervalMs = this.plugin.settings.syncBatchInterval * 1000;
+const intervalMs = this.plugin.settings.syncBatchInterval * 1000;
         
-        // @ts-ignore
         this.syncTimer = window.setTimeout(async () => {
             this.syncTimer = null;
             await this.flushQueue();

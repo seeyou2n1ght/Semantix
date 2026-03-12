@@ -230,9 +230,8 @@ export default class SemantixPlugin extends Plugin {
         }
     }
 
-    private startHealthTimer() {
+private startHealthTimer() {
         if (this.healthTimer !== null) return;
-        // @ts-ignore
         this.healthTimer = window.setInterval(() => {
             this.checkConnection();
         }, 30000);
@@ -247,8 +246,8 @@ export default class SemantixPlugin extends Plugin {
 
     private computeVaultId(): string {
         const vaultName = this.app.vault.getName();
-        const adapter: any = this.app.vault.adapter as any;
-        const basePath = typeof adapter?.getBasePath === 'function' ? adapter.getBasePath() : '';
+        const adapter = this.app.vault.adapter as { getBasePath?: () => string };
+        const basePath = typeof adapter.getBasePath === 'function' ? adapter.getBasePath() : '';
         const raw = `${vaultName}:${basePath}`;
         return this.hashString(raw);
     }

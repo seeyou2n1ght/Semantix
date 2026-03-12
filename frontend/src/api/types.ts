@@ -28,6 +28,7 @@ export interface SemanticSearchRequest {
     text: string;
     top_k: number;
     exclude_paths?: string[];
+    min_similarity?: number;
 }
 
 export interface SearchResultItem {
@@ -44,4 +45,17 @@ export interface IndexStatusResponse {
     total_notes: number;
     last_updated?: string;
     vault_id?: string;
+}
+
+export interface ClearIndexRequestResponse {
+    status: string;
+    message: string;
+    confirmation_token: string;
+    scope: string;
+}
+
+export interface ClearIndexConfirmResponse {
+    status: string;
+    message: string;
+    cleared_at: string;
 }

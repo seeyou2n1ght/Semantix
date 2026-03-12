@@ -10,6 +10,9 @@ export interface SemantixSettings {
     exclusionRules: string;
     filterLinkedNotes: boolean;
     topNResults: number;
+    minSimilarityThreshold: number;
+    colorThresholdHigh: number;
+    colorThresholdMedium: number;
     enableOnMobile: boolean;
 }
 
@@ -22,6 +25,9 @@ export const DEFAULT_SETTINGS: SemantixSettings = {
     exclusionRules: '',
     filterLinkedNotes: true,
     topNResults: 5,
+    minSimilarityThreshold: 0.70,
+    colorThresholdHigh: 0.85,
+    colorThresholdMedium: 0.75,
     enableOnMobile: false
 };
 
@@ -134,6 +140,54 @@ export class SemantixSettingTab extends PluginSettingTab {
                         this.plugin.settings.topNResults = parsed;
                         await this.plugin.saveSettings();
                     }
+                }));
+
+        new Setting(containerEl)
+            .setName('Minimum Similarity Threshold')
+            .setDesc('滤除低于此分数的弱相关笔记。调高此值可获得更精准的灵感，调低可获得更发散的联想。')
+            .addSlider(slider => slider
+                .setLimits(0, 100, 1)
+                .setValue(Math.round(this.plugin.settings.minSimilarityThreshold * 100))
+                .setDynamicTooltip()
+                .onChange(async (value) => {
+                    this.plugin.settings.minSimilarityThreshold = value / 100;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('High Score Threshold (Green)')
+            .setDesc(`相似度 >= 此值显示绿色。必须大于蓝色阈值。当前: ${(this.plugin.settings.colorThresholdHigh * 100).toFixed(0)}%`)
+            .addSlider(slider => slider
+                .setLimits(0, 100, 1)
+                .setValue(Math.round(this.plugin.settings.colorThresholdHigh * 100))
+                .setDynamicTooltip()
+                .onChange(async (value) => {
+                    const newValue = value / 100;
+                    // 确保高分阈值始终大于中分阈值
+                    if (newValue <= this.plugin.settings.colorThresholdMedium) {
+                        new Notice('高分阈值必须大于中分阈值！');
+                        return;
+                    }
+                    this.plugin.settings.colorThresholdHigh = newValue;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Medium Score Threshold (Blue)')
+            .setDesc(`相似度 >= 此值显示蓝色，< 此值显示黄色。当前: ${(this.plugin.settings.colorThresholdMedium * 100).toFixed(0)}%`)
+            .addSlider(slider => slider
+                .setLimits(0, 100, 1)
+                .setValue(Math.round(this.plugin.settings.colorThresholdMedium * 100))
+                .setDynamicTooltip()
+                .onChange(async (value) => {
+                    const newValue = value / 100;
+                    // 确保中分阈值始终小于高分阈值
+                    if (newValue >= this.plugin.settings.colorThresholdHigh) {
+                        new Notice('中分阈值必须小于高分阈值！');
+                        return;
+                    }
+                    this.plugin.settings.colorThresholdMedium = newValue;
+                    await this.plugin.saveSettings();
                 }));
 
         new Setting(containerEl)

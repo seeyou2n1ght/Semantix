@@ -91,7 +91,7 @@ export class WhispererView extends ItemView {
     /**
      * 渲染 Whisperer 的检索结果
      */
-    public renderWhispererResults(results: SearchResultItem[]) {
+    public renderWhispererResults(results: SearchResultItem[], colorSettings?: { colorThresholdHigh: number; colorThresholdMedium: number }) {
         if (!this.whispererContainer) return;
         this.whispererContainer.empty();
 
@@ -103,6 +103,12 @@ export class WhispererView extends ItemView {
             return;
         }
 
+        const defaultSettings = {
+            colorThresholdHigh: this.plugin.settings.colorThresholdHigh || 0.85,
+            colorThresholdMedium: this.plugin.settings.colorThresholdMedium || 0.75
+        };
+        const settings = colorSettings || defaultSettings;
+
         const listEl = this.whispererContainer.createEl("ul", { cls: "semantix-result-list" });
         listEl.style.paddingLeft = "20px";
         listEl.style.marginTop = "0px";
@@ -110,20 +116,46 @@ export class WhispererView extends ItemView {
         for (const item of results) {
             const li = listEl.createEl("li");
             li.style.marginBottom = "8px";
+            li.style.display = "flex";
+            li.style.justifyContent = "space-between";
+            li.style.alignItems = "flex-start";
             
-            const link = li.createEl("a", { text: this.getBasename(item.path) });
+            // 左侧：链接 + 摘要
+            const leftDiv = li.createEl("div");
+            leftDiv.style.flex = "1";
+            
+            const link = leftDiv.createEl("a", { text: this.getBasename(item.path) });
             link.href = "#";
             link.style.fontWeight = "bold";
-            // 点击调用 Obsidian API 打开目标笔记
             link.addEventListener("click", (e) => {
                 e.preventDefault();
                 this.plugin.app.workspace.openLinkText(item.path, "", false);
             });
             
-            li.createEl("div", { text: `Similarity: ${item.score.toFixed(4)}` }).style.fontSize = "0.8em";
-            li.createEl("div", { text: item.snippet }).style.fontSize = "0.85em";
-            li.createEl("div", { text: "---" }).style.color = "transparent";
+            leftDiv.createEl("div", { text: item.snippet }).style.fontSize = "0.85em";
+            
+            // 右侧：相似度分数标签
+            const scoreEl = li.createEl("span", { 
+                text: `${Math.round(item.score * 100)}%`,
+                cls: "semantix-score-badge"
+            });
+            scoreEl.style.fontSize = "0.75em";
+            scoreEl.style.fontWeight = "bold";
+            scoreEl.style.padding = "2px 6px";
+            scoreEl.style.borderRadius = "4px";
+            scoreEl.style.marginLeft = "8px";
+            scoreEl.style.color = this.getScoreColor(item.score, settings.colorThresholdHigh, settings.colorThresholdMedium);
         }
+    }
+
+    private getScoreColor(score: number, thresholdHigh: number, thresholdMedium: number): string {
+        if (score >= thresholdHigh) {
+            return "var(--color-green)";
+        }
+        if (score >= thresholdMedium) {
+            return "var(--color-blue)";
+        }
+        return "var(--color-yellow)";
     }
 
     private getBasename(path: string): string {

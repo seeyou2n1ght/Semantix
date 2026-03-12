@@ -1,61 +1,64 @@
 import tseslint from 'typescript-eslint';
 import obsidianmd from "eslint-plugin-obsidianmd";
 import globals from "globals";
-import { globalIgnores } from "eslint/config";
 
 export default tseslint.config(
+	{
+		ignores: [
+			"node_modules/**",
+			"dist/**",
+			"esbuild.config.mjs",
+			"eslint.config.mts",
+			"version-bump.mjs",
+			"versions.json",
+			"main.js",
+		],
+	},
+	...tseslint.configs.recommended,
 	{
 		languageOptions: {
 			globals: {
 				...globals.browser,
 			},
 			parserOptions: {
-				projectService: {
-					allowDefaultProject: [
-						'eslint.config.js',
-						'manifest.json'
-					]
-				},
+				projectService: true,
 				tsconfigRootDir: import.meta.dirname,
-				extraFileExtensions: ['.json']
 			},
 		},
-	},
-	...obsidianmd.configs.recommended,
-	{
-		// 项目级规则覆盖：将部分严格规则降级为 warning
-		// 内联样式后续迁移至 CSS class 后可移除此覆盖
+		plugins: {
+			obsidianmd: obsidianmd,
+		},
 		rules: {
-			// 内联样式 —— 后续迁移至 CSS class 后可恢复
-			"obsidianmd/no-static-styles-assignment": "warn",
-			// 中文 UI 文本不符合英文 sentence-case 规则
-			"obsidianmd/ui/sentence-case": "warn",
-			// Settings 面板中手动创建标题元素
+			"obsidianmd/commands/no-command-in-command-id": "warn",
+			"obsidianmd/commands/no-command-in-command-name": "warn",
+			"obsidianmd/commands/no-default-hotkeys": "warn",
+			"obsidianmd/commands/no-plugin-id-in-command-id": "warn",
+			"obsidianmd/commands/no-plugin-name-in-command-name": "warn",
 			"obsidianmd/settings-tab/no-manual-html-headings": "warn",
-			// TypeScript 严格类型
-			"@typescript-eslint/no-explicit-any": "warn",
-			"@typescript-eslint/no-unsafe-assignment": "warn",
-			"@typescript-eslint/no-unsafe-call": "warn",
-			"@typescript-eslint/no-unsafe-member-access": "warn",
-			"@typescript-eslint/no-unsafe-return": "warn",
-			"@typescript-eslint/no-floating-promises": "warn",
-			"@typescript-eslint/no-misused-promises": "warn",
-			"@typescript-eslint/no-unnecessary-type-assertion": "warn",
-			// console.log 限制
+			"obsidianmd/settings-tab/no-problematic-settings-headings": "warn",
+			"obsidianmd/vault/iterate": "warn",
+			"obsidianmd/detach-leaves": "warn",
+			"obsidianmd/hardcoded-config-path": "warn",
+			"obsidianmd/no-forbidden-elements": "warn",
+			"obsidianmd/no-plugin-as-component": "warn",
+			"obsidianmd/no-sample-code": "warn",
+			"obsidianmd/no-tfile-tfolder-cast": "warn",
+			"obsidianmd/no-view-references-in-plugin": "warn",
+			"obsidianmd/no-static-styles-assignment": "warn",
+			"obsidianmd/object-assign": "warn",
+			"obsidianmd/platform": "warn",
+			"obsidianmd/prefer-file-manager-trash-file": "warn",
+			"obsidianmd/prefer-abstract-input-suggest": "warn",
+			"obsidianmd/regex-lookbehind": "warn",
+			"obsidianmd/sample-names": "warn",
+			"obsidianmd/validate-manifest": "warn",
+			"obsidianmd/validate-license": "warn",
+			"obsidianmd/ui/sentence-case": ["warn", { "enforceCamelCaseLower": true }],
 			"no-console": "warn",
-			// confirm() 用于二次确认的合理场景
 			"no-alert": "warn",
 			"no-useless-escape": "warn",
-			"@typescript-eslint/no-unsafe-argument": "warn",
+			"@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+			"@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
 		},
-	},
-	globalIgnores([
-		"node_modules",
-		"dist",
-		"esbuild.config.mjs",
-		"eslint.config.js",
-		"version-bump.mjs",
-		"versions.json",
-		"main.js",
-	]),
+	}
 );

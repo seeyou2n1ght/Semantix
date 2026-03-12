@@ -42,7 +42,7 @@ export class Whisperer {
     /**
      * 编辑器变更时触发防抖搜索
      */
-    public onEditorChange(editor: Editor, view: MarkdownView) {
+    public onEditorChange(_editor: Editor, _view: MarkdownView): void {
         this.debouncedSearch();
     }
 
@@ -81,11 +81,15 @@ export class Whisperer {
             vault_id: this.plugin.vaultId,
             text: cleaned,
             top_k: this.plugin.settings.topNResults,
-            exclude_paths: excludes
+            exclude_paths: excludes,
+            min_similarity: this.plugin.settings.minSimilarityThreshold
         });
 
         if (response && response.results) {
-            this.renderResults(response.results);
+            this.renderResults(response.results, {
+                colorThresholdHigh: this.plugin.settings.colorThresholdHigh,
+                colorThresholdMedium: this.plugin.settings.colorThresholdMedium
+            });
         }
     }
 
@@ -115,14 +119,14 @@ export class Whisperer {
         return text;
     }
 
-    private renderResults(results: SearchResultItem[]) {
+    private renderResults(results: SearchResultItem[], colorSettings?: { colorThresholdHigh: number; colorThresholdMedium: number }) {
         // 定位 WhispererView 并渲染结果
         const leaves = this.plugin.app.workspace.getLeavesOfType(WHISPERER_VIEW_TYPE);
         if (leaves.length === 0) return;
 
         const leaf = leaves[0];
         if (leaf && leaf.view instanceof WhispererView) {
-            (leaf.view as WhispererView).renderWhispererResults(results);
+            (leaf.view as WhispererView).renderWhispererResults(results, colorSettings);
         }
     }
 }

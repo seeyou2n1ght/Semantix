@@ -27,12 +27,14 @@ Semantix 是一款 Obsidian 侧边栏插件。它通过打通 Obsidian 前端与
 
 ### 2.3 API 接口契约 (API Contract Draft)
 *   **`GET /health`**: 探活接口，返回后端状态。
+*   **`GET /ready`**: 就绪探针，返回模型是否加载完成。
 *   **`GET /metrics`**: 运行指标输出（索引与检索计数、耗时）。
 *   **`POST /index/batch`**: 批量写入/更新笔记 embedding。参数：`[{vault_id, path, text}]`。
 *   **`POST /index/delete`**: 删除指定路径的 embedding。参数：`{vault_id, paths}`。
 *   **`GET /index/status`**: 获取索引统计。参数：`vault_id` (query)。
-*   **`POST /index/clear`**: 清空索引（危险操作）。
-*   **`POST /search/semantic`**: 语义检索。参数：`{vault_id, text, top_k, exclude_paths}`。
+*   **`POST /index/clear/request`**: 请求清空索引，返回确认 token（两步确认机制）。
+*   **`POST /index/clear/confirm`**: 使用 token 确认清空索引。
+*   **`POST /search/semantic`**: 语义检索。参数：`{vault_id, text, top_k, exclude_paths, min_similarity}`。
 
 ---
 
@@ -70,7 +72,12 @@ Semantix 是一款 Obsidian 侧边栏插件。它通过打通 Obsidian 前端与
     *   **保留**: 标签 (`#tag`) 作为重要语义关键词保留。
 *   **展示与过滤**:
     *   列表形式展示后端返回的 Top N 结果（标题 + 分数 + 摘要）。
-    *   分数语义为“相似度”，数值越大越相似。
+    *   分数语义为"相似度"，数值越大越相似。
+    *   **相似度阈值截断**: 用户可设置 Minimum Similarity Threshold（默认 0.70），低于此分数的结果将被过滤，后端通过 LanceDB 原生 `distance_range()` 实现，宁缺毋滥。
+    *   **分数颜色标签**: 每个结果卡片显示百分比分数，并根据阈值显示不同颜色：
+        *   绿色 (>= 高分阈值，默认 0.85)：高度相关
+        *   蓝色 (>= 中分阈值，默认 0.75)：中度相关
+        *   黄色 (< 中分阈值)：边缘相关
     *   **已链接过滤**: 若设置中开启了过滤开关，插件需分析当前文件已拥有的内部链接，并在推荐结果中将其剔除。若有剔除，在列表底部显示小字提示（例：*已过滤 2 篇已知链接笔记*）。
     *   **操作**: 点击卡片调用 `app.workspace.openLinkText` 打开目标笔记。
 
@@ -115,8 +122,11 @@ Semantix 是一款 Obsidian 侧边栏插件。它通过打通 Obsidian 前端与
 6.  **Exclusion Rules**: 多行文本框，每行一个需要排除索引的路径模式 (Glob)。
 7.  **Filter Linked Notes**: Token 过滤开关，是否在推荐列表中隐藏当前笔记已链接过的文件。
 8.  **Top N Results**: 呈现的最大相关笔记数量。
-9.  **Enable on Mobile**: 移动端强制工作开关。
-10. **Vault ID**: 自动生成的 Vault 标识（基于 vault path 哈希）。
+9.  **Minimum Similarity Threshold**: 最低相似度截断值（0.00-1.00，默认 0.70），低于此分数的结果将被后端过滤。
+10. **High Score Threshold (Green)**: 高分颜色阈值（默认 0.85），相似度 >= 此值显示绿色。
+11. **Medium Score Threshold (Blue)**: 中分颜色阈值（默认 0.75），相似度 >= 此值显示蓝色，否则显示黄色。
+12. **Enable on Mobile**: 移动端强制工作开关。
+13. **Vault ID**: 自动生成的 Vault 标识（基于 vault path 哈希）。
 
 ---
 
@@ -137,6 +147,10 @@ Semantix 是一款 Obsidian 侧边栏插件。它通过打通 Obsidian 前端与
 
 *   **高级后端管理接口（已实现）**:
     *   `GET /index/status`: 获取后端当前已索引的笔记总数、最终同步时间等统计信息，用于前端更精准的状态展示。
-    *   **一键重建索引 (`POST /index/clear`)**: 允许在插件设置面板一键清空向量数据库并重新触发全量索引，应对数据破坏或更换 Vault 的场景。
+    *   `GET /ready`: 就绪探针，检测模型是否加载完成。
+    *   **一键重建索引（两步确认）**: 通过 `/index/clear/request` + `/index/clear/confirm` 实现安全的清空操作。
+*   **相似度过滤与可视化（已实现）**:
+    *   `min_similarity` 参数支持后端通过 LanceDB 原生 `distance_range()` 过滤低相关结果。
+    *   分数颜色标签：根据用户配置的阈值区间显示绿/蓝/黄三色。
 *   **孤岛雷达专属检索优化**: 根据孤岛笔记的特性提供专属算法（`POST /search/recommend_links`），区分于普通由于防抖触发的语义相关的短文本检索，更偏向于长文本和关键词权重的分析。
 *   **更细粒度的知识图谱可视化**: 在侧边栏提供小型局部关系网络图。
