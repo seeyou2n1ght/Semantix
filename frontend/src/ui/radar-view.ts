@@ -215,6 +215,7 @@ export class RadarView extends ItemView {
                             });
                             scoreEl.style.fontWeight = "bold";
                             scoreEl.style.color = this.getScoreColor(res.score);
+                            scoreEl.title = this.getScoreTooltip(res.score);
                         }
                     }
                     loaded = true;
@@ -227,6 +228,19 @@ export class RadarView extends ItemView {
         const parts = path.split('/');
         const name = parts.length > 0 ? parts[parts.length - 1] : '';
         return (name || '').replace(/\.md$/, '');
+    }
+
+    private getScoreTooltip(score: number): string {
+        const thresholdHigh = this.plugin.settings.colorThresholdHigh || 0.85;
+        const thresholdMedium = this.plugin.settings.colorThresholdMedium || 0.75;
+        
+        if (score >= thresholdHigh) {
+            return "高度相关：内容主题高度一致";
+        }
+        if (score >= thresholdMedium) {
+            return "相关：内容有较多共同点";
+        }
+        return "可能相关：内容有一定关联";
     }
 
     private getScoreColor(score: number): string {

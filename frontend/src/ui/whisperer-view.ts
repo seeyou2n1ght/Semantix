@@ -162,6 +162,11 @@ export class WhispererView extends ItemView {
             li.style.justifyContent = "space-between";
             li.style.alignItems = "flex-start";
             
+            // 结果悬浮提示：显示详细对比
+            if (queryText) {
+                li.title = this.getComparisonTooltip(queryText, item.snippet);
+            }
+            
             // 左侧：链接 + 摘要
             const leftDiv = li.createEl("div");
             leftDiv.style.flex = "1";
@@ -198,7 +203,24 @@ export class WhispererView extends ItemView {
             scoreEl.style.borderRadius = "4px";
             scoreEl.style.marginLeft = "8px";
             scoreEl.style.color = this.getScoreColor(item.score, settings.colorThresholdHigh, settings.colorThresholdMedium);
+            scoreEl.title = this.getScoreTooltip(item.score, settings.colorThresholdHigh, settings.colorThresholdMedium);
         }
+    }
+
+    private getScoreTooltip(score: number, thresholdHigh: number, thresholdMedium: number): string {
+        if (score >= thresholdHigh) {
+            return "高度相关：内容主题高度一致";
+        }
+        if (score >= thresholdMedium) {
+            return "相关：内容有较多共同点";
+        }
+        return "可能相关：内容有一定关联";
+    }
+
+    private getComparisonTooltip(queryText: string, snippet: string): string {
+        const queryPreview = queryText.length > 50 ? queryText.slice(0, 50) + "..." : queryText;
+        const snippetPreview = snippet.length > 80 ? snippet.slice(0, 80) + "..." : snippet;
+        return `查询内容：${queryPreview}\n\n匹配内容：${snippetPreview}`;
     }
 
     private renderHighlightedSnippet(container: HTMLElement, snippet: string, queryText: string) {
