@@ -194,7 +194,7 @@ export class WhispererView extends ItemView {
             
             // 右侧：相似度分数标签
             const scoreEl = li.createEl("span", { 
-                text: `${Math.round(item.score * 100)}%`,
+                text: item.score.toFixed(2),
                 cls: "semantix-score-badge"
             });
             scoreEl.style.fontSize = "0.75em";

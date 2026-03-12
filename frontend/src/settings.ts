@@ -193,7 +193,7 @@ export class SemantixSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Minimum Similarity Threshold')
-            .setDesc('滤除低于此分数的弱相关笔记。调高此值可获得更精准的灵感，调低可获得更发散的联想。')
+            .setDesc(`滤除低于此分数的弱相关笔记。调高此值可获得更精准的灵感，调低可获得更发散的联想。当前: ${this.plugin.settings.minSimilarityThreshold.toFixed(2)}`)
             .addSlider(slider => slider
                 .setLimits(0, 100, 1)
                 .setValue(Math.round(this.plugin.settings.minSimilarityThreshold * 100))
@@ -215,7 +215,7 @@ export class SemantixSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('High Score Threshold (Green)')
-            .setDesc(`相似度 >= 此值显示绿色。必须大于蓝色阈值。当前: ${(this.plugin.settings.colorThresholdHigh * 100).toFixed(0)}%`)
+            .setDesc(`相似度 >= 此值显示绿色。必须大于蓝色阈值。当前: ${this.plugin.settings.colorThresholdHigh.toFixed(2)}`)
             .addSlider(slider => slider
                 .setLimits(0, 100, 1)
                 .setValue(Math.round(this.plugin.settings.colorThresholdHigh * 100))
@@ -233,7 +233,7 @@ export class SemantixSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Medium Score Threshold (Blue)')
-            .setDesc(`相似度 >= 此值显示蓝色，< 此值显示黄色。当前: ${(this.plugin.settings.colorThresholdMedium * 100).toFixed(0)}%`)
+            .setDesc(`相似度 >= 此值显示蓝色，< 此值显示黄色。当前: ${this.plugin.settings.colorThresholdMedium.toFixed(2)}`)
             .addSlider(slider => slider
                 .setLimits(0, 100, 1)
                 .setValue(Math.round(this.plugin.settings.colorThresholdMedium * 100))

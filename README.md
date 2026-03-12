@@ -8,21 +8,22 @@
 
 ---
 
-## ✨ 功能概览
+## 功能概览
 
 | 功能 | 描述 |
 |---|---|
-| 🔍 **Real-time Whisperer** | 根据当前编辑或阅读内容，实时推荐语义相关的历史笔记 |
-| 🏝️ **Orphan Node Rescuer** | 扫描无任何双向链接的孤岛笔记，并推荐适合建立连接的节点 |
-| ⚡ **增量同步** | 监听 Vault 文件变更，批量同步至本地向量数据库，保持索引常新 |
-| 📊 **索引进度可见** | 侧边栏常驻显示索引进度与索引统计，用户可随时查看状态 |
-| 🧱 **骨架屏过渡** | 请求期间展示骨架占位并保留旧内容，减少闪烁 |
-| 🧩 **可解释结果** | 返回最匹配段落作为 snippet，索引时分块存储，无额外性能开销 |
-| 📱 **移动端降级** | 移动端优雅休眠，不注册事件、不轮询，杜绝耗电 |
+| Real-time Whisperer | 根据当前编辑或阅读内容，实时推荐语义相关的历史笔记 |
+| Orphan Node Rescuer | 扫描无任何双向链接的孤岛笔记，并推荐适合建立连接的节点 |
+| 增量同步 | 监听 Vault 文件变更，批量同步至本地向量数据库，保持索引常新 |
+| 索引进度可见 | 侧边栏常驻显示索引进度与索引统计，用户可随时查看状态 |
+| 骨架屏过渡 | 请求期间展示骨架占位并保留旧内容，减少闪烁 |
+| 可解释结果 | 返回最匹配段落作为 snippet，关键词高亮，索引时分块存储无额外开销 |
+| 悬浮提示 | 悬浮分数显示相似度含义，悬浮结果显示详细对比 |
+| 移动端降级 | 移动端优雅休眠，不注册事件、不轮询，杜绝耗电 |
 
 ---
 
-## 🏗️ 系统架构
+## 系统架构
 
 ```
 ┌─────────────────────────┐         ┌───────────────────────────────┐
@@ -50,12 +51,13 @@
 
 ---
 
-## 🚀 快速开始
+## 快速开始
 
 ### 前置条件
 
 - **Obsidian** >= 1.4.0
 - **Python** >= 3.11（后端服务）
+- **Node.js** >= 18（前端构建，可选）
 - **uv**（推荐的 Python 环境管理工具）
 
 ### 1. 部署后端服务
@@ -70,7 +72,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh   # macOS / Linux
 
 # 克隆仓库并进入后端目录
 git clone https://github.com/seeyou2n1ght/Semantix.git
-cd semantix/backend
+cd Semantix/backend
 
 # 使用 uv 创建虚拟环境并安装依赖（一步完成）
 uv sync
@@ -84,13 +86,21 @@ uv run uvicorn main:app --host 0.0.0.0 --port 8000
 
 ### 2. 安装 Obsidian 插件
 
-**手动安装**
+**方式一：手动安装（推荐）**
 ```bash
 # 在插件目录下克隆
 cd <your-vault>/.obsidian/plugins/
 git clone https://github.com/seeyou2n1ght/Semantix.git semantix
 ```
 然后在 Obsidian 设置 → 第三方插件中启用 **Semantix**。
+
+**方式二：从源码构建**
+```bash
+cd Semantix/frontend
+npm install
+npm run build
+```
+构建产物在 `main.js`，将 `main.js`、`manifest.json`、`styles.css` 复制到 `<your-vault>/.obsidian/plugins/semantix/`。
 
 ### 3. 配置插件
 
@@ -113,14 +123,16 @@ git clone https://github.com/seeyou2n1ght/Semantix.git semantix
 | Exclusion Rules | 不索引的路径（Glob，每行一个） | — |
 | Vault ID | 自动生成的 Vault 标识（基于 vault path 哈希） | — |
 
-点击 **\[Test Connection\]** 验证与后端的连通性。
+点击 **[Test Connection]** 验证与后端的连通性。
 
 > **关于相似度分数**
-> - 语义检索结果返回的是"相似度"（数值越大越相似）
-> - 每个结果卡片显示百分比分数，并根据阈值显示不同颜色：
->   - 🟢 绿色 (>= 高分阈值)：高度相关
->   - 🔵 蓝色 (>= 中分阈值)：中度相关
->   - 🟡 黄色 (< 中分阈值)：边缘相关
+> - 语义检索结果返回相似度（0.00-1.00，数值越大越相似）
+> - 每个结果卡片显示分数，并根据阈值显示不同颜色：
+>   - 绿色 (>= 高分阈值)：高度相关
+>   - 蓝色 (>= 中分阈值)：中度相关
+>   - 黄色 (< 中分阈值)：边缘相关
+> - 悬浮分数显示相似度含义说明
+> - 悬浮结果显示查询内容与匹配内容的详细对比
 > - 低于 Minimum Similarity Threshold 的结果会被后端过滤，宁缺毋滥
 
 ### 4. 后端安全与环境变量
@@ -135,21 +147,63 @@ git clone https://github.com/seeyou2n1ght/Semantix.git semantix
 
 ---
 
-## 🧰 生产部署
+## 开发指南
 
-生产部署建议与运维要点请参见：`D:\Semantix\DEPLOYMENT.md`。
+### 前端构建
+
+```bash
+cd frontend
+
+# 安装依赖
+npm install
+
+# 开发模式（监听文件变化）
+npm run dev
+
+# 生产构建
+npm run build
+
+# 代码检查
+npm run lint
+```
+
+**构建产物**：
+- `main.js` - 插件主入口
+- `styles.css` - 样式文件
+- `manifest.json` - 插件清单
+
+### 后端开发
+
+```bash
+cd backend
+
+# 安装依赖
+uv sync
+
+# 开发模式（热重载）
+uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+# 类型检查
+uv run mypy main.py
+```
 
 ---
 
-## ⚙️ 工作原理
+## 生产部署
+
+生产部署建议与运维要点请参见：`DEPLOYMENT.md`。
+
+---
+
+## 工作原理
 
 ### Real-time Whisperer
 
 ```
-用户编辑 / 切换文件
+用户编辑 / 切换文件 / 点击段落
         │
         ▼
-  防抖计时 (2000ms)
+  防抖计时 (2000ms / 300ms)
         │
         ▼
   提取上下文（当前段落 or 全文）
@@ -158,21 +212,24 @@ git clone https://github.com/seeyou2n1ght/Semantix.git semantix
   Markdown 降噪（剔除 YAML、代码块、图片语法等）
         │
         ▼
-POST /search/semantic  →  后端 BGE embedding + LanceDB 检索（distance_range 过滤）
-         │
-         ▼
-   侧边栏渲染 Top N 相关笔记（标题 + 分数颜色标签 + 摘要）
+POST /search/semantic  →  后端 BGE embedding + LanceDB 检索
+        │
+        ▼
+  侧边栏渲染结果
+    • 标题 + 相似度分数（0.00-1.00）
+    • 关键词高亮的 snippet
+    • 悬浮提示显示详细对比
 ```
 
 ### Orphan Node Rescuer
 
 通过 `app.metadataCache` 统计笔记的出度 (`links`) 与入度 (`backlinks`)，列出链接数为 0（或低于阈值）的孤岛笔记，点击后展示语义推荐连接。
 
-> 💡 **详细架构说明与组件剖析，请参阅：[ARCHITECTURE.md](./ARCHITECTURE.md)**
+> 详细架构说明与组件剖析，请参阅：[ARCHITECTURE.md](./ARCHITECTURE.md)
 
 ---
 
-## 🗺️ Roadmap
+## Roadmap
 
 - [x] Real-time Whisperer（MVP）
 - [x] Orphan Node Rescuer（MVP）
@@ -183,12 +240,14 @@ POST /search/semantic  →  后端 BGE embedding + LanceDB 检索（distance_ran
 - [x] 分数颜色标签（可自定义阈值区间）
 - [x] 索引时分块存储（段落级别匹配，可解释性默认开启）
 - [x] 光标活动监听（阅读时触发检索）
+- [x] 关键词高亮（N-gram 算法，停用字过滤）
+- [x] 悬浮提示（分数含义 + 详细对比）
 - [ ] 孤岛笔记专属长文本推荐算法（`POST /search/recommend_links`）
 - [ ] 侧边栏局部知识图谱可视化
 
 ---
 
-## 🤝 贡献
+## 贡献
 
 欢迎提交 Issue 和 Pull Request。提交代码请遵循 Conventional Commits 规范：
 
@@ -199,6 +258,6 @@ fix(sync): 修复 rename 事件导致的重复索引问题
 
 ---
 
-## 📄 License
+## License
 
-MIT © 2026 Semantix Contributors
+MIT 2026 Semantix Contributors

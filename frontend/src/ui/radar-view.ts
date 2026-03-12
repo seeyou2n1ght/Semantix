@@ -210,7 +210,7 @@ export class RadarView extends ItemView {
                             
                             // 分数标签
                             const scoreEl = recLi.createEl("span", { 
-                                text: `${Math.round(res.score * 100)}%`,
+                                text: res.score.toFixed(2),
                                 cls: "semantix-score-badge"
                             });
                             scoreEl.style.fontWeight = "bold";
