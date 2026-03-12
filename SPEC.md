@@ -27,9 +27,11 @@ Semantix 是一款 Obsidian 侧边栏插件。它通过打通 Obsidian 前端与
 
 ### 2.3 API 接口契约 (API Contract Draft)
 *   **`GET /health`**: 探活接口，返回后端状态。
-*   **`POST /index/batch`**: 批量写入/更新笔记 embedding。参数：`[{path, text}]`。
-*   **`POST /index/delete`**: 删除指定路径的 embedding。参数：`[path]`。
-*   **`POST /search/semantic`**: 语义检索。参数：`{text, top_k, exclude_paths}`。
+*   **`POST /index/batch`**: 批量写入/更新笔记 embedding。参数：`[{vault_id, path, text}]`。
+*   **`POST /index/delete`**: 删除指定路径的 embedding。参数：`{vault_id, paths}`。
+*   **`GET /index/status`**: 获取索引统计。参数：`vault_id` (query)。
+*   **`POST /index/clear`**: 清空索引（危险操作）。
+*   **`POST /search/semantic`**: 语义检索。参数：`{vault_id, text, top_k, exclude_paths}`。
 
 ---
 
@@ -67,6 +69,7 @@ Semantix 是一款 Obsidian 侧边栏插件。它通过打通 Obsidian 前端与
     *   **保留**: 标签 (`#tag`) 作为重要语义关键词保留。
 *   **展示与过滤**:
     *   列表形式展示后端返回的 Top N 结果（标题 + 分数 + 摘要）。
+    *   分数语义为“相似度”，数值越大越相似。
     *   **已链接过滤**: 若设置中开启了过滤开关，插件需分析当前文件已拥有的内部链接，并在推荐结果中将其剔除。若有剔除，在列表底部显示小字提示（例：*已过滤 2 篇已知链接笔记*）。
     *   **操作**: 点击卡片调用 `app.workspace.openLinkText` 打开目标笔记。
 
@@ -111,6 +114,7 @@ Semantix 是一款 Obsidian 侧边栏插件。它通过打通 Obsidian 前端与
 6.  **Filter Linked Notes**: Token 过滤开关，是否在推荐列表中隐藏当前笔记已链接过的文件。
 7.  **Top N Results**: 呈现的最大相关笔记数量。
 8.  **Enable on Mobile**: 移动端强制工作开关。
+9.  **Vault ID**: 自动生成的 Vault 标识（基于 vault path 哈希）。
 
 ---
 
@@ -129,7 +133,7 @@ Semantix 是一款 Obsidian 侧边栏插件。它通过打通 Obsidian 前端与
 ## 8. 未来演进路线 (Roadmap)
 以下功能不在 MVP (v0.2.0) 范围内，但作为未来版本的储备扩展点：
 
-*   **高级后端管理接口**:
+*   **高级后端管理接口（已实现）**:
     *   `GET /index/status`: 获取后端当前已索引的笔记总数、最终同步时间等统计信息，用于前端更精准的状态展示。
     *   **一键重建索引 (`POST /index/clear`)**: 允许在插件设置面板一键清空向量数据库并重新触发全量索引，应对数据破坏或更换 Vault 的场景。
 *   **孤岛雷达专属检索优化**: 根据孤岛笔记的特性提供专属算法（`POST /search/recommend_links`），区分于普通由于防抖触发的语义相关的短文本检索，更偏向于长文本和关键词权重的分析。

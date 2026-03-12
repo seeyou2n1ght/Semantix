@@ -38,6 +38,8 @@
 | `GET` | `/health` | 探活，检测后端状态 |
 | `POST` | `/index/batch` | 批量写入 / 更新笔记 embedding |
 | `POST` | `/index/delete` | 删除指定路径的 embedding |
+| `GET` | `/index/status` | 获取索引统计（按 vault_id） |
+| `POST` | `/index/clear` | 清空索引（危险操作） |
 | `POST` | `/search/semantic` | 语义相关笔记检索 |
 
 ---
@@ -98,8 +100,12 @@ git clone https://github.com/your-org/semantix.git semantix
 | Top N Results | 推荐结果最大数量 | `5` |
 | Enable on Mobile | 移动端是否启用 | `false` |
 | Exclusion Rules | 不索引的路径（Glob，每行一个） | — |
+| Vault ID | 自动生成的 Vault 标识（基于 vault path 哈希） | — |
 
 点击 **\[Test Connection\]** 验证与后端的连通性。
+
+> **关于 Similarity**  
+> 语义检索结果返回的是“相似度”（数值越大越相似），前端显示为 `Similarity`。
 
 ---
 
@@ -139,8 +145,8 @@ git clone https://github.com/your-org/semantix.git semantix
 - [x] Real-time Whisperer（MVP）
 - [x] Orphan Node Rescuer（MVP）
 - [x] 增量批量同步
-- [ ] `GET /index/status` 索引统计面板
-- [ ] 一键重建索引（`POST /index/clear`）
+- [x] `GET /index/status` 索引统计面板
+- [x] 一键重建索引（`POST /index/clear`）
 - [ ] 孤岛笔记专属长文本推荐算法（`POST /search/recommend_links`）
 - [ ] 侧边栏局部知识图谱可视化
 
