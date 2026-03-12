@@ -166,5 +166,42 @@ export class SemantixSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                     new Notice("Semantix: 移动端开关修改后请重启插件生效。");
                 }));
+
+        containerEl.createEl('h3', { text: '危险操作' });
+
+        new Setting(containerEl)
+            .setName('重建向量索引')
+            .setDesc('清空向量数据库并重新触发全量索引。此操作不可逆，索引期间插件功能可能暂时不可用。')
+            .addButton(btn => btn
+                .setButtonText("重建索引")
+                .setWarning()
+                .onClick(async () => {
+                    // 第一次确认
+                    const firstConfirm = confirm(
+                        "⚠️ 确定要清空向量数据库吗？\n\n此操作将删除所有已建立的语义索引数据，之后需要重新进行全量索引。"
+                    );
+                    if (!firstConfirm) return;
+
+                    // 第二次确认
+                    const secondConfirm = confirm(
+                        "⚠️ 再次确认：此操作不可逆！\n\n点击「确定」将立即清空向量库。"
+                    );
+                    if (!secondConfirm) return;
+
+                    btn.setButtonText("清空中...");
+                    btn.setDisabled(true);
+
+                    const success = await this.plugin.apiClient.clearIndex();
+                    if (success) {
+                        new Notice("Semantix: 向量索引已清空 ✅ 请手动触发全量索引或重启插件。");
+                        // 更新状态显示
+                        this.plugin.checkConnection();
+                    } else {
+                        new Notice("Semantix: 清空索引失败 ❌ 请检查后端服务。");
+                    }
+
+                    btn.setButtonText("重建索引");
+                    btn.setDisabled(false);
+                }));
     }
 }

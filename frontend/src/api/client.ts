@@ -155,6 +155,24 @@ export class ApiClient {
         }
     }
 
+    /**
+     * 清空向量数据库索引（危险操作）
+     */
+    async clearIndex(): Promise<boolean> {
+        try {
+            const res = await requestUrl({
+                url: `${this.baseUrl}/index/clear`,
+                method: 'POST',
+                contentType: 'application/json',
+                headers: this.getAuthHeaders()
+            });
+            return res.status === 200;
+        } catch (error) {
+            console.error("Semantix: Clear index failed.", error);
+            return false;
+        }
+    }
+
     public getVaultId(): string {
         return this.vaultId;
     }
