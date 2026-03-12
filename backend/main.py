@@ -33,12 +33,12 @@ db_svc = DatabaseService(db_path=db_path)
 # --- Routes ---
 
 @app.get("/health", tags=["System"])
-async def health_check():
+def health_check():
     """Simple health check endpoint."""
     return {"status": "ok", "message": "Semantix backend is running."}
 
 @app.get("/index/status", response_model=IndexStatusResponse, tags=["Index"])
-async def get_index_status():
+def get_index_status():
     """Get statistics about the current index."""
     count = db_svc.count_notes()
     return IndexStatusResponse(
@@ -47,7 +47,7 @@ async def get_index_status():
     )
 
 @app.post("/index/batch", tags=["Index"])
-async def batch_index(request: BatchIndexRequest):
+def batch_index(request: BatchIndexRequest):
     """Batch embed and index documents."""
     if not request.documents:
         return {"status": "success", "indexed": 0}
@@ -62,7 +62,7 @@ async def batch_index(request: BatchIndexRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Embedding generation failed: {str(e)}")
 
-    # 2. Prepare data for Milvus
+    # 2. Prepare data for LanceDB
     data_to_insert = []
     for i, _ in enumerate(paths):
         data_to_insert.append({
@@ -80,7 +80,7 @@ async def batch_index(request: BatchIndexRequest):
     return {"status": "success", "indexed": len(paths)}
 
 @app.post("/index/delete", tags=["Index"])
-async def delete_index(request: DeleteIndexRequest):
+def delete_index(request: DeleteIndexRequest):
     """Delete specific paths from the index."""
     if not request.paths:
         return {"status": "success"}
@@ -92,13 +92,13 @@ async def delete_index(request: DeleteIndexRequest):
          raise HTTPException(status_code=500, detail=f"Database deletion failed: {str(e)}")
 
 @app.post("/index/clear", tags=["Index"])
-async def clear_index():
+def clear_index():
     """Clear all documents from the index (Warning: destructive!)."""
     db_svc.clear_all()
     return {"status": "success", "message": "Index cleared."}
 
 @app.post("/search/semantic", response_model=SemanticSearchResponse, tags=["Search"])
-async def semantic_search(request: SemanticSearchRequest):
+def semantic_search(request: SemanticSearchRequest):
     """Search for similar notes based on semantic meaning."""
     if not request.text or len(request.text.strip()) == 0:
         return SemanticSearchResponse(results=[])
@@ -110,7 +110,7 @@ async def semantic_search(request: SemanticSearchRequest):
         raise HTTPException(status_code=500, detail=f"Embedding generation failed: {str(e)}")
 
     try:
-        # Search in Milvus
+        # Search in LanceDB
         raw_results = db_svc.search(
             query_vector=query_vector,
             top_k=request.top_k,
