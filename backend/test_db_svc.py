@@ -8,7 +8,7 @@ mock_pa = MagicMock()
 sys.modules["pyarrow"] = mock_pa
 
 import pytest
-from backend.db_svc import DatabaseService
+from db_svc import DatabaseService
 
 @pytest.fixture
 def mock_db_service():

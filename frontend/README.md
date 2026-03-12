@@ -1,90 +1,48 @@
-# Obsidian Sample Plugin
+# Semantix (语义雷达) Plugin for Obsidian
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+一款基于本地大模型与向量数据库的 Obsidian 侧边栏插件，自动发现笔记库中语义相近但缺乏显式链接的知识节点。
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+## 核心功能 (Core Features)
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open modal (simple)" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and output 'click' to the console.
-- Registers a global interval which logs 'setInterval' to the console.
+- **Real-time Whisperer (动态灵感)**
+  根据您当前在编辑器中输入的内容（或正在阅读的段落全文），在右侧边栏实时推荐语义相似的历史笔记。
+  - 支持防抖配置，避免频繁触发 API。
+  - 支持双向链接过滤，隐藏已经建立链接的笔记。
 
-## First time developing plugins?
+- **Orphan Node Rescuer (游离笔记雷达)**
+  一键扫描您的整个 Obsidian Vault，找出没有任何出度 (`links`) 和入度 (`backlinks`) 的“孤岛笔记”。
+  点击任意孤岛笔记，即可展开查看为其推荐的语义相似笔记，帮助您将灵感碎片连接入网。
 
-Quick starting guide for new plugin devs:
+- **Incremental Sync (增量同步)**
+  自动监听 Obsidian 的文件变更（创建、修改、重命名、删除），并将变更排入防抖队列，打包批量发送给本地向量数据库。
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `main.ts` to `main.js`.
-- Make changes to `main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+## 安装与开发步骤 (Development)
 
-## Releasing new releases
+本项目使用 TypeScript 和官方的 Obsidian Plugin API 构建。
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
+### 1. 环境准备
+- Node.js (建议 >= 18)
+- Obsidian 桌面版
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+### 2. 编译插件
+```bash
+# 安装依赖
+npm install
 
-## Adding your plugin to the community plugin list
+# 开发模式（监听文件变化并自动重新编译）
+npm run dev
 
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
-
-## How to use
-
-- Clone this repo.
-- Make sure your NodeJS is at least v16 (`node --version`).
-- `npm i` or `yarn` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
-
-## Manually installing the plugin
-
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
-
-## Improve code quality with eslint
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code. 
-- This project already has eslint preconfigured, you can invoke a check by running`npm run lint`
-- Together with a custom eslint [plugin](https://github.com/obsidianmd/eslint-plugin) for Obsidan specific code guidelines.
-- A GitHub action is preconfigured to automatically lint every commit on all branches.
-
-## Funding URL
-
-You can include funding URLs where people who use your plugin can financially support it.
-
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
-
-```json
-{
-    "fundingUrl": "https://buymeacoffee.com"
-}
+# 生产环境编译（压缩并生成 main.js）
+npm run build
 ```
 
-If you have multiple URLs, you can also do:
+### 3. 安装到 Vault
+由于本插件需要配合专门的本地 FastAPI 后端运作，尚未提交至官方插件市场。
+请将编译后的 `main.js`, `manifest.json` 和 `styles.css`（如有）直接拷贝到您的 Vault 插件目录下：
+`<your-vault>/.obsidian/plugins/obsidian-semantix/`
 
-```json
-{
-    "fundingUrl": {
-        "Buy Me a Coffee": "https://buymeacoffee.com",
-        "GitHub Sponsor": "https://github.com/sponsors",
-        "Patreon": "https://www.patreon.com/"
-    }
-}
-```
+然后在 Obsidian 设置的“第三方插件”中找到并启用 **Semantix**。
 
-## API Documentation
-
-See https://docs.obsidian.md
+## 后端服务依赖
+此插件必须连接到对应的 Python 向量服务（`semantix-backend`）。您可以在插件的设置面板中配置 `Backend API URL` 并点击“测试连接”。
+完整的后端代码和架构文档，请参阅代码仓库根目录。

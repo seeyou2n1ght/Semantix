@@ -1,11 +1,11 @@
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
-	"version": "1.0.0",
-	"minAppVersion": "0.15.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
+	"id": "obsidian-semantix",
+	"name": "Semantix (语义雷达)",
+	"version": "0.2.0",
+	"minAppVersion": "1.4.0",
+	"description": "基于本地大模型与向量数据库的隐式知识链接发现工具",
+	"author": "Semantix Contributors",
+	"authorUrl": "",
+	"fundingUrl": "",
 	"isDesktopOnly": false
 }

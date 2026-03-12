@@ -1,36 +1,148 @@
-import {App, PluginSettingTab, Setting} from "obsidian";
-import MyPlugin from "./main";
+import { App, PluginSettingTab, Setting, Notice } from "obsidian";
+import SemantixPlugin from "./main";
 
-export interface MyPluginSettings {
-	mySetting: string;
+export interface SemantixSettings {
+    backendUrl: string;
+    whispererScope: 'paragraph' | 'document';
+    debounceDelay: number;
+    syncBatchInterval: number;
+    exclusionRules: string;
+    filterLinkedNotes: boolean;
+    topNResults: number;
+    enableOnMobile: boolean;
 }
 
-export const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
-}
+export const DEFAULT_SETTINGS: SemantixSettings = {
+    backendUrl: 'http://localhost:8000',
+    whispererScope: 'paragraph',
+    debounceDelay: 2000,
+    syncBatchInterval: 60,
+    exclusionRules: '',
+    filterLinkedNotes: true,
+    topNResults: 5,
+    enableOnMobile: false
+};
 
-export class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
+export class SemantixSettingTab extends PluginSettingTab {
+    plugin: SemantixPlugin;
 
-	constructor(app: App, plugin: MyPlugin) {
-		super(app, plugin);
-		this.plugin = plugin;
-	}
+    constructor(app: App, plugin: SemantixPlugin) {
+        super(app, plugin);
+        this.plugin = plugin;
+    }
 
-	display(): void {
-		const {containerEl} = this;
+    display(): void {
+        const { containerEl } = this;
+        containerEl.empty();
+        containerEl.createEl('h2', { text: 'Semantix (语义雷达) 配置' });
 
-		containerEl.empty();
+        new Setting(containerEl)
+            .setName('Backend API URL')
+            .setDesc('本地或远程后端服务的接口地址')
+            .addText(text => text
+                .setPlaceholder('http://localhost:8000')
+                .setValue(this.plugin.settings.backendUrl)
+                .onChange(async (value) => {
+                    this.plugin.settings.backendUrl = value;
+                    await this.plugin.saveSettings();
+                }))
+            .addButton(btn => btn
+                .setButtonText("测试连接")
+                .onClick(async () => {
+                    btn.setButtonText("测试中...");
+                    const isConnected = await this.plugin.apiClient.checkHealth();
+                    if (isConnected) {
+                        new Notice("Semantix: 连接成功 ✅");
+                    } else {
+                        new Notice("Semantix: 连接失败 ❌ 请检查后端服务是否启动。");
+                    }
+                    this.plugin.checkConnection(); // update sidebar indicator
+                    btn.setButtonText("测试连接");
+                 }));
 
-		new Setting(containerEl)
-			.setName('Settings #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value;
-					await this.plugin.saveSettings();
-				}));
-	}
+        new Setting(containerEl)
+            .setName('Whisperer Scope')
+            .setDesc('动态灵感的作用域')
+            .addDropdown(dropdown => dropdown
+                .addOption('paragraph', 'Current Paragraph (当前段落)')
+                .addOption('document', 'Current File (当前全文)')
+                .setValue(this.plugin.settings.whispererScope)
+                .onChange(async (value) => {
+                    this.plugin.settings.whispererScope = value as 'paragraph' | 'document';
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Debounce Delay (ms)')
+            .setDesc('输入防抖延迟毫秒数 (500ms - 5000ms)')
+            .addText(text => text
+                .setValue(this.plugin.settings.debounceDelay.toString())
+                .onChange(async (value) => {
+                    const parsed = parseInt(value, 10);
+                    if (!isNaN(parsed)) {
+                        this.plugin.settings.debounceDelay = parsed;
+                        await this.plugin.saveSettings();
+                    }
+                }));
+
+        new Setting(containerEl)
+            .setName('Sync Batch Interval (s)')
+            .setDesc('增量同步批量发送的间隔秒数')
+            .addText(text => text
+                .setValue(this.plugin.settings.syncBatchInterval.toString())
+                .onChange(async (value) => {
+                    const parsed = parseInt(value, 10);
+                    if (!isNaN(parsed)) {
+                        this.plugin.settings.syncBatchInterval = parsed;
+                        await this.plugin.saveSettings();
+                    }
+                }));
+
+        new Setting(containerEl)
+            .setName('Filter Linked Notes')
+            .setDesc('是否在推荐列表中隐藏当前笔记已链接过的文件')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.filterLinkedNotes)
+                .onChange(async (value) => {
+                    this.plugin.settings.filterLinkedNotes = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Top N Results')
+            .setDesc('呈现的最大相关笔记数量')
+            .addText(text => text
+                .setValue(this.plugin.settings.topNResults.toString())
+                .onChange(async (value) => {
+                    const parsed = parseInt(value, 10);
+                    if (!isNaN(parsed)) {
+                        this.plugin.settings.topNResults = parsed;
+                        await this.plugin.saveSettings();
+                    }
+                }));
+
+        new Setting(containerEl)
+            .setName('Exclusion Rules')
+            .setDesc('每行输入一个不需要索引的路径模式 (如 Templates/)')
+            .addTextArea(text => text
+                .setPlaceholder('Templates/\nAttachments/')
+                .setValue(this.plugin.settings.exclusionRules)
+                .onChange(async (value) => {
+                    this.plugin.settings.exclusionRules = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        containerEl.createEl('h3', { text: '高级选项' });
+
+        new Setting(containerEl)
+            .setName('Enable on Mobile')
+            .setDesc('在移动端强制工作（开启可能增加耗电）')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableOnMobile)
+                .onChange(async (value) => {
+                    this.plugin.settings.enableOnMobile = value;
+                    await this.plugin.saveSettings();
+                    // Optional: require reload to take effect
+                }));
+    }
 }

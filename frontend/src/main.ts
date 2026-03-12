@@ -1,99 +1,149 @@
-import {App, Editor, MarkdownView, Modal, Notice, Plugin} from 'obsidian';
-import {DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab} from "./settings";
+import { App, Plugin, Notice, WorkspaceLeaf, TAbstractFile, MarkdownView } from 'obsidian';
+import { SemantixSettings, DEFAULT_SETTINGS, SemantixSettingTab } from "./settings";
+import { ApiClient } from './api/client';
+import { SemantixSidebarView, SEMANTIX_SIDEBAR_VIEW } from './ui/sidebar';
+import { SyncManager } from './core/sync';
+import { Whisperer } from './core/whisperer';
+import { OrphanRadar } from './core/radar';
 
-// Remember to rename these classes and interfaces!
+export default class SemantixPlugin extends Plugin {
+    settings: SemantixSettings;
+    apiClient: ApiClient;
+    syncManager: SyncManager;
+    whisperer: Whisperer;
+    orphanRadar: OrphanRadar;
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+    async onload() {
+        // 1. 加载配置
+        await this.loadSettings();
 
-	async onload() {
-		await this.loadSettings();
+        // 2. 初始化 API Client & Engines
+        this.apiClient = new ApiClient(this.settings);
+        this.syncManager = new SyncManager(this);
+        this.whisperer = new Whisperer(this);
+        this.orphanRadar = new OrphanRadar(this);
 
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
+        // 3. 注册配置面板
+        this.addSettingTab(new SemantixSettingTab(this.app, this));
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
+        // 4. 注册 Sidebar View
+        this.registerView(
+            SEMANTIX_SIDEBAR_VIEW,
+            (leaf) => new SemantixSidebarView(leaf, this)
+        );
 
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				editor.replaceSelection('Sample editor command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
+        // 5. 将 IconButton 添加到左侧，点击时打开侧边栏
+        this.addRibbonIcon('radar', 'Semantix 语义雷达', () => {
+            this.activateView();
+        });
 
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-				return false;
-			}
-		});
+        // 全局命令：扫描孤岛笔记
+        this.addCommand({
+            id: 'semantix-scan-orphans',
+            name: 'Semantix: 扫描并分析孤岛笔记 (Scan Orphan Notes)',
+            callback: () => {
+                this.activateView();
+                this.orphanRadar.scanAndRender();
+            }
+        });
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+        // 6. 等待工作区排布完成后打开视图并探活
+        this.app.workspace.onLayoutReady(() => {
+            this.activateView();
+            this.checkConnection();
+        });
 
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			new Notice("Click");
-		});
+        // 7. 注册增量同步与 Whisperer 事件
+        this.registerEvent(this.app.workspace.on('file-open', (file) => {
+            this.whisperer.onFileOpen(file);
+        }));
+        
+        this.registerEvent(this.app.workspace.on('editor-change', (editor, view) => {
+            if (view instanceof MarkdownView) {
+                this.whisperer.onEditorChange(editor, view);
+            }
+        }));
+        
+        this.registerEvent(this.app.vault.on('modify', (file: TAbstractFile) => {
+            this.syncManager.queueUpdate(file);
+        }));
+        
+        this.registerEvent(this.app.vault.on('create', (file: TAbstractFile) => {
+            this.syncManager.queueUpdate(file);
+        }));
+        
+        this.registerEvent(this.app.vault.on('delete', (file: TAbstractFile) => {
+            this.syncManager.queueDelete(file);
+        }));
+        
+        this.registerEvent(this.app.vault.on('rename', (file: TAbstractFile, oldPath: string) => {
+            this.syncManager.queueRename(file, oldPath);
+        }));
 
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+        console.log("Semantix Plugin loaded.");
+    }
 
-	}
+    async activateView() {
+        const { workspace } = this.app;
+        
+        let leaf: WorkspaceLeaf | null | undefined = null;
+        const leaves = workspace.getLeavesOfType(SEMANTIX_SIDEBAR_VIEW);
 
-	onunload() {
-	}
+        if (leaves.length > 0) {
+            // A leaf with our view already exists, use that
+            leaf = leaves[0];
+        } else {
+            // Our view could not be found in the workspace, create a new leaf
+            // in the right sidebar for it
+            leaf = workspace.getRightLeaf(false);
+            if (leaf) {
+               await leaf.setViewState({ type: SEMANTIX_SIDEBAR_VIEW, active: true });
+            }
+        }
 
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MyPluginSettings>);
-	}
+        // "Reveal" the leaf in case it is in a collapsed sidebar
+        if (leaf) {
+            workspace.revealLeaf(leaf);
+        }
+    }
 
-	async saveSettings() {
-		await this.saveData(this.settings);
-	}
-}
+    async checkConnection() {
+        const isConnected = await this.apiClient.checkHealth();
+        
+        // Find the view instance to update its status
+        const leaves = this.app.workspace.getLeavesOfType(SEMANTIX_SIDEBAR_VIEW);
+        let view: SemantixSidebarView | null = null;
+        if (leaves.length > 0) {
+            const leaf = leaves[0];
+            if (leaf && leaf.view instanceof SemantixSidebarView) {
+                view = leaf.view as SemantixSidebarView;
+            }
+        }
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
+        if (isConnected) {
+            console.log("Semantix: Backend connection successful.");
+            if (view) view.updateStatus('connected');
+        } else {
+            console.log("Semantix: Backend connection failed.");
+            new Notice("Semantix: 无法连接到本地 AI 后端，请检查配置或服务是否启动。");
+            if (view) view.updateStatus('disconnected');
+        }
+    }
 
-	onOpen() {
-		let {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
+    onunload() {
+        this.syncManager.clearTimer();
+        console.log("Semantix Plugin unloaded.");
+    }
 
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
-	}
+    async loadSettings() {
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    }
+
+    async saveSettings() {
+        await this.saveData(this.settings);
+        // 通知 apiClient 更新配置 URL
+        this.apiClient.updateSettings(this.settings);
+        // 配置更新后立即重新探活
+        this.checkConnection();
+    }
 }
