@@ -272,30 +272,60 @@ export class WhispererView extends ItemView {
     private extractKeywords(text: string): string[] {
         const keywords: Set<string> = new Set();
         
+        const stopChars = new Set([
+            '的', '是', '在', '了', '和', '与', '或', '也', '都', '就', '不', '有', '这', '那',
+            '我', '你', '他', '她', '它', '们', '个', '上', '下', '中', '来', '去', '到', '说',
+            '要', '会', '能', '对', '着', '过', '从', '把', '给', '向', '而', '但', '如', '所',
+            '以', '以', '为', '于', '之', '其', '者', '等', '时', '地', '得', '啊', '吗', '呢',
+            '吧', '呀', '哦', '哈', '嗯', '哎', '唉'
+        ]);
+        
         const chinese = text.match(/[\u4e00-\u9fa5]+/g) || [];
         for (const word of chinese) {
-            // 2-gram
-            for (let i = 0; i < word.length - 1; i++) {
-                keywords.add(word.slice(i, i + 2));
-            }
-            // 3-gram (for longer words)
+            if (word.length < 2) continue;
+            
+            // 3-gram: 必须不含停用字
             if (word.length >= 3) {
                 for (let i = 0; i < word.length - 2; i++) {
-                    keywords.add(word.slice(i, i + 3));
+                    const gram3 = word.slice(i, i + 3);
+                    const hasStopChar = gram3.split('').some(c => stopChars.has(c));
+                    if (!hasStopChar) {
+                        keywords.add(gram3);
+                    }
+                }
+            }
+            
+            // 2-gram: 必须不含停用字
+            for (let i = 0; i < word.length - 1; i++) {
+                const gram2 = word.slice(i, i + 2);
+                const hasStopChar = gram2.split('').some(c => stopChars.has(c));
+                if (!hasStopChar) {
+                    keywords.add(gram2);
                 }
             }
         }
         
-        const english = text.match(/[a-zA-Z]{2,}/g) || [];
+        const english = text.match(/[a-zA-Z]{3,}/g) || [];
+        const englishStopWords = new Set([
+            'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had',
+            'her', 'was', 'one', 'our', 'out', 'has', 'his', 'how', 'its', 'may',
+            'new', 'now', 'old', 'see', 'way', 'who', 'did', 'get', 'let', 'put'
+        ]);
         for (const word of english) {
-            keywords.add(word.toLowerCase());
+            const lower = word.toLowerCase();
+            if (!englishStopWords.has(lower)) {
+                keywords.add(lower);
+            }
         }
         
-        const stopWords = new Set(['的', '是', '在', '了', '和', '与', '或', '也', '都', '就', '不', '有', '这', '那', '我', '你', '他', '她', '它']);
+        const result = Array.from(keywords);
+        result.sort((a, b) => {
+            const aScore = a.length === 3 ? 3 : (a.length >= 4 ? 4 : 2);
+            const bScore = b.length === 3 ? 3 : (b.length >= 4 ? 4 : 2);
+            return bScore - aScore;
+        });
         
-        return Array.from(keywords)
-            .filter(w => !stopWords.has(w) && w.length >= 2)
-            .slice(0, 10);
+        return result.slice(0, 8);
     }
 
     private escapeRegex(str: string): string {
