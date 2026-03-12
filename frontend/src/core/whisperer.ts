@@ -29,11 +29,11 @@ export class Whisperer {
     }
 
 public getCursorActivityExtension(): Extension {
-        const self = this;
+        const onCursorActivity = () => this.onCursorActivity();
         return ViewPlugin.fromClass(class {
             update(update: ViewUpdate) {
                 if (update.selectionSet) {
-                    self.onCursorActivity();
+                    onCursorActivity();
                 }
             }
         });

@@ -268,7 +268,7 @@ export class WhispererView extends ItemView {
         
         const halfLen = Math.floor(maxLen / 2);
         let start = Math.max(0, firstMatchIndex - halfLen);
-        let end = Math.min(text.length, start + maxLen);
+        const end = Math.min(text.length, start + maxLen);
         
         if (end === text.length) {
             start = Math.max(0, end - maxLen);
