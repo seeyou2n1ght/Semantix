@@ -321,3 +321,13 @@ fix(sync): 修复 rename 事件导致的重复索引问题
 ## License
 
 MIT © 2026 Semantix Contributors
+
+---
+
+## 致谢
+
+感谢以下项目对本开发的帮助：
+
+- **[Antigravity](https://github.com/antigravity)** - 代码启发与架构参考
+- **[Codex](https://github.com/codex)** - 开发工具链支持
+- **[OpenCode](https://github.com/opencode)** - AI 辅助编程，让开发更高效
