@@ -1,4 +1,6 @@
 import { Editor, MarkdownView, TFile, debounce } from 'obsidian';
+import { ViewPlugin, ViewUpdate } from '@codemirror/view';
+import type { Extension } from '@codemirror/state';
 import SemantixPlugin from '../main';
 import { cleanMarkdown } from '../utils/markdown';
 import { SearchResultItem } from '../api/types';
@@ -7,20 +9,17 @@ import { WHISPERER_VIEW_TYPE, WhispererView } from '../ui/whisperer-view';
 export class Whisperer {
     plugin: SemantixPlugin;
     
-    // 缓存上一次发送的文本，避免无意义的重复搜索
     private lastSearchedText: string = "";
+    private lastParagraphText: string = "";
     
-    // 防抖发送请求
     public debouncedSearch: () => void;
+    private cursorActivityTimer: number | null = null;
 
     constructor(plugin: SemantixPlugin) {
         this.plugin = plugin;
         this.setupDebounce();
     }
 
-    /**
-     * 配置变更时重新创建 debounce 函数
-     */
     public setupDebounce() {
         this.debouncedSearch = debounce(
             this.handleSearchTrigger.bind(this),
@@ -29,21 +28,53 @@ export class Whisperer {
         );
     }
 
-    /**
-     * 文件打开时触发搜索
-     */
+    public getCursorActivityExtension(): Extension {
+        return ViewPlugin.define(() => ({
+            update: (update: ViewUpdate) => {
+                if (update.selectionSet) {
+                    this.onCursorActivity();
+                }
+            }
+        }));
+    }
+
     public async onFileOpen(file: TFile | null) {
         if (!file || file.extension !== 'md') return;
         
         this.lastSearchedText = "";
+        this.lastParagraphText = "";
         await this.handleSearchTrigger();
     }
 
-    /**
-     * 编辑器变更时触发防抖搜索
-     */
     public onEditorChange(_editor: Editor, _view: MarkdownView): void {
         this.debouncedSearch();
+    }
+
+    public onCursorActivity(): void {
+        if (this.plugin.settings.whispererScope === 'document') return;
+        
+        const view = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!view || !view.file) return;
+        
+        const editor = view.editor;
+        const cursor = editor.getCursor();
+        const paragraphText = this.extractParagraph(editor, cursor.line);
+        const cleaned = this.cleanText(paragraphText);
+        
+        if (cleaned === this.lastParagraphText) return;
+        this.lastParagraphText = cleaned;
+        
+        if (this.cursorActivityTimer !== null) {
+            window.clearTimeout(this.cursorActivityTimer);
+        }
+        
+        this.cursorActivityTimer = window.setTimeout(() => {
+            this.handleSearchTrigger();
+        }, 300);
+    }
+
+    private cleanText(text: string): string {
+        return cleanMarkdown(text).trim().slice(0, 100);
     }
 
     private async handleSearchTrigger() {
@@ -64,7 +95,6 @@ export class Whisperer {
         if (cleaned === this.lastSearchedText) return;
         this.lastSearchedText = cleaned;
 
-        // 构建排除列表
         let excludes: string[] = [view.file.path];
 
         if (this.plugin.settings.filterLinkedNotes) {
@@ -101,7 +131,6 @@ export class Whisperer {
         let text = editor.getLine(startLineNo);
         if (text.trim() === '') return '';
         
-        // 向上扫描直到空行
         let currentLine = startLineNo - 1;
         while (currentLine >= 0) {
             const lineText = editor.getLine(currentLine);
@@ -110,7 +139,6 @@ export class Whisperer {
             currentLine--;
         }
 
-        // 向下扫描直到空行
         currentLine = startLineNo + 1;
         const totalLines = editor.lineCount();
         while (currentLine < totalLines) {
@@ -124,7 +152,6 @@ export class Whisperer {
     }
 
     private renderResults(results: SearchResultItem[], colorSettings?: { colorThresholdHigh: number; colorThresholdMedium: number }) {
-        // 定位 WhispererView 并渲染结果
         const leaves = this.plugin.app.workspace.getLeavesOfType(WHISPERER_VIEW_TYPE);
         if (leaves.length === 0) return;
 

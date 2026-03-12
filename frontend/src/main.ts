@@ -41,6 +41,11 @@ export default class SemantixPlugin extends Plugin {
         this.whisperer = new Whisperer(this);
         this.orphanRadar = new OrphanRadar(this);
 
+        // 2.1 注册 CodeMirror 扩展（光标活动监听）
+        if (!this.isMobileHibernating) {
+            this.registerEditorExtension(this.whisperer.getCursorActivityExtension());
+        }
+
         // 3. 注册配置面板
         this.addSettingTab(new SemantixSettingTab(this.app, this));
 
