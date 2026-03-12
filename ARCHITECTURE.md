@@ -53,6 +53,7 @@
 *   **索引时分块存储**: 文档在 `upsert_documents` 时自动分块
     *   每个段落独立计算 embedding
     *   检索时按 path 聚合，返回最高分 chunk
+*   **Snippet 截断**: `_truncate_snippet` 方法将匹配段落截断至 120 字符，按词边界切分
 *   **统计去重**: `count_notes` 按 path 去重，保持文档级别计数
 
 ### ✂️ 分块器 (`backend/utils/chunker.py`)

@@ -174,7 +174,11 @@ export class WhispererView extends ItemView {
                 this.plugin.app.workspace.openLinkText(item.path, "", false);
             });
             
-            leftDiv.createEl("div", { text: item.snippet }).style.fontSize = "0.85em";
+            const snippetEl = leftDiv.createEl("div", { text: item.snippet });
+            snippetEl.style.fontSize = "0.85em";
+            snippetEl.style.color = "var(--text-muted)";
+            snippetEl.style.marginTop = "4px";
+            snippetEl.style.lineHeight = "1.4";
             
             // 右侧：相似度分数标签
             const scoreEl = li.createEl("span", { 
