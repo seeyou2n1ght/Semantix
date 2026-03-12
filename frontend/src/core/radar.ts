@@ -74,7 +74,8 @@ export class OrphanRadar {
             vault_id: this.plugin.vaultId,
             text: query,
             top_k: this.plugin.settings.topNResults,
-            exclude_paths: excludes
+            exclude_paths: excludes,
+            with_context: this.plugin.settings.enableExplainableResults
         });
         
         return response ? response.results : [];

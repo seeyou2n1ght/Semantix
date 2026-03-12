@@ -266,6 +266,7 @@ public renderWhispererResults(results, colorSettings) {
 
 **决策补充：**
 - 解释性作为可选开关，默认关闭以规避性能回退；开启后对搜索流程加额外处理。
+- snippet 默认只展示 Top-1 最匹配段落（后续可扩展 Top-2/3 展开）。
 
 ### 4.3 性能开销分析
 
@@ -400,6 +401,7 @@ def get_chunks_with_embeddings(path: str, text: str):
 - [ ] 是否需要缓存？缓存过期策略？
 - [ ] 是否需要高亮关键词？如何实现？
 - [x] 解释性作为可选开关（默认关闭）。
+- [x] snippet 默认只展示 Top-1 最匹配段落。
 
 ---
 

@@ -2,7 +2,11 @@ import logging
 import lancedb
 import os
 import pyarrow as pa
-from typing import List, Dict, Any
+from collections import OrderedDict
+from hashlib import md5
+from typing import List, Dict, Any, Tuple
+
+from utils.chunker import split_into_chunks
 
 logger = logging.getLogger("semantix")
 
@@ -15,6 +19,8 @@ class DatabaseService:
         self.db = lancedb.connect(db_path)
         self.dim = dim
         self._init_collection()
+        self._chunk_cache: OrderedDict[str, Tuple[str, List[str], List[List[float]]]] = OrderedDict()
+        self._chunk_cache_max = 256
 
     def _init_collection(self):
         # 使用 PyArrow 显式定义 LanceDB Schema
@@ -173,6 +179,105 @@ class DatabaseService:
         except Exception as e:
             logger.error("Error searching: %s", e)
             return []
+
+    def search_with_context(
+        self,
+        vault_id: str,
+        query_vector: List[float],
+        top_k: int = 5,
+        exclude_paths: List[str] = None,
+        min_similarity: float = 0.0,
+    ) -> List[Dict[str, Any]]:
+        try:
+            query = self.table.search(query_vector).metric("cosine").limit(top_k)
+
+            if min_similarity > 0:
+                max_distance = 1.0 - min_similarity
+                query = query.distance_range(upper_bound=max_distance)
+
+            where_clauses = [f"vault_id = '{self._escape_sql_string(vault_id)}'"]
+            if exclude_paths and len(exclude_paths) > 0:
+                formatted_paths = ", ".join(
+                    [f"'{self._escape_sql_string(p)}'" for p in exclude_paths]
+                )
+                where_clauses.append(f"path NOT IN ({formatted_paths})")
+            if where_clauses:
+                query = query.where(" AND ".join(where_clauses))
+
+            res_list = query.to_list()
+
+            results = []
+            for row in res_list:
+                distance = row["_distance"]
+                similarity = 1 - distance
+                text = row.get("text", "") or ""
+
+                snippet = text[:200] + "..." if len(text) > 200 else text
+                matched_idx = None
+
+                chunks, vectors = self._get_chunks_with_embeddings(
+                    row.get("vault_id", vault_id), row.get("path", ""), text
+                )
+                if chunks and vectors:
+                    matched_idx, _ = self._best_chunk(query_vector, vectors)
+                    if matched_idx is not None and 0 <= matched_idx < len(chunks):
+                        snippet = chunks[matched_idx]
+
+                results.append(
+                    {
+                        "path": row["path"],
+                        "score": similarity,
+                        "snippet": snippet,
+                        "matched_chunk_index": matched_idx,
+                    }
+                )
+            return results
+        except Exception as e:
+            logger.error("Error searching with context: %s", e)
+            return []
+
+    def _best_chunk(self, query_vector: List[float], chunk_vectors: List[List[float]]) -> Tuple[int, float]:
+        best_idx = 0
+        best_score = -1.0
+        for i, vec in enumerate(chunk_vectors):
+            score = 0.0
+            for q, v in zip(query_vector, vec):
+                score += q * v
+            if score > best_score:
+                best_score = score
+                best_idx = i
+        return best_idx, best_score
+
+    def _get_chunks_with_embeddings(
+        self, vault_id: str, path: str, text: str
+    ) -> Tuple[List[str], List[List[float]]]:
+        if not text:
+            return [], []
+
+        cache_key = f"{vault_id}:{path}"
+        text_hash = md5(text.encode("utf-8")).hexdigest()
+
+        cached = self._chunk_cache.get(cache_key)
+        if cached:
+            cached_hash, cached_chunks, cached_vectors = cached
+            if cached_hash == text_hash:
+                self._chunk_cache.move_to_end(cache_key)
+                return cached_chunks, cached_vectors
+
+        chunks = split_into_chunks(text)
+        if not chunks:
+            return [], []
+
+        from model_svc import model_svc
+
+        vectors = model_svc.encode(chunks)
+
+        self._chunk_cache[cache_key] = (text_hash, chunks, vectors)
+        self._chunk_cache.move_to_end(cache_key)
+        if len(self._chunk_cache) > self._chunk_cache_max:
+            self._chunk_cache.popitem(last=False)
+
+        return chunks, vectors
 
     def clear_vault(self, vault_id: str):
         try:

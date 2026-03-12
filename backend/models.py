@@ -32,12 +32,16 @@ class SemanticSearchRequest(BaseModel):
     min_similarity: Optional[float] = Field(
         0.0, ge=0.0, le=1.0, description="Minimum similarity threshold (0.0-1.0)"
     )
+    with_context: Optional[bool] = Field(
+        False, description="Return most relevant chunk snippet if enabled"
+    )
 
 
 class SearchResultItem(BaseModel):
     path: str
     score: float
     snippet: str
+    matched_chunk_index: Optional[int] = None
 
 
 class SemanticSearchResponse(BaseModel):

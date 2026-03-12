@@ -29,12 +29,14 @@ export interface SemanticSearchRequest {
     top_k: number;
     exclude_paths?: string[];
     min_similarity?: number;
+    with_context?: boolean;
 }
 
 export interface SearchResultItem {
     path: string;
     score: number;
     snippet: string;
+    matched_chunk_index?: number;
 }
 
 export interface SemanticSearchResponse {

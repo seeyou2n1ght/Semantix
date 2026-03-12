@@ -83,7 +83,8 @@ export class Whisperer {
             text: cleaned,
             top_k: this.plugin.settings.topNResults,
             exclude_paths: excludes,
-            min_similarity: this.plugin.settings.minSimilarityThreshold
+            min_similarity: this.plugin.settings.minSimilarityThreshold,
+            with_context: this.plugin.settings.enableExplainableResults
         });
 
         if (response && response.results) {

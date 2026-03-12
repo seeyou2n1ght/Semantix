@@ -13,6 +13,7 @@ export interface SemantixSettings {
     minSimilarityThreshold: number;
     colorThresholdHigh: number;
     colorThresholdMedium: number;
+    enableExplainableResults: boolean;
     enableOnMobile: boolean;
 }
 
@@ -28,6 +29,7 @@ export const DEFAULT_SETTINGS: SemantixSettings = {
     minSimilarityThreshold: 0.70,
     colorThresholdHigh: 0.85,
     colorThresholdMedium: 0.75,
+    enableExplainableResults: false,
     enableOnMobile: false
 };
 
@@ -151,6 +153,16 @@ export class SemantixSettingTab extends PluginSettingTab {
                 .setDynamicTooltip()
                 .onChange(async (value) => {
                     this.plugin.settings.minSimilarityThreshold = value / 100;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Explainable Results')
+            .setDesc('开启后返回最匹配的段落片段（默认关闭以减少性能开销）。')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableExplainableResults)
+                .onChange(async (value) => {
+                    this.plugin.settings.enableExplainableResults = value;
                     await this.plugin.saveSettings();
                 }));
 

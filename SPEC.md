@@ -131,8 +131,9 @@ Semantix 是一款 Obsidian 侧边栏插件。它通过打通 Obsidian 前端与
 9.  **Minimum Similarity Threshold**: 最低相似度截断值（0.00-1.00，默认 0.70），低于此分数的结果将被后端过滤。
 10. **High Score Threshold (Green)**: 高分颜色阈值（默认 0.85），相似度 >= 此值显示绿色。
 11. **Medium Score Threshold (Blue)**: 中分颜色阈值（默认 0.75），相似度 >= 此值显示蓝色，否则显示黄色。
-12. **Enable on Mobile**: 移动端强制工作开关。
-13. **Vault ID**: 自动生成的 Vault 标识（基于 vault path 哈希）。
+12. **Explainable Results**: 可解释结果开关（返回最匹配段落作为 snippet）。
+13. **Enable on Mobile**: 移动端强制工作开关。
+14. **Vault ID**: 自动生成的 Vault 标识（基于 vault path 哈希）。
 
 ---
 
