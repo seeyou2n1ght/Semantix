@@ -44,8 +44,9 @@ export class SemantixSettingTab extends PluginSettingTab {
     display(): void {
         const { containerEl } = this;
         containerEl.empty();
-        containerEl.createEl('h2', { text: 'Semantix (语义雷达) 配置' });
+        new Setting(containerEl).setName('Semantix (语义雷达) 配置').setHeading();
 
+        new Setting(containerEl).setName('连接与身份').setHeading();
         new Setting(containerEl)
             .setName('Backend API URL')
             .setDesc('本地或远程后端服务的接口地址')
@@ -84,6 +85,75 @@ export class SemantixSettingTab extends PluginSettingTab {
             });
 
         new Setting(containerEl)
+            .setName('Vault ID')
+            .setDesc('自动生成的 Vault 标识（基于 vault path 哈希）')
+            .addText(text => text
+                .setValue(this.plugin.vaultId || '')
+                .setDisabled(true));
+
+        new Setting(containerEl).setName('索引与同步').setHeading();
+
+        new Setting(containerEl)
+            .setName('初始化向量雷达')
+            .setDesc('全量索引当前 Vault。进度不会持久化，关闭或重启将重置。')
+            .addButton(btn => btn
+                .setButtonText("开始索引")
+                .setDisabled(this.plugin.isFullIndexingActive())
+                .onClick(async () => {
+                    btn.setDisabled(true);
+                    btn.setButtonText("索引中...");
+                    await this.plugin.startFullIndexing();
+                    this.display();
+                }));
+
+        new Setting(containerEl)
+            .setName('取消当前索引')
+            .setDesc('请求取消当前全量索引，当前批次完成后停止。')
+            .addButton(btn => btn
+                .setButtonText("取消索引")
+                .setDisabled(!this.plugin.isFullIndexingActive())
+                .onClick(() => {
+                    this.plugin.cancelFullIndexing();
+                    this.display();
+                }));
+
+        new Setting(containerEl)
+            .setName('Sync Batch Interval (s)')
+            .setDesc('增量同步批量发送的间隔秒数')
+            .addText(text => text
+                .setValue(this.plugin.settings.syncBatchInterval.toString())
+                .onChange(async (value) => {
+                    const parsed = parseInt(value, 10);
+                    if (!isNaN(parsed)) {
+                        this.plugin.settings.syncBatchInterval = parsed;
+                        await this.plugin.saveSettings();
+                    }
+                }));
+
+        new Setting(containerEl)
+            .setName('Exclusion Rules')
+            .setDesc('每行输入一个不需要索引的路径模式 (如 Templates/)')
+            .addTextArea(text => text
+                .setPlaceholder('Templates/\nAttachments/')
+                .setValue(this.plugin.settings.exclusionRules)
+                .onChange(async (value) => {
+                    this.plugin.settings.exclusionRules = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Explainable Results')
+            .setDesc('开启后返回最匹配的段落片段（默认关闭以减少性能开销）。')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableExplainableResults)
+                .onChange(async (value) => {
+                    this.plugin.settings.enableExplainableResults = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl).setName('搜索与推荐').setHeading();
+
+        new Setting(containerEl)
             .setName('Whisperer Scope')
             .setDesc('动态灵感的作用域')
             .addDropdown(dropdown => dropdown
@@ -106,29 +176,6 @@ export class SemantixSettingTab extends PluginSettingTab {
                         this.plugin.settings.debounceDelay = parsed;
                         await this.plugin.saveSettings();
                     }
-                }));
-
-        new Setting(containerEl)
-            .setName('Sync Batch Interval (s)')
-            .setDesc('增量同步批量发送的间隔秒数')
-            .addText(text => text
-                .setValue(this.plugin.settings.syncBatchInterval.toString())
-                .onChange(async (value) => {
-                    const parsed = parseInt(value, 10);
-                    if (!isNaN(parsed)) {
-                        this.plugin.settings.syncBatchInterval = parsed;
-                        await this.plugin.saveSettings();
-                    }
-                }));
-
-        new Setting(containerEl)
-            .setName('Filter Linked Notes')
-            .setDesc('是否在推荐列表中隐藏当前笔记已链接过的文件')
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.filterLinkedNotes)
-                .onChange(async (value) => {
-                    this.plugin.settings.filterLinkedNotes = value;
-                    await this.plugin.saveSettings();
                 }));
 
         new Setting(containerEl)
@@ -157,12 +204,12 @@ export class SemantixSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Explainable Results')
-            .setDesc('开启后返回最匹配的段落片段（默认关闭以减少性能开销）。')
+            .setName('Filter Linked Notes')
+            .setDesc('是否在推荐列表中隐藏当前笔记已链接过的文件')
             .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.enableExplainableResults)
+                .setValue(this.plugin.settings.filterLinkedNotes)
                 .onChange(async (value) => {
-                    this.plugin.settings.enableExplainableResults = value;
+                    this.plugin.settings.filterLinkedNotes = value;
                     await this.plugin.saveSettings();
                 }));
 
@@ -202,51 +249,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
-        new Setting(containerEl)
-            .setName('Exclusion Rules')
-            .setDesc('每行输入一个不需要索引的路径模式 (如 Templates/)')
-            .addTextArea(text => text
-                .setPlaceholder('Templates/\nAttachments/')
-                .setValue(this.plugin.settings.exclusionRules)
-                .onChange(async (value) => {
-                    this.plugin.settings.exclusionRules = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        containerEl.createEl('h3', { text: '索引操作' });
-
-        new Setting(containerEl)
-            .setName('初始化向量雷达')
-            .setDesc('全量索引当前 Vault。进度不会持久化，关闭或重启将重置。')
-            .addButton(btn => btn
-                .setButtonText("开始索引")
-                .setDisabled(this.plugin.isFullIndexingActive())
-                .onClick(async () => {
-                    btn.setDisabled(true);
-                    btn.setButtonText("索引中...");
-                    await this.plugin.startFullIndexing();
-                    this.display();
-                }));
-
-        new Setting(containerEl)
-            .setName('取消当前索引')
-            .setDesc('请求取消当前全量索引，当前批次完成后停止。')
-            .addButton(btn => btn
-                .setButtonText("取消索引")
-                .setDisabled(!this.plugin.isFullIndexingActive())
-                .onClick(() => {
-                    this.plugin.cancelFullIndexing();
-                    this.display();
-                }));
-
-        new Setting(containerEl)
-            .setName('Vault ID')
-            .setDesc('自动生成的 Vault 标识（基于 vault path 哈希）')
-            .addText(text => text
-                .setValue(this.plugin.vaultId || '')
-                .setDisabled(true));
-
-        containerEl.createEl('h3', { text: '高级选项' });
+        new Setting(containerEl).setName('移动端与性能').setHeading();
 
         new Setting(containerEl)
             .setName('Enable on Mobile')
@@ -259,7 +262,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                     new Notice("Semantix: 移动端开关修改后请重启插件生效。");
                 }));
 
-        containerEl.createEl('h3', { text: '危险操作' });
+        new Setting(containerEl).setName('危险操作').setHeading();
 
         new Setting(containerEl)
             .setName('重建向量索引')
