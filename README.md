@@ -12,12 +12,12 @@
 
 | 功能 | 描述 |
 |---|---|
-| 🔍 **Real-time Whisperer** | 根据当前编辑内容，实时推荐语义相关的历史笔记 |
+| 🔍 **Real-time Whisperer** | 根据当前编辑或阅读内容，实时推荐语义相关的历史笔记 |
 | 🏝️ **Orphan Node Rescuer** | 扫描无任何双向链接的孤岛笔记，并推荐适合建立连接的节点 |
 | ⚡ **增量同步** | 监听 Vault 文件变更，批量同步至本地向量数据库，保持索引常新 |
 | 📊 **索引进度可见** | 侧边栏常驻显示索引进度与索引统计，用户可随时查看状态 |
 | 🧱 **骨架屏过渡** | 请求期间展示骨架占位并保留旧内容，减少闪烁 |
-| 🧩 **可解释结果** | 可选开关：返回最匹配段落作为 snippet，提升可解释性 |
+| 🧩 **可解释结果** | 返回最匹配段落作为 snippet，索引时分块存储，无额外性能开销 |
 | 📱 **移动端降级** | 移动端优雅休眠，不注册事件、不轮询，杜绝耗电 |
 
 ---
@@ -108,6 +108,7 @@ git clone https://github.com/seeyou2n1ght/Semantix.git semantix
 | Minimum Similarity Threshold | 最低相似度截断（0.00-1.00） | `0.70` |
 | High Score Threshold (Green) | 高分颜色阈值 | `0.85` |
 | Medium Score Threshold (Blue) | 中分颜色阈值 | `0.75` |
+| Explainable Results | 返回匹配段落作为 snippet | `true` |
 | Enable on Mobile | 移动端是否启用 | `false` |
 | Exclusion Rules | 不索引的路径（Glob，每行一个） | — |
 | Vault ID | 自动生成的 Vault 标识（基于 vault path 哈希） | — |
@@ -180,6 +181,8 @@ POST /search/semantic  →  后端 BGE embedding + LanceDB 检索（distance_ran
 - [x] 一键重建索引（两步确认机制）
 - [x] 相似度阈值过滤（LanceDB `distance_range()` 原生支持）
 - [x] 分数颜色标签（可自定义阈值区间）
+- [x] 索引时分块存储（段落级别匹配，可解释性默认开启）
+- [x] 光标活动监听（阅读时触发检索）
 - [ ] 孤岛笔记专属长文本推荐算法（`POST /search/recommend_links`）
 - [ ] 侧边栏局部知识图谱可视化
 

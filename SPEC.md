@@ -65,9 +65,10 @@ Semantix 是一款 Obsidian 侧边栏插件。它通过打通 Obsidian 前端与
 ### 4.1 模块一：动态灵感 (Real-time Whisperer)
 **描述:** 根据用户当前阅读或编辑的内容，实时推荐语义相关的历史笔记。
 
-*   **双重触发机制 (Dual Triggers)**:
+*   **三重触发机制 (Triple Triggers)**:
     1.  **主动浏览 (`file-open`)**: 用户切换活动文件时立即提取当前全文/段落并触发检索。
     2.  **输入防抖 (`editor-change`)**: 用户在输入时，停止打字指定时间（如 2000ms）后触发检索。
+    3.  **光标活动 (`cursor-activity`)**: 用户点击或跳转到新段落时触发检索（仅 paragraph 模式，300ms 防抖）。解决阅读模式下无法触发检索的问题。
 *   **上下文提取范围 (Context Scope)**:
     根据用户设置，提取通过光标获取的当前段落 (Current Paragraph) 或当前全文 (Current File)。段落边界定义为连续的空行（即标准的 Markdown block）。
 *   **降噪与预处理 (Markdown Cleaning)**:
@@ -110,7 +111,16 @@ Semantix 是一款 Obsidian 侧边栏插件。它通过打通 Obsidian 前端与
 *   **批量策略**: 监听触发后不立即发送请求，而是将变更推入队列（Queue）。利用防抖/定时器（如每隔 60 秒，取决于设置项 `syncInterval`）将队列中的操作打包（Batch）发给后端，降低 API 调用频次。
 *   **进度反馈**: 同步执行期间更新侧边栏索引进度，完成后回到空闲状态。
 
-### 5.3 灵活的排除规则 (Flexible Exclusions)
+### 5.3 分块存储策略 (Chunking Strategy)
+*   **索引时分块**: 文档在索引时自动按段落分块，每个 chunk 独立计算 embedding 并存储。
+*   **分块算法**: 按空行分割段落，超长段落按句子边界切分（max 500 字符，min 50 字符）。
+*   **检索聚合**: 检索时匹配 chunks，按文档路径聚合并返回最高分 chunk 作为 snippet。
+*   **优势**: 
+    *   检索精度更高（段落级别匹配 vs 文档级别）
+    *   可解释性默认开启（无额外性能开销）
+    *   统计时按 path 去重，保持文档级别计数
+
+### 5.4 灵活的排除规则 (Flexible Exclusions)
 *   利用 Glob 模式（或正则）匹配文件路径，排除不需要进行语义分析的文件。
 *   **默认建议支持**: 特定文件夹（如附件目录、Templates 文件夹、配置文件夹）、特定前缀/后缀。匹配成功的文件会被跳过提取与索引。
 
@@ -131,7 +141,7 @@ Semantix 是一款 Obsidian 侧边栏插件。它通过打通 Obsidian 前端与
 9.  **Minimum Similarity Threshold**: 最低相似度截断值（0.00-1.00，默认 0.70），低于此分数的结果将被后端过滤。
 10. **High Score Threshold (Green)**: 高分颜色阈值（默认 0.85），相似度 >= 此值显示绿色。
 11. **Medium Score Threshold (Blue)**: 中分颜色阈值（默认 0.75），相似度 >= 此值显示蓝色，否则显示黄色。
-12. **Explainable Results**: 可解释结果开关（返回最匹配段落作为 snippet）。
+12. **Explainable Results**: 可解释结果开关（返回最匹配段落作为 snippet）。默认开启，因索引时分块存储已无额外性能开销。
 13. **Enable on Mobile**: 移动端强制工作开关。
 14. **Vault ID**: 自动生成的 Vault 标识（基于 vault path 哈希）。
 
