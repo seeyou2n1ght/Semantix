@@ -28,14 +28,15 @@ export class Whisperer {
         );
     }
 
-    public getCursorActivityExtension(): Extension {
-        return ViewPlugin.define(() => ({
-            update: (update: ViewUpdate) => {
+public getCursorActivityExtension(): Extension {
+        const self = this;
+        return ViewPlugin.fromClass(class {
+            update(update: ViewUpdate) {
                 if (update.selectionSet) {
-                    this.onCursorActivity();
+                    self.onCursorActivity();
                 }
             }
-        }));
+        });
     }
 
     public async onFileOpen(file: TFile | null) {

@@ -227,13 +227,32 @@ export class WhispererView extends ItemView {
     }
 
     private extractKeywords(text: string): string[] {
-        // 提取有意义的词（过滤停用词和短词）
-        const stopWords = new Set(['的', '是', '在', '了', '和', '与', '或', '也', '都', '就', '不', '有', '这', '那', '我', '你', '他', '她', '它', 'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'dare', 'ought', 'used', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'between', 'under', 'again', 'further', 'then', 'once', 'and', 'but', 'or', 'nor', 'so', 'yet', 'both', 'either', 'neither', 'not', 'only', 'own', 'same', 'than', 'too', 'very', 'just']);
+        const keywords: Set<string> = new Set();
         
-        const words = text.match(/[\u4e00-\u9fa5]+|[a-zA-Z]{2,}/g) || [];
-        return words
-            .filter(w => w.length >= 2 && !stopWords.has(w.toLowerCase()))
-            .slice(0, 5); // 最多高亮5个关键词
+        const chinese = text.match(/[\u4e00-\u9fa5]+/g) || [];
+        for (const word of chinese) {
+            // 2-gram
+            for (let i = 0; i < word.length - 1; i++) {
+                keywords.add(word.slice(i, i + 2));
+            }
+            // 3-gram (for longer words)
+            if (word.length >= 3) {
+                for (let i = 0; i < word.length - 2; i++) {
+                    keywords.add(word.slice(i, i + 3));
+                }
+            }
+        }
+        
+        const english = text.match(/[a-zA-Z]{2,}/g) || [];
+        for (const word of english) {
+            keywords.add(word.toLowerCase());
+        }
+        
+        const stopWords = new Set(['的', '是', '在', '了', '和', '与', '或', '也', '都', '就', '不', '有', '这', '那', '我', '你', '他', '她', '它']);
+        
+        return Array.from(keywords)
+            .filter(w => !stopWords.has(w) && w.length >= 2)
+            .slice(0, 10);
     }
 
     private escapeRegex(str: string): string {
