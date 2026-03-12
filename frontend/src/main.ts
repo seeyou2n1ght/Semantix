@@ -1,11 +1,13 @@
 import { Plugin, Notice, WorkspaceLeaf, TAbstractFile, MarkdownView, Platform } from 'obsidian';
 import { SemantixSettings, DEFAULT_SETTINGS, SemantixSettingTab } from "./settings";
 import { ApiClient } from './api/client';
+import { IndexDocument } from './api/types';
 import { WhispererView, WHISPERER_VIEW_TYPE } from './ui/whisperer-view';
 import { RadarView, RADAR_VIEW_TYPE } from './ui/radar-view';
 import { SyncManager } from './core/sync';
 import { Whisperer } from './core/whisperer';
 import { OrphanRadar } from './core/radar';
+import { cleanMarkdown } from './utils/markdown';
 
 export type IndexingState = {
     active: boolean;
@@ -24,6 +26,8 @@ export default class SemantixPlugin extends Plugin {
     isMobileHibernating: boolean = false;
     private healthTimer: number | null = null;
     private indexingState: IndexingState = { active: false, current: 0, total: 0 };
+    private isFullIndexing: boolean = false;
+    private fullIndexCancelRequested: boolean = false;
 
     async onload() {
         // 1. 加载配置
@@ -229,6 +233,112 @@ export default class SemantixPlugin extends Plugin {
         for (const leaf of this.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE)) {
             if (leaf.view instanceof RadarView) {
                 (leaf.view as RadarView).updateIndexingProgress(state);
+            }
+        }
+    }
+
+    public isFullIndexingActive(): boolean {
+        return this.isFullIndexing;
+    }
+
+    public cancelFullIndexing() {
+        if (!this.isFullIndexing) {
+            new Notice("Semantix: 当前没有正在进行的全量索引。");
+            return;
+        }
+        this.fullIndexCancelRequested = true;
+        new Notice("Semantix: 已请求取消全量索引，当前批次完成后停止。");
+    }
+
+    public async startFullIndexing() {
+        if (this.isFullIndexing) {
+            new Notice("Semantix: 全量索引正在进行中。");
+            return;
+        }
+        if (this.isMobileHibernating) {
+            new Notice("Semantix: 移动端休眠中，无法执行全量索引。");
+            return;
+        }
+
+        const isConnected = await this.apiClient.checkHealth();
+        if (!isConnected) {
+            new Notice("Semantix: 后端未连接，无法开始索引。");
+            return;
+        }
+
+        const allFiles = this.app.vault.getMarkdownFiles();
+        const files = allFiles.filter(file => !this.syncManager.isExcludedPath(file.path));
+        if (files.length === 0) {
+            new Notice("Semantix: 没有可索引的笔记。");
+            return;
+        }
+
+        const confirmMessage = [
+            `将索引约 ${files.length} 篇笔记，预计耗时数分钟。`,
+            "索引进度不会持久化，关闭窗口或重启将重置进度。",
+            "是否继续？"
+        ].join("\n");
+
+        if (!confirm(confirmMessage)) {
+            return;
+        }
+
+        this.isFullIndexing = true;
+        this.fullIndexCancelRequested = false;
+        this.updateAllViewStatus('syncing');
+        this.updateIndexingProgress(0, files.length, true, "full");
+
+        const batchSize = 50;
+        let processed = 0;
+        let canceled = false;
+        let completed = false;
+
+        try {
+            for (let i = 0; i < files.length; i += batchSize) {
+                if (this.fullIndexCancelRequested) {
+                    canceled = true;
+                    break;
+                }
+
+                const batch = files.slice(i, i + batchSize);
+                const documents: IndexDocument[] = [];
+
+                for (const file of batch) {
+                    const rawText = await this.app.vault.cachedRead(file);
+                    const cleaned = cleanMarkdown(rawText);
+                    if (cleaned.length === 0) {
+                        processed += 1;
+                        continue;
+                    }
+                    documents.push({ vault_id: this.vaultId, path: file.path, text: cleaned });
+                    processed += 1;
+                }
+
+                if (documents.length > 0) {
+                    const result = await this.apiClient.indexBatch({ documents });
+                    if (!result || result.status !== 'success') {
+                        new Notice("Semantix: 索引失败，请检查后端日志。");
+                        break;
+                    }
+                }
+
+                this.updateIndexingProgress(processed, files.length, true, "full");
+                await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            completed = !canceled && processed >= files.length;
+        } catch (error) {
+            console.error("Semantix: Full index failed.", error);
+            new Notice("Semantix: 全量索引失败，请检查后端日志。");
+        } finally {
+            this.isFullIndexing = false;
+            this.fullIndexCancelRequested = false;
+            this.clearIndexingProgress();
+            await this.checkConnection();
+
+            if (completed) {
+                new Notice("Semantix: 索引完成 ✅");
+            } else if (canceled) {
+                new Notice("Semantix: 索引已取消。");
             }
         }
     }

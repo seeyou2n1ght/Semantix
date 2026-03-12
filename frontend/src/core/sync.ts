@@ -126,13 +126,21 @@ const intervalMs = this.plugin.settings.syncBatchInterval * 1000;
 
             const totalTasks = currentUpdates.length + currentDeletes.length;
             let processed = 0;
-            this.plugin.updateIndexingProgress(processed, totalTasks, true);
+            const canReportProgress = () => {
+                const state = this.plugin.getIndexingState();
+                return !(state.active && state.label === "full");
+            };
+            if (canReportProgress()) {
+                this.plugin.updateIndexingProgress(processed, totalTasks, true, "sync");
+            }
 
             // 1. 处理删除
             if (currentDeletes.length > 0) {
                 await this.plugin.apiClient.indexDelete({ vault_id: this.plugin.vaultId, paths: currentDeletes });
                 processed += currentDeletes.length;
-                this.plugin.updateIndexingProgress(processed, totalTasks, true);
+                if (canReportProgress()) {
+                    this.plugin.updateIndexingProgress(processed, totalTasks, true, "sync");
+                }
             }
 
             // 2. 处理更新/写入
@@ -150,7 +158,9 @@ const intervalMs = this.plugin.settings.syncBatchInterval * 1000;
                         documents.push({ vault_id: this.plugin.vaultId, path: path, text: cleaned });
                     }
                     processed += 1;
-                    this.plugin.updateIndexingProgress(processed, totalTasks, true);
+                    if (canReportProgress()) {
+                        this.plugin.updateIndexingProgress(processed, totalTasks, true, "sync");
+                    }
                 }
 
                 if (documents.length > 0) {
@@ -162,7 +172,10 @@ const intervalMs = this.plugin.settings.syncBatchInterval * 1000;
 
             // 同步完成后刷新侧边栏索引计数
             this.plugin.checkConnection();
-            this.plugin.clearIndexingProgress();
+            const state = this.plugin.getIndexingState();
+            if (!(state.active && state.label === "full")) {
+                this.plugin.clearIndexingProgress();
+            }
 
             if (this.pendingUpdates.size > 0 || this.pendingDeletes.size > 0) {
                 this.startTimerIfNeeded();

@@ -201,6 +201,32 @@ export class SemantixSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
+        containerEl.createEl('h3', { text: '索引操作' });
+
+        new Setting(containerEl)
+            .setName('初始化向量雷达')
+            .setDesc('全量索引当前 Vault。进度不会持久化，关闭或重启将重置。')
+            .addButton(btn => btn
+                .setButtonText("开始索引")
+                .setDisabled(this.plugin.isFullIndexingActive())
+                .onClick(async () => {
+                    btn.setDisabled(true);
+                    btn.setButtonText("索引中...");
+                    await this.plugin.startFullIndexing();
+                    this.display();
+                }));
+
+        new Setting(containerEl)
+            .setName('取消当前索引')
+            .setDesc('请求取消当前全量索引，当前批次完成后停止。')
+            .addButton(btn => btn
+                .setButtonText("取消索引")
+                .setDisabled(!this.plugin.isFullIndexingActive())
+                .onClick(() => {
+                    this.plugin.cancelFullIndexing();
+                    this.display();
+                }));
+
         new Setting(containerEl)
             .setName('Vault ID')
             .setDesc('自动生成的 Vault 标识（基于 vault path 哈希）')
