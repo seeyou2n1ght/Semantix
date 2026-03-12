@@ -19,7 +19,7 @@ app = FastAPI(title="Semantix AI Backend", version="0.2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -37,12 +37,13 @@ def health_check():
     return {"status": "ok", "message": "Semantix backend is running."}
 
 @app.get("/index/status", response_model=IndexStatusResponse, tags=["Index"])
-def get_index_status():
+def get_index_status(vault_id: str = "default"):
     """Get statistics about the current index."""
-    count = db_svc.count_notes()
+    count = db_svc.count_notes(vault_id=vault_id)
     return IndexStatusResponse(
         total_notes=count,
-        last_updated=datetime.now().isoformat() # Placeholder for actual last touch time
+        last_updated=datetime.now().isoformat(), # Placeholder for actual last touch time
+        vault_id=vault_id
     )
 
 @app.post("/index/batch", tags=["Index"])
@@ -53,6 +54,7 @@ def batch_index(request: BatchIndexRequest):
 
     paths = [doc.path for doc in request.documents]
     texts = [doc.text for doc in request.documents]
+    vault_ids = [doc.vault_id for doc in request.documents]
     
     # 1. Generate embeddings
     print(f"Generating embeddings for {len(texts)} documents...")
@@ -65,6 +67,7 @@ def batch_index(request: BatchIndexRequest):
     data_to_insert = []
     for i, _ in enumerate(paths):
         data_to_insert.append({
+            "vault_id": vault_ids[i],
             "vector": embeddings[i],
             "path": paths[i],
             "text": texts[i]
@@ -85,7 +88,7 @@ def delete_index(request: DeleteIndexRequest):
         return {"status": "success"}
     
     try:
-         db_svc.delete_by_paths(request.paths)
+         db_svc.delete_by_paths(request.vault_id, request.paths)
          return {"status": "success", "deleted": len(request.paths)}
     except Exception as e:
          raise HTTPException(status_code=500, detail=f"Database deletion failed: {str(e)}")
@@ -111,6 +114,7 @@ def semantic_search(request: SemanticSearchRequest):
     try:
         # Search in LanceDB
         raw_results = db_svc.search(
+            vault_id=request.vault_id,
             query_vector=query_vector,
             top_k=request.top_k,
             exclude_paths=request.exclude_paths

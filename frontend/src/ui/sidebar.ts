@@ -7,6 +7,7 @@ export const SEMANTIX_SIDEBAR_VIEW = "semantix-sidebar-view";
 export class SemantixSidebarView extends ItemView {
     plugin: SemantixPlugin;
     private indicatorEl: HTMLElement;
+    private indexStatusEl: HTMLElement;
     private whispererContainer: HTMLElement;
     private orphanContainer: HTMLElement;
 
@@ -28,6 +29,14 @@ export class SemantixSidebarView extends ItemView {
         if (!container) return;
 
         container.empty();
+
+        if (this.plugin.isMobileHibernating) {
+            container.createEl("div", { cls: "semantix-hibernating" }).createEl("p", {
+                text: "Semantix is hibernating on mobile. Enable it in settings if you want to run it here.",
+                cls: "semantix-empty-text"
+            });
+            return;
+        }
         
         // --- 整体容器 ---
         const wrapper = container.createEl("div", { cls: "semantix-sidebar-wrapper" });
@@ -49,6 +58,11 @@ export class SemantixSidebarView extends ItemView {
         const statusText = statusArea.createEl("span", { text: "Connecting..." });
         statusText.style.fontSize = "0.9em";
         statusText.style.color = "var(--text-muted)";
+
+        this.indexStatusEl = statusArea.createEl("span", { text: "Indexed: -" });
+        this.indexStatusEl.style.fontSize = "0.8em";
+        this.indexStatusEl.style.marginLeft = "10px";
+        this.indexStatusEl.style.color = "var(--text-muted)";
 
         // --- 2. 动态面板区 ---
         const contentArea = wrapper.createEl("div", { cls: "semantix-content-area" });
@@ -196,7 +210,7 @@ export class SemantixSidebarView extends ItemView {
                 this.plugin.app.workspace.openLinkText(item.path, "", false);
             });
             
-            li.createEl("div", { text: `Score: ${item.score.toFixed(4)}` }).style.fontSize = "0.8em";
+            li.createEl("div", { text: `Similarity: ${item.score.toFixed(4)}` }).style.fontSize = "0.8em";
             li.createEl("div", { text: item.snippet }).style.fontSize = "0.85em";
             li.createEl("div", { text: "---" }).style.color = "transparent"; // separator visual spacing
         }
@@ -226,5 +240,11 @@ export class SemantixSidebarView extends ItemView {
             this.indicatorEl.style.backgroundColor = "var(--color-yellow)";
             statusTextEl.innerText = "Syncing...";
         }
+    }
+
+    public updateIndexStatus(totalNotes: number, lastUpdated?: string) {
+        if (!this.indexStatusEl) return;
+        const suffix = lastUpdated ? ` · ${lastUpdated}` : '';
+        this.indexStatusEl.innerText = `Indexed: ${totalNotes}${suffix}`;
     }
 }

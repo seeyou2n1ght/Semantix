@@ -1,4 +1,5 @@
 export interface IndexDocument {
+    vault_id: string;
     path: string;
     text: string;
 }
@@ -13,6 +14,7 @@ export interface BatchIndexResponse {
 }
 
 export interface DeleteIndexRequest {
+    vault_id: string;
     paths: string[];
 }
 
@@ -22,6 +24,7 @@ export interface DeleteIndexResponse {
 }
 
 export interface SemanticSearchRequest {
+    vault_id: string;
     text: string;
     top_k: number;
     exclude_paths?: string[];
@@ -35,4 +38,10 @@ export interface SearchResultItem {
 
 export interface SemanticSearchResponse {
     results: SearchResultItem[];
+}
+
+export interface IndexStatusResponse {
+    total_notes: number;
+    last_updated?: string;
+    vault_id?: string;
 }

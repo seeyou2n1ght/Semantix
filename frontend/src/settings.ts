@@ -132,17 +132,24 @@ export class SemantixSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
+        new Setting(containerEl)
+            .setName('Vault ID')
+            .setDesc('自动生成的 Vault 标识（基于 vault path 哈希）')
+            .addText(text => text
+                .setValue(this.plugin.vaultId || '')
+                .setDisabled(true));
+
         containerEl.createEl('h3', { text: '高级选项' });
 
         new Setting(containerEl)
             .setName('Enable on Mobile')
-            .setDesc('在移动端强制工作（开启可能增加耗电）')
+            .setDesc('在移动端强制工作（开启可能增加耗电；修改后需要重启插件生效）')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.enableOnMobile)
                 .onChange(async (value) => {
                     this.plugin.settings.enableOnMobile = value;
                     await this.plugin.saveSettings();
-                    // Optional: require reload to take effect
+                    new Notice("Semantix: 移动端开关修改后请重启插件生效。");
                 }));
     }
 }

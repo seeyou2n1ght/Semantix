@@ -1,6 +1,7 @@
 import { TFile, TAbstractFile } from 'obsidian';
 import SemantixPlugin from '../main';
 import { IndexDocument } from '../api/types';
+import { cleanMarkdown } from '../utils/markdown';
 
 export class SyncManager {
     plugin: SemantixPlugin;
@@ -11,6 +12,7 @@ export class SyncManager {
     private pendingDeletes: Set<string> = new Set();
     
     private syncTimer: number | null = null;
+    private isFlushing: boolean = false;
 
     constructor(plugin: SemantixPlugin) {
         this.plugin = plugin;
@@ -74,18 +76,22 @@ export class SyncManager {
         return false;
     }
 
+    public isExcludedPath(path: string): boolean {
+        return this.isExcluded(path);
+    }
+
     /**
      * 启动定时器（如果尚未启动）
      */
     private startTimerIfNeeded() {
-        if (this.syncTimer !== null) return; // 已经在跑了
+        if (this.syncTimer !== null || this.isFlushing) return; // 已经在跑了或正在 flush
 
         const intervalMs = this.plugin.settings.syncBatchInterval * 1000;
         
         // @ts-ignore
         this.syncTimer = window.setTimeout(async () => {
-            await this.flushQueue();
             this.syncTimer = null;
+            await this.flushQueue();
         }, intervalMs);
     }
 
@@ -103,44 +109,51 @@ export class SyncManager {
      * 执行批量同步
      */
     public async flushQueue() {
+        if (this.isFlushing) return;
         if (this.pendingUpdates.size === 0 && this.pendingDeletes.size === 0) {
             return;
         }
+        this.isFlushing = true;
 
         console.log(`Semantix Sync: Flushing queue. Deletes: ${this.pendingDeletes.size}, Updates: ${this.pendingUpdates.size}`);
 
-        // 浅拷贝当前队列并立即清空原始队列，防止在异步执行过程中新来的变更丢失
-        const currentUpdates = Array.from(this.pendingUpdates);
-        const currentDeletes = Array.from(this.pendingDeletes);
-        
-        this.pendingUpdates.clear();
-        this.pendingDeletes.clear();
-
-        // 1. 处理删除
-        if (currentDeletes.length > 0) {
-            await this.plugin.apiClient.indexDelete({ paths: currentDeletes });
-        }
-
-        // 2. 处理更新/写入
-        if (currentUpdates.length > 0) {
-            const documents: IndexDocument[] = [];
+        try {
+            // 浅拷贝当前队列并立即清空原始队列，防止在异步执行过程中新来的变更丢失
+            const currentUpdates = Array.from(this.pendingUpdates);
+            const currentDeletes = Array.from(this.pendingDeletes);
             
-            for (const path of currentUpdates) {
-                const file = this.plugin.app.vault.getAbstractFileByPath(path);
-                if (file instanceof TFile && file.extension === 'md') {
-                    // 读取文件内容
-                    const rawText = await this.plugin.app.vault.cachedRead(file);
-                    
-                    // TODO: Phase 3 Markdown 降噪
-                    // For Phase 2, we just send parsing raw text or simple clean
-                    const cleanText = rawText; // Placeholder for Phase 2
-                    
-                    documents.push({ path: path, text: cleanText });
-                }
+            this.pendingUpdates.clear();
+            this.pendingDeletes.clear();
+
+            // 1. 处理删除
+            if (currentDeletes.length > 0) {
+                await this.plugin.apiClient.indexDelete({ vault_id: this.plugin.vaultId, paths: currentDeletes });
             }
 
-            if (documents.length > 0) {
-                await this.plugin.apiClient.indexBatch({ documents });
+            // 2. 处理更新/写入
+            if (currentUpdates.length > 0) {
+                const documents: IndexDocument[] = [];
+                
+                for (const path of currentUpdates) {
+                    const file = this.plugin.app.vault.getAbstractFileByPath(path);
+                    if (file instanceof TFile && file.extension === 'md') {
+                        // 读取文件内容
+                        const rawText = await this.plugin.app.vault.cachedRead(file);
+                        const cleaned = cleanMarkdown(rawText);
+                        if (cleaned.length === 0) continue;
+                        
+                        documents.push({ vault_id: this.plugin.vaultId, path: path, text: cleaned });
+                    }
+                }
+
+                if (documents.length > 0) {
+                    await this.plugin.apiClient.indexBatch({ documents });
+                }
+            }
+        } finally {
+            this.isFlushing = false;
+            if (this.pendingUpdates.size > 0 || this.pendingDeletes.size > 0) {
+                this.startTimerIfNeeded();
             }
         }
     }

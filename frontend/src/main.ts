@@ -1,4 +1,4 @@
-import { App, Plugin, Notice, WorkspaceLeaf, TAbstractFile, MarkdownView } from 'obsidian';
+import { App, Plugin, Notice, WorkspaceLeaf, TAbstractFile, MarkdownView, Platform } from 'obsidian';
 import { SemantixSettings, DEFAULT_SETTINGS, SemantixSettingTab } from "./settings";
 import { ApiClient } from './api/client';
 import { SemantixSidebarView, SEMANTIX_SIDEBAR_VIEW } from './ui/sidebar';
@@ -12,13 +12,18 @@ export default class SemantixPlugin extends Plugin {
     syncManager: SyncManager;
     whisperer: Whisperer;
     orphanRadar: OrphanRadar;
+    vaultId: string;
+    isMobileHibernating: boolean = false;
+    private healthTimer: number | null = null;
 
     async onload() {
         // 1. 加载配置
         await this.loadSettings();
+        this.vaultId = this.computeVaultId();
+        this.updateMobileMode();
 
         // 2. 初始化 API Client & Engines
-        this.apiClient = new ApiClient(this.settings);
+        this.apiClient = new ApiClient(this.settings, this.vaultId);
         this.syncManager = new SyncManager(this);
         this.whisperer = new Whisperer(this);
         this.orphanRadar = new OrphanRadar(this);
@@ -50,35 +55,40 @@ export default class SemantixPlugin extends Plugin {
         // 6. 等待工作区排布完成后打开视图并探活
         this.app.workspace.onLayoutReady(() => {
             this.activateView();
-            this.checkConnection();
+            if (!this.isMobileHibernating) {
+                this.checkConnection();
+                this.startHealthTimer();
+            }
         });
 
-        // 7. 注册增量同步与 Whisperer 事件
-        this.registerEvent(this.app.workspace.on('file-open', (file) => {
-            this.whisperer.onFileOpen(file);
-        }));
-        
-        this.registerEvent(this.app.workspace.on('editor-change', (editor, view) => {
-            if (view instanceof MarkdownView) {
-                this.whisperer.onEditorChange(editor, view);
-            }
-        }));
-        
-        this.registerEvent(this.app.vault.on('modify', (file: TAbstractFile) => {
-            this.syncManager.queueUpdate(file);
-        }));
-        
-        this.registerEvent(this.app.vault.on('create', (file: TAbstractFile) => {
-            this.syncManager.queueUpdate(file);
-        }));
-        
-        this.registerEvent(this.app.vault.on('delete', (file: TAbstractFile) => {
-            this.syncManager.queueDelete(file);
-        }));
-        
-        this.registerEvent(this.app.vault.on('rename', (file: TAbstractFile, oldPath: string) => {
-            this.syncManager.queueRename(file, oldPath);
-        }));
+        // 7. 注册增量同步与 Whisperer 事件（移动端禁用时不注册）
+        if (!this.isMobileHibernating) {
+            this.registerEvent(this.app.workspace.on('file-open', (file) => {
+                this.whisperer.onFileOpen(file);
+            }));
+            
+            this.registerEvent(this.app.workspace.on('editor-change', (editor, view) => {
+                if (view instanceof MarkdownView) {
+                    this.whisperer.onEditorChange(editor, view);
+                }
+            }));
+            
+            this.registerEvent(this.app.vault.on('modify', (file: TAbstractFile) => {
+                this.syncManager.queueUpdate(file);
+            }));
+            
+            this.registerEvent(this.app.vault.on('create', (file: TAbstractFile) => {
+                this.syncManager.queueUpdate(file);
+            }));
+            
+            this.registerEvent(this.app.vault.on('delete', (file: TAbstractFile) => {
+                this.syncManager.queueDelete(file);
+            }));
+            
+            this.registerEvent(this.app.vault.on('rename', (file: TAbstractFile, oldPath: string) => {
+                this.syncManager.queueRename(file, oldPath);
+            }));
+        }
 
         console.log("Semantix Plugin loaded.");
     }
@@ -123,6 +133,10 @@ export default class SemantixPlugin extends Plugin {
         if (isConnected) {
             console.log("Semantix: Backend connection successful.");
             if (view) view.updateStatus('connected');
+            const status = await this.apiClient.getIndexStatus();
+            if (view && status) {
+                view.updateIndexStatus(status.total_notes, status.last_updated);
+            }
         } else {
             console.log("Semantix: Backend connection failed.");
             new Notice("Semantix: 无法连接到本地 AI 后端，请检查配置或服务是否启动。");
@@ -132,6 +146,7 @@ export default class SemantixPlugin extends Plugin {
 
     onunload() {
         this.syncManager.clearTimer();
+        this.clearHealthTimer();
         console.log("Semantix Plugin unloaded.");
     }
 
@@ -141,9 +156,59 @@ export default class SemantixPlugin extends Plugin {
 
     async saveSettings() {
         await this.saveData(this.settings);
+        this.updateMobileMode();
         // 通知 apiClient 更新配置 URL
-        this.apiClient.updateSettings(this.settings);
+        this.apiClient.updateSettings(this.settings, this.vaultId);
         // 配置更新后立即重新探活
-        this.checkConnection();
+        if (!this.isMobileHibernating) {
+            this.checkConnection();
+            this.startHealthTimer();
+        } else {
+            this.clearHealthTimer();
+        }
+        // 更新防抖设置
+        if (this.whisperer) {
+            this.whisperer.setupDebounce();
+        }
+    }
+
+    private updateMobileMode() {
+        this.isMobileHibernating = Platform.isMobile && !this.settings.enableOnMobile;
+        if (this.isMobileHibernating) {
+            console.log("Semantix: Hibernating on mobile.");
+        }
+    }
+
+    private startHealthTimer() {
+        if (this.healthTimer !== null) return;
+        // @ts-ignore
+        this.healthTimer = window.setInterval(() => {
+            this.checkConnection();
+        }, 30000);
+    }
+
+    private clearHealthTimer() {
+        if (this.healthTimer !== null) {
+            window.clearInterval(this.healthTimer);
+            this.healthTimer = null;
+        }
+    }
+
+    private computeVaultId(): string {
+        const vaultName = this.app.vault.getName();
+        const adapter: any = this.app.vault.adapter as any;
+        const basePath = typeof adapter?.getBasePath === 'function' ? adapter.getBasePath() : '';
+        const raw = `${vaultName}:${basePath}`;
+        return this.hashString(raw);
+    }
+
+    private hashString(input: string): string {
+        // FNV-1a 32-bit
+        let hash = 2166136261;
+        for (let i = 0; i < input.length; i++) {
+            hash ^= input.charCodeAt(i);
+            hash = Math.imul(hash, 16777619);
+        }
+        return (hash >>> 0).toString(16);
     }
 }

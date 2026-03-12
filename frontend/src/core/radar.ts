@@ -38,8 +38,7 @@ export class OrphanRadar {
         }
 
         for (const file of files) {
-            // @ts-ignore: Accessing private method for MVP
-            if (this.plugin.syncManager['isExcluded'](file.path)) continue;
+            if (this.plugin.syncManager.isExcludedPath(file.path)) continue;
 
             // 出度
             const outgoingLinks = resolvedLinks[file.path];
@@ -75,6 +74,7 @@ export class OrphanRadar {
 
     private async fetchSearch(query: string, excludes: string[]): Promise<SearchResultItem[]> {
         const response = await this.plugin.apiClient.semanticSearch({
+            vault_id: this.plugin.vaultId,
             text: query,
             top_k: this.plugin.settings.topNResults,
             exclude_paths: excludes

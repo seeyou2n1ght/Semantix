@@ -25,7 +25,7 @@ export class Whisperer {
         this.debouncedSearch = debounce(
             this.handleSearchTrigger.bind(this),
             this.plugin.settings.debounceDelay,
-            true
+            false
         );
     }
 
@@ -58,7 +58,6 @@ export class Whisperer {
         } else {
             // Default to 'paragraph' extraction
             const cursor = view.editor.getCursor();
-            const lineHtml = view.editor.getLine(cursor.line);
             
             // NOTE for MVP: We just grab the current line. 
             // Real paragraph bounding requires empty line search.
@@ -87,6 +86,7 @@ export class Whisperer {
         console.debug("Semantix Whisperer: Triggering semantic search...");
 
         const response = await this.plugin.apiClient.semanticSearch({
+            vault_id: this.plugin.vaultId,
             text: cleaned,
             top_k: this.plugin.settings.topNResults,
             exclude_paths: excludes
