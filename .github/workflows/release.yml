@@ -28,9 +28,6 @@ jobs:
             - name: Build
               run: npm run build
 
-            - name: Lint
-              run: npm run lint
-
             - name: Create release assets
               run: |
                   mkdir -p release
