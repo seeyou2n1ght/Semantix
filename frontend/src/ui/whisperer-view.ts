@@ -204,12 +204,13 @@ export class WhispererView extends ItemView {
     private renderHighlightedSnippet(container: HTMLElement, snippet: string, queryText: string) {
         const keywords = this.extractKeywords(queryText);
         if (keywords.length === 0) {
-            container.setText(snippet);
+            container.setText(this.truncateText(snippet, 80));
             return;
         }
 
+        const focusedSnippet = this.focusOnKeyword(snippet, keywords, 80);
         const regex = new RegExp(`(${keywords.map(k => this.escapeRegex(k)).join('|')})`, 'gi');
-        const parts = snippet.split(regex);
+        const parts = focusedSnippet.split(regex);
 
         for (const part of parts) {
             const isKeyword = keywords.some(k => part.toLowerCase() === k.toLowerCase());
@@ -224,6 +225,48 @@ export class WhispererView extends ItemView {
                 container.appendChild(document.createTextNode(part));
             }
         }
+    }
+
+    private focusOnKeyword(text: string, keywords: string[], maxLen: number): string {
+        const lowerText = text.toLowerCase();
+        let firstMatchIndex = -1;
+        
+        for (const keyword of keywords) {
+            const idx = lowerText.indexOf(keyword.toLowerCase());
+            if (idx !== -1) {
+                if (firstMatchIndex === -1 || idx < firstMatchIndex) {
+                    firstMatchIndex = idx;
+                }
+            }
+        }
+        
+        if (firstMatchIndex === -1) {
+            return this.truncateText(text, maxLen);
+        }
+        
+        const halfLen = Math.floor(maxLen / 2);
+        let start = Math.max(0, firstMatchIndex - halfLen);
+        let end = Math.min(text.length, start + maxLen);
+        
+        if (end === text.length) {
+            start = Math.max(0, end - maxLen);
+        }
+        
+        let result = text.slice(start, end);
+        
+        if (start > 0) {
+            result = "..." + result;
+        }
+        if (end < text.length) {
+            result = result + "...";
+        }
+        
+        return result;
+    }
+
+    private truncateText(text: string, maxLen: number): string {
+        if (text.length <= maxLen) return text;
+        return text.slice(0, maxLen) + "...";
     }
 
     private extractKeywords(text: string): string[] {

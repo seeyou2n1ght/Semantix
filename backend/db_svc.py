@@ -49,21 +49,21 @@ class DatabaseService:
     def _escape_sql_string(self, s: str) -> str:
         return s.replace("'", "''")
 
-    def _truncate_snippet(self, text: str, max_length: int = 120) -> str:
+    def _truncate_snippet(self, text: str, max_length: int = 200) -> str:
         """
-        Truncate snippet to max_length characters, respecting word boundaries.
+        Return snippet for frontend processing.
+        Frontend will focus on matched keywords.
         """
         if not text:
             return ""
         if len(text) <= max_length:
             return text
 
-        truncated = text[:max_length]
-        last_space = truncated.rfind(" ")
-        if last_space > max_length // 2:
-            truncated = truncated[:last_space]
+        last_space = text.rfind(" ", max_length - 50, max_length)
+        if last_space > 0:
+            return text[:last_space].strip()
 
-        return truncated.strip() + "..."
+        return text[:max_length].strip()
 
     def count_notes(self, vault_id: str = None) -> int:
         try:
@@ -223,7 +223,7 @@ class DatabaseService:
                 chunk_index = row.get("chunk_index", 0)
 
                 if path not in path_results or similarity > path_results[path]["score"]:
-                    snippet = self._truncate_snippet(chunk_text, max_length=120)
+                    snippet = self._truncate_snippet(chunk_text)
                     path_results[path] = {
                         "path": path,
                         "score": similarity,
