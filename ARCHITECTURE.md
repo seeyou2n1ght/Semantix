@@ -34,6 +34,7 @@
 *   **Markdown 去噪引擎** (`src/utils/markdown.ts`): 开发了一套纯正规的正则清理链，将复杂的 MDX/图像/前言属性摘掉，只保留最核心的内容和 `#tag` 交给后端。
 *   **双链阻断 (Filtered Nodes)**: 利用 Obsidian `metadataCache.resolvedLinks`，自动识别当前文档已建立的锚点网络并不予展示。
 *   **相似度过滤与颜色渲染**: 携带 `min_similarity` 参数，后端通过 LanceDB `distance_range()` 过滤；前端根据配置的阈值渲染分数颜色标签（绿/蓝/黄）。
+*   **关键词高亮**: 渲染结果时提取查询文本关键词，在 snippet 中用 `<mark>` 标签高亮显示，帮助用户理解匹配原因。
 
 ### 📡 游离笔记雷达 - Orphan Radar (`src/core/radar.ts`)
 *   **边缘孤岛算法**: 由于后端没有持有图谱的所有权，前端发挥主场优势，扫描 `metadataCache`，在内存里计算全局文章的**入度与出度**，找出绝对孤立块（出入度均为 0）。

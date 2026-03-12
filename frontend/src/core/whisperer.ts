@@ -118,7 +118,7 @@ export class Whisperer {
         });
 
         if (response && response.results) {
-            this.renderResults(response.results, {
+            this.renderResults(response.results, cleaned, {
                 colorThresholdHigh: this.plugin.settings.colorThresholdHigh,
                 colorThresholdMedium: this.plugin.settings.colorThresholdMedium
             });
@@ -151,13 +151,13 @@ export class Whisperer {
         return text;
     }
 
-    private renderResults(results: SearchResultItem[], colorSettings?: { colorThresholdHigh: number; colorThresholdMedium: number }) {
+    private renderResults(results: SearchResultItem[], queryText: string, colorSettings?: { colorThresholdHigh: number; colorThresholdMedium: number }) {
         const leaves = this.plugin.app.workspace.getLeavesOfType(WHISPERER_VIEW_TYPE);
         if (leaves.length === 0) return;
 
         const leaf = leaves[0];
         if (leaf && leaf.view instanceof WhispererView) {
-            (leaf.view as WhispererView).renderWhispererResults(results, colorSettings);
+            (leaf.view as WhispererView).renderWhispererResults(results, queryText, colorSettings);
         }
     }
 

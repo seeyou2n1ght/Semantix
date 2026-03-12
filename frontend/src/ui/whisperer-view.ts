@@ -132,7 +132,7 @@ export class WhispererView extends ItemView {
     /**
      * 渲染 Whisperer 的检索结果
      */
-    public renderWhispererResults(results: SearchResultItem[], colorSettings?: { colorThresholdHigh: number; colorThresholdMedium: number }) {
+    public renderWhispererResults(results: SearchResultItem[], queryText?: string, colorSettings?: { colorThresholdHigh: number; colorThresholdMedium: number }) {
         if (!this.whispererContainer || !this.whispererResultsEl) return;
         this.clearLoading();
         this.whispererResultsEl.empty();
@@ -174,11 +174,18 @@ export class WhispererView extends ItemView {
                 this.plugin.app.workspace.openLinkText(item.path, "", false);
             });
             
-            const snippetEl = leftDiv.createEl("div", { text: item.snippet });
+            const snippetEl = leftDiv.createEl("div");
             snippetEl.style.fontSize = "0.85em";
             snippetEl.style.color = "var(--text-muted)";
             snippetEl.style.marginTop = "4px";
             snippetEl.style.lineHeight = "1.4";
+            
+            // 高亮关键词
+            if (queryText) {
+                this.renderHighlightedSnippet(snippetEl, item.snippet, queryText);
+            } else {
+                snippetEl.setText(item.snippet);
+            }
             
             // 右侧：相似度分数标签
             const scoreEl = li.createEl("span", { 
@@ -192,6 +199,45 @@ export class WhispererView extends ItemView {
             scoreEl.style.marginLeft = "8px";
             scoreEl.style.color = this.getScoreColor(item.score, settings.colorThresholdHigh, settings.colorThresholdMedium);
         }
+    }
+
+    private renderHighlightedSnippet(container: HTMLElement, snippet: string, queryText: string) {
+        const keywords = this.extractKeywords(queryText);
+        if (keywords.length === 0) {
+            container.setText(snippet);
+            return;
+        }
+
+        const regex = new RegExp(`(${keywords.map(k => this.escapeRegex(k)).join('|')})`, 'gi');
+        const parts = snippet.split(regex);
+
+        for (const part of parts) {
+            const isKeyword = keywords.some(k => part.toLowerCase() === k.toLowerCase());
+            if (isKeyword) {
+                const mark = container.createEl("mark");
+                mark.setText(part);
+                mark.style.backgroundColor = "var(--text-highlight-bg, #ffff00)";
+                mark.style.color = "var(--text-highlight-fg, inherit)";
+                mark.style.padding = "0 2px";
+                mark.style.borderRadius = "2px";
+            } else {
+                container.appendChild(document.createTextNode(part));
+            }
+        }
+    }
+
+    private extractKeywords(text: string): string[] {
+        // 提取有意义的词（过滤停用词和短词）
+        const stopWords = new Set(['的', '是', '在', '了', '和', '与', '或', '也', '都', '就', '不', '有', '这', '那', '我', '你', '他', '她', '它', 'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'dare', 'ought', 'used', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'between', 'under', 'again', 'further', 'then', 'once', 'and', 'but', 'or', 'nor', 'so', 'yet', 'both', 'either', 'neither', 'not', 'only', 'own', 'same', 'than', 'too', 'very', 'just']);
+        
+        const words = text.match(/[\u4e00-\u9fa5]+|[a-zA-Z]{2,}/g) || [];
+        return words
+            .filter(w => w.length >= 2 && !stopWords.has(w.toLowerCase()))
+            .slice(0, 5); // 最多高亮5个关键词
+    }
+
+    private escapeRegex(str: string): string {
+        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
     private getScoreColor(score: number, thresholdHigh: number, thresholdMedium: number): string {
