@@ -1,7 +1,8 @@
-import { App, Plugin, Notice, WorkspaceLeaf, TAbstractFile, MarkdownView, Platform } from 'obsidian';
+import { Plugin, Notice, WorkspaceLeaf, TAbstractFile, MarkdownView, Platform } from 'obsidian';
 import { SemantixSettings, DEFAULT_SETTINGS, SemantixSettingTab } from "./settings";
 import { ApiClient } from './api/client';
-import { SemantixSidebarView, SEMANTIX_SIDEBAR_VIEW } from './ui/sidebar';
+import { WhispererView, WHISPERER_VIEW_TYPE } from './ui/whisperer-view';
+import { RadarView, RADAR_VIEW_TYPE } from './ui/radar-view';
 import { SyncManager } from './core/sync';
 import { Whisperer } from './core/whisperer';
 import { OrphanRadar } from './core/radar';
@@ -31,37 +32,51 @@ export default class SemantixPlugin extends Plugin {
         // 3. 注册配置面板
         this.addSettingTab(new SemantixSettingTab(this.app, this));
 
-        // 4. 注册 Sidebar View
+        // 4. 注册两个独立的 Sidebar View
         this.registerView(
-            SEMANTIX_SIDEBAR_VIEW,
-            (leaf) => new SemantixSidebarView(leaf, this)
+            WHISPERER_VIEW_TYPE,
+            (leaf) => new WhispererView(leaf, this)
+        );
+        this.registerView(
+            RADAR_VIEW_TYPE,
+            (leaf) => new RadarView(leaf, this)
         );
 
-        // 5. 将 IconButton 添加到左侧，点击时打开侧边栏
-        this.addRibbonIcon('radar', 'Semantix 语义雷达', () => {
-            this.activateView();
+        // 5. Ribbon Icons —— 分别打开各自的视图
+        this.addRibbonIcon('message-circle', 'Semantix: 动态灵感', () => {
+            this.activateWhispererView();
+        });
+        this.addRibbonIcon('radar', 'Semantix: 孤岛雷达', () => {
+            this.activateRadarView();
         });
 
-        // 全局命令：扫描孤岛笔记
+        // 6. 全局命令
+        this.addCommand({
+            id: 'semantix-open-whisperer',
+            name: 'Semantix: 打开动态灵感面板 (Open Whisperer)',
+            callback: () => {
+                this.activateWhispererView();
+            }
+        });
         this.addCommand({
             id: 'semantix-scan-orphans',
             name: 'Semantix: 扫描并分析孤岛笔记 (Scan Orphan Notes)',
             callback: () => {
-                this.activateView();
+                this.activateRadarView();
                 this.orphanRadar.scanAndRender();
             }
         });
 
-        // 6. 等待工作区排布完成后打开视图并探活
+        // 7. 工作区就绪后打开视图并探活
         this.app.workspace.onLayoutReady(() => {
-            this.activateView();
+            this.activateWhispererView();
             if (!this.isMobileHibernating) {
                 this.checkConnection();
                 this.startHealthTimer();
             }
         });
 
-        // 7. 注册增量同步与 Whisperer 事件（移动端禁用时不注册）
+        // 8. 注册增量同步与 Whisperer 事件（移动端禁用时不注册）
         if (!this.isMobileHibernating) {
             this.registerEvent(this.app.workspace.on('file-open', (file) => {
                 this.whisperer.onFileOpen(file);
@@ -93,25 +108,38 @@ export default class SemantixPlugin extends Plugin {
         console.log("Semantix Plugin loaded.");
     }
 
-    async activateView() {
+    /**
+     * 打开或聚焦 Whisperer 视图
+     */
+    async activateWhispererView() {
+        await this.activateViewByType(WHISPERER_VIEW_TYPE);
+    }
+
+    /**
+     * 打开或聚焦 Radar 视图
+     */
+    async activateRadarView() {
+        await this.activateViewByType(RADAR_VIEW_TYPE);
+    }
+
+    /**
+     * 通用视图激活逻辑：如已存在则聚焦，否则在右侧边栏创建
+     */
+    private async activateViewByType(viewType: string) {
         const { workspace } = this.app;
         
         let leaf: WorkspaceLeaf | null | undefined = null;
-        const leaves = workspace.getLeavesOfType(SEMANTIX_SIDEBAR_VIEW);
+        const leaves = workspace.getLeavesOfType(viewType);
 
         if (leaves.length > 0) {
-            // A leaf with our view already exists, use that
             leaf = leaves[0];
         } else {
-            // Our view could not be found in the workspace, create a new leaf
-            // in the right sidebar for it
             leaf = workspace.getRightLeaf(false);
             if (leaf) {
-               await leaf.setViewState({ type: SEMANTIX_SIDEBAR_VIEW, active: true });
+               await leaf.setViewState({ type: viewType, active: true });
             }
         }
 
-        // "Reveal" the leaf in case it is in a collapsed sidebar
         if (leaf) {
             workspace.revealLeaf(leaf);
         }
@@ -120,27 +148,50 @@ export default class SemantixPlugin extends Plugin {
     async checkConnection() {
         const isConnected = await this.apiClient.checkHealth();
         
-        // Find the view instance to update its status
-        const leaves = this.app.workspace.getLeavesOfType(SEMANTIX_SIDEBAR_VIEW);
-        let view: SemantixSidebarView | null = null;
-        if (leaves.length > 0) {
-            const leaf = leaves[0];
-            if (leaf && leaf.view instanceof SemantixSidebarView) {
-                view = leaf.view as SemantixSidebarView;
-            }
-        }
+        // 更新两个视图的状态指示灯
+        this.updateAllViewStatus(isConnected ? 'connected' : 'disconnected');
 
         if (isConnected) {
             console.log("Semantix: Backend connection successful.");
-            if (view) view.updateStatus('connected');
             const status = await this.apiClient.getIndexStatus();
-            if (view && status) {
-                view.updateIndexStatus(status.total_notes, status.last_updated);
+            if (status) {
+                this.updateAllViewIndexStatus(status.total_notes, status.last_updated);
             }
         } else {
             console.log("Semantix: Backend connection failed.");
             new Notice("Semantix: 无法连接到本地 AI 后端，请检查配置或服务是否启动。");
-            if (view) view.updateStatus('disconnected');
+        }
+    }
+
+    /**
+     * 批量更新所有已打开视图的连接状态
+     */
+    private updateAllViewStatus(status: 'connected' | 'disconnected' | 'syncing') {
+        for (const leaf of this.app.workspace.getLeavesOfType(WHISPERER_VIEW_TYPE)) {
+            if (leaf.view instanceof WhispererView) {
+                (leaf.view as WhispererView).updateStatus(status);
+            }
+        }
+        for (const leaf of this.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE)) {
+            if (leaf.view instanceof RadarView) {
+                (leaf.view as RadarView).updateStatus(status);
+            }
+        }
+    }
+
+    /**
+     * 批量更新所有已打开视图的索引状态
+     */
+    private updateAllViewIndexStatus(totalNotes: number, lastUpdated?: string) {
+        for (const leaf of this.app.workspace.getLeavesOfType(WHISPERER_VIEW_TYPE)) {
+            if (leaf.view instanceof WhispererView) {
+                (leaf.view as WhispererView).updateIndexStatus(totalNotes, lastUpdated);
+            }
+        }
+        for (const leaf of this.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE)) {
+            if (leaf.view instanceof RadarView) {
+                (leaf.view as RadarView).updateIndexStatus(totalNotes, lastUpdated);
+            }
         }
     }
 

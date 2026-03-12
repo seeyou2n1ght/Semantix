@@ -1,6 +1,6 @@
 import { TFile } from 'obsidian';
 import SemantixPlugin from '../main';
-import { SEMANTIX_SIDEBAR_VIEW, SemantixSidebarView } from '../ui/sidebar';
+import { RADAR_VIEW_TYPE, RadarView } from '../ui/radar-view';
 import { SearchResultItem } from '../api/types';
 import { cleanMarkdown } from '../utils/markdown';
 
@@ -23,8 +23,6 @@ export class OrphanRadar {
         const orphans: OrphanNode[] = [];
         const files = this.plugin.app.vault.getMarkdownFiles();
         
-        // 构建简单的反向链接映射 (前端自己算一遍或者借助 resolvedLinks)
-        // resolvedLinks 的结构是由 源文件 -> { 目标文件: 数量 }
         const resolvedLinks = this.plugin.app.metadataCache.resolvedLinks;
         
         // 统计入度
@@ -48,7 +46,7 @@ export class OrphanRadar {
 
             const totalLinks = outgoing + incoming;
             
-            // 孤岛阈值：暂时严格设定为 0 (完全无链接)
+            // 孤岛阈值：完全无链接
             if (totalLinks === 0) {
                 orphans.push({ file, linkCount: totalLinks });
             }
@@ -65,7 +63,6 @@ export class OrphanRadar {
         const cleaned = cleanMarkdown(rawText);
         
         if (cleaned.length < 5) {
-            // 文本太短，用标题去搜
             const titleCleared = cleanMarkdown(file.basename);
             return await this.fetchSearch(titleCleared, [file.path]);
         }
@@ -84,16 +81,16 @@ export class OrphanRadar {
     }
 
     /**
-     * 主动触发扫描并更新侧边栏
+     * 主动触发扫描并更新 RadarView
      */
     public scanAndRender() {
         const orphans = this.findOrphans();
         
-        const leaves = this.plugin.app.workspace.getLeavesOfType(SEMANTIX_SIDEBAR_VIEW);
+        const leaves = this.plugin.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE);
         if (leaves.length > 0) {
             const leaf = leaves[0];
-            if (leaf && leaf.view instanceof SemantixSidebarView) {
-                (leaf.view as SemantixSidebarView).renderOrphans(orphans);
+            if (leaf && leaf.view instanceof RadarView) {
+                (leaf.view as RadarView).renderOrphans(orphans);
             }
         }
     }

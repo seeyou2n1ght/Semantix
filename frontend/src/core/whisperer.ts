@@ -2,7 +2,7 @@ import { Editor, MarkdownView, TFile, debounce } from 'obsidian';
 import SemantixPlugin from '../main';
 import { cleanMarkdown } from '../utils/markdown';
 import { SearchResultItem } from '../api/types';
-import { SEMANTIX_SIDEBAR_VIEW, SemantixSidebarView } from '../ui/sidebar';
+import { WHISPERER_VIEW_TYPE, WhispererView } from '../ui/whisperer-view';
 
 export class Whisperer {
     plugin: SemantixPlugin;
@@ -19,7 +19,7 @@ export class Whisperer {
     }
 
     /**
-     * Recreate debounce function when settings change (debounceDelay)
+     * 配置变更时重新创建 debounce 函数
      */
     public setupDebounce() {
         this.debouncedSearch = debounce(
@@ -30,21 +30,19 @@ export class Whisperer {
     }
 
     /**
-     * Handle explicit file open bounds
+     * 文件打开时触发搜索
      */
     public async onFileOpen(file: TFile | null) {
         if (!file || file.extension !== 'md') return;
         
-        // When opening a new file, we usually want to trigger a search
-        this.lastSearchedText = ""; // reset history
+        this.lastSearchedText = "";
         await this.handleSearchTrigger();
     }
 
     /**
-     * Handle Editor changes
+     * 编辑器变更时触发防抖搜索
      */
     public onEditorChange(editor: Editor, view: MarkdownView) {
-        // Just ping the debounced func
         this.debouncedSearch();
     }
 
@@ -56,25 +54,19 @@ export class Whisperer {
         if (this.plugin.settings.whispererScope === 'document') {
             extractText = view.editor.getValue();
         } else {
-            // Default to 'paragraph' extraction
             const cursor = view.editor.getCursor();
-            
-            // NOTE for MVP: We just grab the current line. 
-            // Real paragraph bounding requires empty line search.
-            // Let's implement full block extraction (up and down until empty lines).
             extractText = this.extractParagraph(view.editor, cursor.line);
         }
 
         const cleaned = cleanMarkdown(extractText);
-        if (cleaned.length < 5) return; // Ignore very short texts
+        if (cleaned.length < 5) return;
 
-        if (cleaned === this.lastSearchedText) return; // Same search
+        if (cleaned === this.lastSearchedText) return;
         this.lastSearchedText = cleaned;
 
-        // Perform search
+        // 构建排除列表
         let excludes: string[] = [view.file.path];
 
-        // Process Filter Linked Notes
         if (this.plugin.settings.filterLinkedNotes) {
             const cache = this.plugin.app.metadataCache.resolvedLinks[view.file.path];
             if (cache) {
@@ -93,15 +85,15 @@ export class Whisperer {
         });
 
         if (response && response.results) {
-            this.renderResults(response.results, view.file.path);
+            this.renderResults(response.results);
         }
     }
 
     private extractParagraph(editor: Editor, startLineNo: number): string {
         let text = editor.getLine(startLineNo);
-        if (text.trim() === '') return ''; // Empty block
+        if (text.trim() === '') return '';
         
-        // Scan upwards
+        // 向上扫描直到空行
         let currentLine = startLineNo - 1;
         while (currentLine >= 0) {
             const lineText = editor.getLine(currentLine);
@@ -110,7 +102,7 @@ export class Whisperer {
             currentLine--;
         }
 
-        // Scan downwards
+        // 向下扫描直到空行
         currentLine = startLineNo + 1;
         const totalLines = editor.lineCount();
         while (currentLine < totalLines) {
@@ -123,14 +115,14 @@ export class Whisperer {
         return text;
     }
 
-    private renderResults(results: SearchResultItem[], currentFile: string) {
-        // Update Sidebar View
-        const leaves = this.plugin.app.workspace.getLeavesOfType(SEMANTIX_SIDEBAR_VIEW);
+    private renderResults(results: SearchResultItem[]) {
+        // 定位 WhispererView 并渲染结果
+        const leaves = this.plugin.app.workspace.getLeavesOfType(WHISPERER_VIEW_TYPE);
         if (leaves.length === 0) return;
 
         const leaf = leaves[0];
-        if (leaf && leaf.view instanceof SemantixSidebarView) {
-            (leaf.view as SemantixSidebarView).renderWhispererResults(results);
+        if (leaf && leaf.view instanceof WhispererView) {
+            (leaf.view as WhispererView).renderWhispererResults(results);
         }
     }
 }

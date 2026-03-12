@@ -2,13 +2,16 @@ import { ItemView, WorkspaceLeaf } from 'obsidian';
 import SemantixPlugin from '../main';
 import { SearchResultItem } from '../api/types';
 
-export const SEMANTIX_SIDEBAR_VIEW = "semantix-sidebar-view";
+export const RADAR_VIEW_TYPE = "semantix-radar-view";
 
-export class SemantixSidebarView extends ItemView {
+/**
+ * 孤岛笔记雷达视图 —— 独立侧边栏面板
+ * 发现无链接笔记并推荐潜在连接
+ */
+export class RadarView extends ItemView {
     plugin: SemantixPlugin;
     private indicatorEl: HTMLElement;
     private indexStatusEl: HTMLElement;
-    private whispererContainer: HTMLElement;
     private orphanContainer: HTMLElement;
 
     constructor(leaf: WorkspaceLeaf, plugin: SemantixPlugin) {
@@ -17,11 +20,15 @@ export class SemantixSidebarView extends ItemView {
     }
 
     getViewType() {
-        return SEMANTIX_SIDEBAR_VIEW;
+        return RADAR_VIEW_TYPE;
     }
 
     getDisplayText() {
-        return "Semantix 语义雷达";
+        return "Orphan Radar 孤岛雷达";
+    }
+
+    getIcon() {
+        return "radar";
     }
 
     async onOpen() {
@@ -30,6 +37,7 @@ export class SemantixSidebarView extends ItemView {
 
         container.empty();
 
+        // 移动端休眠检测
         if (this.plugin.isMobileHibernating) {
             container.createEl("div", { cls: "semantix-hibernating" }).createEl("p", {
                 text: "Semantix is hibernating on mobile. Enable it in settings if you want to run it here.",
@@ -38,10 +46,9 @@ export class SemantixSidebarView extends ItemView {
             return;
         }
         
-        // --- 整体容器 ---
         const wrapper = container.createEl("div", { cls: "semantix-sidebar-wrapper" });
         
-        // --- 1. 状态指示灯区域 ---
+        // --- 状态指示灯 ---
         const statusArea = wrapper.createEl("div", { cls: "semantix-status-area" });
         statusArea.style.display = "flex";
         statusArea.style.alignItems = "center";
@@ -53,7 +60,7 @@ export class SemantixSidebarView extends ItemView {
         this.indicatorEl.style.height = "10px";
         this.indicatorEl.style.borderRadius = "50%";
         this.indicatorEl.style.marginRight = "10px";
-        this.indicatorEl.style.backgroundColor = "var(--color-yellow)"; // Default syncing/connecting
+        this.indicatorEl.style.backgroundColor = "var(--color-yellow)";
         
         const statusText = statusArea.createEl("span", { text: "Connecting..." });
         statusText.style.fontSize = "0.9em";
@@ -64,24 +71,15 @@ export class SemantixSidebarView extends ItemView {
         this.indexStatusEl.style.marginLeft = "10px";
         this.indexStatusEl.style.color = "var(--text-muted)";
 
-        // --- 2. 动态面板区 ---
+        // --- 孤岛雷达区 ---
         const contentArea = wrapper.createEl("div", { cls: "semantix-content-area" });
         contentArea.style.padding = "10px";
-        
-        contentArea.createEl("h4", { text: "Whisperer 动态灵感" });
-        
-        this.whispererContainer = contentArea.createEl("div", { cls: "semantix-whisperer-results" });
-        this.whispererContainer.createEl("p", { 
-            text: "Waiting for input...", 
-            cls: "semantix-empty-text" 
-        });
-        
-        // 预留孤岛笔记容器
+
         const radarHeader = contentArea.createEl("div", { cls: "semantix-radar-header" });
         radarHeader.style.display = "flex";
         radarHeader.style.justifyContent = "space-between";
         radarHeader.style.alignItems = "center";
-        radarHeader.createEl("h4", { text: "Orphan Notes 雷达", cls: "semantix-radar-title" });
+        radarHeader.createEl("h4", { text: "孤岛雷达", cls: "semantix-radar-title" });
         
         const scanBtn = radarHeader.createEl("button", { text: "扫描" });
         scanBtn.addEventListener("click", () => {
@@ -95,13 +93,13 @@ export class SemantixSidebarView extends ItemView {
     }
 
     async onClose() {
-        // Cleanup if necessary
+        // 清理
     }
 
     /**
      * 渲染孤岛笔记列表
      */
-    public renderOrphans(orphans: any[]) { // Using any to avoid importing OrphanNode if lazy, but let's be clean
+    public renderOrphans(orphans: { file: { path: string; basename: string }; linkCount: number }[]) {
         if (!this.orphanContainer) return;
         this.orphanContainer.empty();
 
@@ -117,7 +115,6 @@ export class SemantixSidebarView extends ItemView {
             const li = listEl.createEl("li");
             li.style.marginBottom = "5px";
 
-            // Title
             const titleRow = li.createEl("div");
             titleRow.style.display = "flex";
             titleRow.style.justifyContent = "space-between";
@@ -133,17 +130,16 @@ export class SemantixSidebarView extends ItemView {
             const expandBtn = titleRow.createEl("span", { text: " 💡" });
             expandBtn.title = "Find recommendations";
             
-            // Container for recs
+            // 推荐结果展开容器
             const recsContainer = li.createEl("div");
             recsContainer.style.display = "none";
             recsContainer.style.marginTop = "5px";
             recsContainer.style.paddingLeft = "10px";
             recsContainer.style.borderLeft = "2px solid var(--background-modifier-border)";
 
-            // Expand toggle logic
             let loaded = false;
             titleRow.addEventListener("click", async (e) => {
-                if (e.target === link) return; // let link do its thing
+                if (e.target === link) return;
                 
                 const isHidden = recsContainer.style.display === "none";
                 recsContainer.style.display = isHidden ? "block" : "none";
@@ -151,8 +147,7 @@ export class SemantixSidebarView extends ItemView {
                 if (isHidden && !loaded) {
                     recsContainer.empty();
                     recsContainer.createEl("span", { text: "Loading..." });
-                    // Fetch
-                    const results = await this.plugin.orphanRadar.getRecommendationsForOrphan(orphan.file);
+                    const results = await this.plugin.orphanRadar.getRecommendationsForOrphan(orphan.file as any);
                     recsContainer.empty();
                     
                     if (results.length === 0) {
@@ -178,44 +173,6 @@ export class SemantixSidebarView extends ItemView {
         }
     }
 
-    /**
-     * 渲染 Whisperer 的检索结果
-     */
-    public renderWhispererResults(results: SearchResultItem[]) {
-        if (!this.whispererContainer) return;
-        this.whispererContainer.empty();
-
-        if (results.length === 0) {
-            this.whispererContainer.createEl("p", { 
-                text: "没有找到相关度高的笔记。", 
-                cls: "semantix-empty-text" 
-            });
-            return;
-        }
-
-        const listEl = this.whispererContainer.createEl("ul", { cls: "semantix-result-list" });
-        listEl.style.paddingLeft = "20px";
-        listEl.style.marginTop = "0px";
-
-        for (const item of results) {
-            const li = listEl.createEl("li");
-            li.style.marginBottom = "8px";
-            
-            const link = li.createEl("a", { text: this.getBasename(item.path) });
-            link.href = "#";
-            link.style.fontWeight = "bold";
-            // 绑定点击事件，调用 obsidian api 打开链接
-            link.addEventListener("click", (e) => {
-                e.preventDefault();
-                this.plugin.app.workspace.openLinkText(item.path, "", false);
-            });
-            
-            li.createEl("div", { text: `Similarity: ${item.score.toFixed(4)}` }).style.fontSize = "0.8em";
-            li.createEl("div", { text: item.snippet }).style.fontSize = "0.85em";
-            li.createEl("div", { text: "---" }).style.color = "transparent"; // separator visual spacing
-        }
-    }
-
     private getBasename(path: string): string {
         const parts = path.split('/');
         const name = parts.length > 0 ? parts[parts.length - 1] : '';
@@ -223,7 +180,7 @@ export class SemantixSidebarView extends ItemView {
     }
 
     /**
-     * 更新侧边栏状态指示灯
+     * 更新状态指示灯
      */
     public updateStatus(status: 'connected' | 'disconnected' | 'syncing') {
         if (!this.indicatorEl) return;
