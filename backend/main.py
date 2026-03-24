@@ -26,7 +26,8 @@ API_TOKEN = os.getenv("SEMANTIX_API_TOKEN", "").strip() or None
 ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
-        "SEMANTIX_ALLOWED_ORIGINS", "http://localhost,http://127.0.0.1"
+        "SEMANTIX_ALLOWED_ORIGINS", 
+        "http://localhost,http://127.0.0.1,app://obsidian.md,capacitor://localhost"
     ).split(",")
     if origin.strip()
 ]
