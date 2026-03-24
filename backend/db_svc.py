@@ -26,19 +26,20 @@ class DatabaseService:
                 pa.field("chunk_index", pa.int32()),
                 pa.field("vector", pa.list_(pa.float32(), self.dim)),
                 pa.field("text", pa.string()),
+                pa.field("child_text", pa.string()),
             ]
         )
 
         if COLLECTION_NAME in self.db.table_names():
             self.table = self.db.open_table(COLLECTION_NAME)
             existing_fields = {field.name for field in self.table.schema}
-            if "chunk_index" not in existing_fields:
+            if "child_text" not in existing_fields:
                 logger.warning(
-                    "Existing table schema missing chunk_index, recreating table..."
+                    "Existing table schema missing child_text, recreating table..."
                 )
                 self.db.drop_table(COLLECTION_NAME)
                 self.table = self.db.create_table(COLLECTION_NAME, schema=schema)
-                logger.info("Table recreated with chunk_index.")
+                logger.info("Table recreated with child_text.")
             else:
                 logger.info("Table %s already exists and opened.", COLLECTION_NAME)
         else:
@@ -149,16 +150,17 @@ class DatabaseService:
                 chunks_with_idx = split_into_chunks(text)
 
                 if not chunks_with_idx:
-                    chunk_text = text[:500] if len(text) > 500 else text
-                    chunks_with_idx = [(chunk_text, 0)]
+                    fallback = text[:500] if len(text) > 500 else text
+                    chunks_with_idx = [(fallback, fallback, 0, "")]
 
                 file_basename = os.path.basename(path)
                 if file_basename.lower().endswith(".md"):
                     file_basename = file_basename[:-3]
 
                 chunks_for_encoding = []
-                for chunk_text, _ in chunks_with_idx:
-                    enriched_text = f"[{file_basename}]\n{chunk_text}"
+                for parent_text, child_text, _, h_str in chunks_with_idx:
+                    header_part = f" [{h_str}]" if h_str else ""
+                    enriched_text = f"[{file_basename}]{header_part}\n{child_text}"
                     chunks_for_encoding.append(enriched_text)
 
                 try:
@@ -167,14 +169,15 @@ class DatabaseService:
                     logger.error("Failed to encode chunks for %s: %s", path, e)
                     continue
 
-                for i, (chunk_text, para_idx) in enumerate(chunks_with_idx):
+                for i, (parent_text, child_text, para_idx, _) in enumerate(chunks_with_idx):
                     all_chunk_data.append(
                         {
                             "vault_id": vault_id,
                             "path": path,
                             "chunk_index": i,
                             "vector": embeddings[i],
-                            "text": chunk_text,
+                            "text": parent_text,
+                            "child_text": child_text,
                         }
                     )
 
@@ -226,11 +229,22 @@ class DatabaseService:
                 path = row["path"]
                 distance = row["_distance"]
                 similarity = 1 - distance
-                chunk_text = row.get("text", "")
+                parent_text = row.get("text", "")
+                child_text = row.get("child_text", "")
                 chunk_index = row.get("chunk_index", 0)
 
+                # Path去重: 每篇文章只取最高分的一个上下文块展示
                 if path not in path_results or similarity > path_results[path]["score"]:
-                    snippet = self._truncate_snippet(chunk_text)
+                    if child_text and child_text in parent_text:
+                        start_idx = parent_text.find(child_text)
+                        snip_start = max(0, start_idx - 30)
+                        snip_end = min(len(parent_text), start_idx + len(child_text) + 50)
+                        snippet = parent_text[snip_start:snip_end].strip()
+                        if snip_start > 0: snippet = "..." + snippet
+                        if snip_end < len(parent_text): snippet = snippet + "..."
+                    else:
+                        snippet = self._truncate_snippet(parent_text)
+
                     path_results[path] = {
                         "path": path,
                         "score": similarity,
