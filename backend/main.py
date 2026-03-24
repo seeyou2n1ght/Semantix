@@ -262,8 +262,10 @@ def semantic_search(request: SemanticSearchRequest):
 
     start = time.perf_counter()
     try:
-        # Encode the query text
-        query_vector = model_svc.encode([request.text])[0]
+        # Encode the query text with BGE instruction prefix
+        # "为这个句子生成表示以用于检索相关文章：" is required for asymmetric retrieval with BAAI/bge-small-zh-v1.5
+        query_text = f"为这个句子生成表示以用于检索相关文章：{request.text}"
+        query_vector = model_svc.encode([query_text])[0]
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Embedding generation failed: {str(e)}"

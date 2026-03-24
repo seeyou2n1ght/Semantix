@@ -152,10 +152,17 @@ class DatabaseService:
                     chunk_text = text[:500] if len(text) > 500 else text
                     chunks_with_idx = [(chunk_text, 0)]
 
-                chunk_texts = [c[0] for c in chunks_with_idx]
+                file_basename = os.path.basename(path)
+                if file_basename.lower().endswith(".md"):
+                    file_basename = file_basename[:-3]
+
+                chunks_for_encoding = []
+                for chunk_text, _ in chunks_with_idx:
+                    enriched_text = f"[{file_basename}]\n{chunk_text}"
+                    chunks_for_encoding.append(enriched_text)
 
                 try:
-                    embeddings = model_svc.encode(chunk_texts)
+                    embeddings = model_svc.encode(chunks_for_encoding)
                 except Exception as e:
                     logger.error("Failed to encode chunks for %s: %s", path, e)
                     continue

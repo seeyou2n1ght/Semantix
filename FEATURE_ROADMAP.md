@@ -370,7 +370,22 @@ def get_chunks_with_embeddings(path: str, text: str):
 
 ---
 
-## 5. 优先级与时间估算
+## 5. 语义检索质量深度优化 (Semantic Search Deep Optimization)
+
+### 5.1 现状与已完成优化 (v0.2.x 阶段)
+针对初期向量模型“关联度不高、变成纯字面匹配”的痛点，我们已实现以下核心修复：
+1. **BGE模型指令对齐 (Query Instruction)**：在 `/search/semantic` 发起对长文档的不对称检索时，强制追加 `"为这个句子生成表示以用于检索相关文章："` 前缀，修正了短 Query 的降维向量漂移现象。
+2. **文本 Chunk 的上下文注入 (Metadata Enrichment)**：为打破长笔记碎段落丢失全局主题的弊端，在 `db_svc.py` 生成 embedding 之前，把来源文档的完整名字 `[文件名]` 隐性注入到 Chunk 文本头部，大幅提升了通用段落的召回向心力。
+
+### 5.2 未来进阶优化方向
+尽管通过极低开销的改动修正了绝大部分语义偏离，但仍有以下进阶优化空间：
+1. **混合检索 (Hybrid Search)**：结合 LanceDB 的 Full-Text Search (FTS)，实施向量检索 (Dense) 与关键词边界 (Sparse) 的双路召回，通过 RRF 合并，彻底解决专有名词和黑话丢失的问题。
+2. **段落级滑动重叠切分 (Sliding Window Overlap)**：在 `chunker.py` 实现带有 `Overlap=50` 的滑动窗口段落切割，避免相邻段落交界处的话题转折造成语义断裂。
+3. **Cross-Encoder 深度重排 (Re-ranking)**：接入如 `bge-reranker-base` 级别的精排模型，流程优化为：常规向量召回粗筛 Top 20 -> 喂给 Re-ranker 进行高精度二次打分 -> 取最终精准 Top 5。
+
+---
+
+## 6. 优先级与时间估算
 
 | 阶段 | 功能 | 优先级 | 预计工作量 |
 |------|------|--------|------------|
@@ -382,7 +397,7 @@ def get_chunks_with_embeddings(path: str, text: str):
 
 ---
 
-## 6. 待决策事项
+## 7. 待决策事项
 
 ### 6.1 冷启动
 - [ ] 进度条放在侧边栏顶部还是设置页面？
@@ -405,7 +420,7 @@ def get_chunks_with_embeddings(path: str, text: str):
 
 ---
 
-## 7. 版本规划
+## 8. 版本规划
 
 | 版本 | 功能 |
 |------|------|

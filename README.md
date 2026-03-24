@@ -302,6 +302,9 @@ Schema: [vault_id, path, chunk_index, vector, text]
 - [x] 光标活动监听
 - [x] 关键词高亮
 - [x] 悬浮提示
+- [x] BGE 查询指令补偿与 Chunking 上下文强化 (v0.2.x 优化)
+- [ ] 混合检索与双路召回 (BM25 + Vector)
+- [ ] Cross-encoder 深度重排支持
 - [ ] 孤岛笔记专属推荐算法
 - [ ] 侧边栏知识图谱可视化
 
