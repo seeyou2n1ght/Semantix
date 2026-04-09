@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-semantix",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "基于本地大模型与向量数据库的隐式知识链接发现工具",
 	"main": "main.js",
 	"type": "module",
