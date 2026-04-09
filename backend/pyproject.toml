@@ -9,6 +9,7 @@ dependencies = [
     "pydantic>=2.7.4",
     "sentence-transformers>=3.0.1",
     "lancedb>=0.8.2",
+    "pylance>=4.0.0",
 ]
 
 [dependency-groups]
