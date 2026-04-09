@@ -1,68 +1,94 @@
-# 生产部署指南 (Deployment)
+# Semantix Deployment Guide
 
-本指南覆盖 Semantix 后端服务的生产级部署建议与运维要点。前端 Obsidian 插件安装请参见 `D:\Semantix\README.md`。
+本文档描述当前实现下的 Semantix 后端部署方式，重点是让 Obsidian 插件能稳定连接本地或局域网中的 FastAPI 服务。
 
----
+## 推荐拓扑
 
-## 1. 推荐部署拓扑
+默认建议：
 
-- **默认建议**：后端部署在本机或局域网内设备，仅对局域网或本机开放。
-- **不建议**：直接公网暴露后端服务（除非使用 VPN/零信任或反向代理加固）。
+- 后端部署在本机，监听 `127.0.0.1:8000`
+- 或部署在可信的局域网设备中，再把插件 `Backend API URL` 指向该地址
 
----
+不建议：
 
-## 2. 环境准备
+- 直接暴露到公网
+- 在没有鉴权和反向代理限制的情况下开放 `0.0.0.0`
 
-- Python >= 3.11
-- uv（推荐）
-- 充足的磁盘空间用于向量数据库
+## 运行要求
 
----
+- Python `>= 3.11`
+- `uv`
+- 足够的磁盘空间用于模型缓存与 LanceDB 数据目录
 
-## 3. 配置项（生产必需）
+## 关键环境变量
 
-建议通过环境变量配置：
+| 变量 | 是否必需 | 说明 |
+| --- | --- | --- |
+| `SEMANTIX_API_TOKEN` | 推荐 | 启用请求头 `X-Semantix-Token` 校验 |
+| `SEMANTIX_ALLOWED_ORIGINS` | 推荐 | CORS 白名单 |
+| `SEMANTIX_DB_PATH` | 推荐 | LanceDB 数据目录 |
+| `SEMANTIX_LOG_LEVEL` | 可选 | 日志级别，默认 `INFO` |
 
-- `SEMANTIX_API_TOKEN`：强烈建议设置。前端插件需填同一 Token。
-- `SEMANTIX_ALLOWED_ORIGINS`：允许的来源，建议限制为本机或内网地址。
-- `SEMANTIX_DB_PATH`：向量数据库路径（建议使用绝对路径）。
-- `SEMANTIX_LOG_LEVEL`：日志级别（建议 `INFO` 或 `WARNING`）。
+建议显式设置 `SEMANTIX_DB_PATH`，不要依赖默认值。当前代码默认是 `./semantix.db`，但从运维角度更推荐使用目录语义明确的路径，例如：
 
-示例（Linux/macOS）：
+- Windows: `D:\Semantix\data\lancedb`
+- Linux: `/var/lib/semantix/lancedb`
+
+### Linux / macOS 示例
 
 ```bash
 export SEMANTIX_API_TOKEN="your-strong-token"
-export SEMANTIX_ALLOWED_ORIGINS="http://localhost,http://127.0.0.1"
-export SEMANTIX_DB_PATH="/var/lib/semantix/semantix.db"
+export SEMANTIX_ALLOWED_ORIGINS="http://localhost,http://127.0.0.1,app://obsidian.md"
+export SEMANTIX_DB_PATH="/var/lib/semantix/lancedb"
 export SEMANTIX_LOG_LEVEL="INFO"
 ```
 
-示例（Windows PowerShell）：
+### Windows PowerShell 示例
 
 ```powershell
 $env:SEMANTIX_API_TOKEN="your-strong-token"
-$env:SEMANTIX_ALLOWED_ORIGINS="http://localhost,http://127.0.0.1"
-$env:SEMANTIX_DB_PATH="D:\Semantix\data\semantix.db"
+$env:SEMANTIX_ALLOWED_ORIGINS="http://localhost,http://127.0.0.1,app://obsidian.md"
+$env:SEMANTIX_DB_PATH="D:\Semantix\data\lancedb"
 $env:SEMANTIX_LOG_LEVEL="INFO"
 ```
 
----
-
-## 4. 启动服务
-
-建议使用 `uv`：
+## 启动服务
 
 ```bash
-cd D:\Semantix\backend
+cd backend
 uv sync
 uv run uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
-如果需要在局域网中访问，可将 `--host` 设为 `0.0.0.0`，并使用防火墙限制访问范围。
+如果需要局域网访问：
 
----
+```bash
+uv run uvicorn main:app --host 0.0.0.0 --port 8000
+```
 
-## 5. 作为系统服务运行（Linux systemd 示例）
+但同时应配合：
+
+- 防火墙限制来源
+- API Token
+- 仅在可信网络中使用
+
+## 首次启动与健康检查
+
+首次启动时，后端会异步加载 `BAAI/bge-small-zh-v1.5`。因此：
+
+- `/health` 在模型加载完成前可能返回 `{"status":"loading"}`
+- `/ready` 在模型未就绪前会返回 `503`
+- 插件在这段时间里可能显示为未连接，等模型就绪后会自动恢复
+
+建议依次检查：
+
+```text
+GET /health
+GET /ready
+GET /index/status?vault_id=<vault-id>
+```
+
+## systemd 示例
 
 ```ini
 [Unit]
@@ -72,8 +98,8 @@ After=network.target
 [Service]
 WorkingDirectory=/opt/semantix/backend
 Environment=SEMANTIX_API_TOKEN=your-strong-token
-Environment=SEMANTIX_ALLOWED_ORIGINS=http://localhost,http://127.0.0.1
-Environment=SEMANTIX_DB_PATH=/var/lib/semantix/semantix.db
+Environment=SEMANTIX_ALLOWED_ORIGINS=http://localhost,http://127.0.0.1,app://obsidian.md
+Environment=SEMANTIX_DB_PATH=/var/lib/semantix/lancedb
 Environment=SEMANTIX_LOG_LEVEL=INFO
 ExecStart=/usr/bin/uv run uvicorn main:app --host 127.0.0.1 --port 8000
 Restart=always
@@ -83,29 +109,57 @@ RestartSec=3
 WantedBy=multi-user.target
 ```
 
----
+## 数据与备份
 
-## 6. 数据路径与备份
+Semantix 当前使用 LanceDB 本地目录作为索引存储。
 
-- 数据库为 LanceDB（目录形式），`SEMANTIX_DB_PATH` 指向目录。
-- 备份方式：**停止服务后**，整体复制数据库目录。
-- 建议定期备份并确保备份不进入 Git 仓库。
+备份建议：
 
----
+1. 停止后端服务
+2. 完整复制 `SEMANTIX_DB_PATH` 指向的目录
+3. 备份时不要把该目录纳入 Git 仓库
 
-## 7. 健康检查与监控
+如果需要重建索引：
 
-- `/health`：探活（模型未加载完成会返回 `loading`）。
-- `/ready`：就绪探针（模型加载完成返回 `ready`）。
-- `/metrics`：索引与检索统计（可被日志系统或自建监控采集）。
+- 可以直接在插件设置页执行“重建索引”
+- 或删除 LanceDB 数据目录后重新启动并执行一次全量索引
 
----
+## 升级建议
 
-## 8. 升级流程建议
+1. 停止后端
+2. 备份 LanceDB 数据目录
+3. 拉取最新代码
+4. 在 `backend/` 下执行 `uv sync`
+5. 启动服务并确认 `/ready`
+6. 如涉及索引结构变化，执行一次手动重建索引
 
-1. 停止服务
-2. 备份数据库目录
-3. `git pull` 更新代码
-4. `uv sync` 更新依赖
-5. 启动服务并验证 `/ready`
+说明：当前代码在 `db_svc.py` 中会检查表结构。如果缺少 `child_text` 字段，会重建表。
 
+## 常见问题
+
+### 插件一直显示未连接
+
+先检查：
+
+- 后端是否已启动
+- `Backend API URL` 是否正确
+- 模型是否还在首次加载
+- 如果开启了 `SEMANTIX_API_TOKEN`，插件里是否填写了同一 token
+
+### 已连接但没有结果
+
+常见原因：
+
+- 还没做过全量索引
+- 当前段落太短，前端不会触发搜索
+- `Minimum Similarity Threshold` 设得过高
+- 当前文件或已链接文件被排除
+
+### 重命名后结果异常
+
+当前实现里，重命名会被处理为：
+
+- 删除旧路径索引
+- 重新索引新路径
+
+如果中途异常，执行一次全量索引即可恢复一致性。

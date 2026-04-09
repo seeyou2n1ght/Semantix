@@ -1,110 +1,115 @@
-# Semantix · 语义雷达
+# Semantix
 
-> 一款基于本地大模型与向量数据库的 Obsidian 侧边栏插件，自动发现笔记库中语义相近但缺乏显式链接的知识节点。
+Semantix 是一个面向 Obsidian 的本地语义关联插件。它由两个部分组成：
 
-[![版本](https://img.shields.io/badge/version-v0.2.0-blue)](https://github.com/seeyou2n1ght/Semantix/releases)
-[![平台](https://img.shields.io/badge/platform-Obsidian%20Desktop%20%7C%20Mobile-purple)]()
-[![后端](https://img.shields.io/badge/backend-FastAPI%20%2B%20LanceDB-green)]()
+- `frontend/`: Obsidian 插件，负责监听编辑与文件事件、渲染侧边栏、发起索引与搜索请求
+- `backend/`: FastAPI 后端，负责 Markdown 清洗后的文本向量化、LanceDB 索引存储、语义检索与结果聚合
 
----
+项目当前版本：`v0.2.0`
 
-## 目录
+## 当前能力
 
-- [功能概览](#功能概览)
-- [系统架构](#系统架构)
-- [快速开始](#快速开始)
-- [配置说明](#配置说明)
-- [开发指南](#开发指南)
-- [工作原理](#工作原理)
-- [技术架构](#技术架构)
-- [Roadmap](#roadmap)
-- [贡献](#贡献)
+- 实时语义推荐 `Whisperer`
+  当前文件打开、编辑或光标移动后，自动搜索语义相关的历史笔记
+- 孤岛笔记扫描 `Orphan Radar`
+  找出没有出链和入链的笔记，并为其推荐潜在连接目标
+- 增量同步
+  监听 `create / modify / rename / delete` 事件，按批次刷新索引
+- 全量初始化索引
+  在插件设置页触发对当前 Vault 的全量索引，并在两个侧栏展示进度
+- 可解释结果
+  后端按 chunk 建索引，前端展示高相关 snippet，并高亮关键词
+- 已链接笔记过滤
+  Whisperer 可排除当前笔记已链接的文件，减少重复推荐
+- 移动端休眠
+  默认在移动端停用，避免不必要的电量与性能开销
 
----
+## 系统结构
 
-## 功能概览
+```text
+Obsidian Plugin (frontend)
+  ├─ settings.ts             插件设置
+  ├─ main.ts                 插件入口与生命周期
+  ├─ core/whisperer.ts       实时搜索触发逻辑
+  ├─ core/radar.ts           孤岛笔记扫描与推荐
+  ├─ core/sync.ts            文件变更批量同步
+  ├─ ui/whisperer-view.ts    Whisperer 侧栏
+  ├─ ui/radar-view.ts        Radar 侧栏
+  └─ api/client.ts           与后端通信
 
-| 功能 | 描述 |
-|---|---|
-| Real-time Whisperer | 根据当前编辑或阅读内容，实时推荐语义相关的历史笔记 |
-| Orphan Node Rescuer | 扫描无任何双向链接的孤岛笔记，并推荐适合建立连接的节点 |
-| 增量同步 | 监听 Vault 文件变更，批量同步至本地向量数据库，保持索引常新 |
-| 索引进度可见 | 侧边栏常驻显示索引进度与索引统计，用户可随时查看状态 |
-| 骨架屏过渡 | 请求期间展示骨架占位并保留旧内容，减少闪烁 |
-| 可解释结果 | 返回最匹配段落作为 snippet，关键词高亮，索引时分块存储无额外开销 |
-| 悬浮提示 | 悬浮分数显示相似度含义，悬浮结果显示详细对比 |
-| 移动端降级 | 移动端优雅休眠，不注册事件、不轮询，杜绝耗电 |
-
----
-
-## 系统架构
-
-```
-┌─────────────────────────┐         ┌───────────────────────────────┐
-│   Obsidian Plugin (前端) │  HTTP   │   Local AI Backend (后端)     │
-│                         │ ──────► │                               │
-│  • UI 渲染 / 事件监听    │         │  • FastAPI                    │
-│  • Markdown 降噪处理     │         │  • BGE bge-small-zh-v1.5      │
-│  • 增量同步队列          │ ◄────── │  • LanceDB (嵌入式向量库)     │
-└─────────────────────────┘         └───────────────────────────────┘
+FastAPI Backend (backend)
+  ├─ main.py                 API 入口
+  ├─ models.py               请求/响应模型
+  ├─ model_svc.py            SentenceTransformer 模型加载与编码
+  ├─ db_svc.py               LanceDB 索引与检索
+  └─ utils/chunker.py        标题感知切块
 ```
 
-### API 接口
+## 工作方式
 
-| 方法 | 路径 | 描述 |
-|---|---|---|
-| `GET` | `/health` | 探活，检测后端状态 |
-| `GET` | `/ready` | 就绪探针，检测模型是否加载完成 |
-| `GET` | `/metrics` | 运行指标（索引与检索计数、耗时） |
-| `POST` | `/index/batch` | 批量写入 / 更新笔记 embedding |
-| `POST` | `/index/delete` | 删除指定路径的 embedding |
-| `GET` | `/index/status` | 获取索引统计（按 vault_id） |
-| `POST` | `/index/clear/request` | 请求清空索引，返回确认 token |
+### 1. 索引链路
+
+1. 前端监听 Vault 文件变化
+2. 前端读取 Markdown 并执行清洗
+3. `SyncManager` 按批次调用 `POST /index/batch`
+4. 后端按段落与标题层级切块
+5. 后端用 `BAAI/bge-small-zh-v1.5` 生成 embedding
+6. 后端写入 LanceDB，并按 `vault_id + path` 维护索引
+
+### 2. 搜索链路
+
+1. `Whisperer` 在 `file-open`、`editor-change`、`cursor-activity` 时触发
+2. 前端抽取当前段落或全文，并排除当前文件与可选的已链接文件
+3. 后端为查询文本补上 BGE 检索指令前缀后编码
+4. LanceDB 执行向量检索
+5. 后端把 chunk 结果聚合为文档结果，返回分数、路径、snippet
+6. 前端渲染侧边栏、关键词高亮与分数颜色标签
+
+### 3. 孤岛扫描链路
+
+1. 前端直接读取 `app.metadataCache.resolvedLinks`
+2. 统计每个 Markdown 文件的出链与入链
+3. 选出总链接数为 `0` 的笔记
+4. 展开某个孤岛项时，再调用语义搜索获取推荐连接目标
+
+## API 概览
+
+| Method | Path | 用途 |
+| --- | --- | --- |
+| `GET` | `/health` | 健康检查；模型未加载完时返回 `loading` |
+| `GET` | `/ready` | 就绪检查；模型可用时返回 `ready` |
+| `GET` | `/metrics` | 返回索引与搜索计数、最近耗时 |
+| `GET` | `/index/status` | 返回某个 `vault_id` 的已索引笔记数 |
+| `POST` | `/index/batch` | 批量写入或更新文档 |
+| `POST` | `/index/delete` | 按路径删除索引 |
+| `POST` | `/index/clear/request` | 请求清空索引确认 token |
 | `POST` | `/index/clear/confirm` | 使用 token 确认清空索引 |
-| `POST` | `/search/semantic` | 语义相关笔记检索（支持 `min_similarity` 阈值） |
+| `POST` | `/search/semantic` | 语义搜索 |
 
----
+说明：
+
+- 当前没有独立的 `/index/full` 接口。全量索引由前端分批调用 `/index/batch` 实现。
+- 当前没有 BM25、混合检索、cross-encoder rerank。
 
 ## 快速开始
 
-### 前置条件
+### 1. 启动后端
 
-- **Obsidian** >= 1.4.0
-- **Python** >= 3.11（后端服务）
-- **Node.js** >= 18（前端构建，可选）
-- **uv**（推荐的 Python 环境管理工具）
+要求：
 
-### 1. 部署后端服务
-
-推荐部署于本机或局域网内的 Raspberry Pi 5 等设备。
+- Python `>= 3.11`
+- `uv`
 
 ```bash
-# 安装 uv（如尚未安装）
-curl -LsSf https://astral.sh/uv/install.sh | sh   # macOS / Linux
-# Windows PowerShell:
-# powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-
-# 克隆仓库并进入后端目录
 git clone https://github.com/seeyou2n1ght/Semantix.git
 cd Semantix/backend
-
-# 使用 uv 创建虚拟环境并安装依赖
 uv sync
-
-# 启动服务（默认监听 0.0.0.0:8000）
-uv run uvicorn main:app --host 0.0.0.0 --port 8000
+uv run uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
-### 2. 安装 Obsidian 插件
+首次启动时，`sentence-transformers` 会下载 `BAAI/bge-small-zh-v1.5`，因此 `/health` 可能短时间返回 `loading`。
 
-**方式一：从 Release 下载（推荐）**
-
-1. 前往 [Releases](https://github.com/seeyou2n1ght/Semantix/releases) 页面
-2. 下载最新版本的 `main.js` 和 `manifest.json`
-3. 放置到 `<your-vault>/.obsidian/plugins/semantix/` 目录
-4. 在 Obsidian 设置 → 第三方插件中启用 **Semantix**
-
-**方式二：从源码构建**
+### 2. 构建并安装 Obsidian 插件
 
 ```bash
 cd Semantix/frontend
@@ -112,241 +117,132 @@ npm install
 npm run build
 ```
 
-将 `main.js`、`manifest.json`、`styles.css` 复制到 `<your-vault>/.obsidian/plugins/semantix/`。
+把以下文件复制到：
 
-### 3. 验证连接
+```text
+<your-vault>/.obsidian/plugins/obsidian-semantix/
+```
 
-进入 **Obsidian 设置 → Semantix**，点击 **[Test Connection]** 验证与后端的连通性。
+需要复制的文件：
 
----
+- `frontend/main.js`
+- `frontend/manifest.json`
 
-## 配置说明
+说明：当前仓库没有单独的 `styles.css` 构建产物。
 
-### 核心配置
+### 3. 配置插件
 
-| 配置项 | 说明 | 默认值 |
-|---|---|---|
-| Backend API URL | 后端服务地址 | `http://localhost:8000` |
-| API Token | 后端鉴权令牌（可选） | — |
-| Whisperer Scope | 触发检索的上下文范围 | `Current Paragraph` |
-| Debounce Delay | 输入防抖时长 (ms) | `2000` |
-| Sync Batch Interval | 增量同步间隔 (s) | `60` |
-| Filter Linked Notes | 是否过滤已链接笔记 | `true` |
-| Top N Results | 推荐结果最大数量 | `5` |
-| Minimum Similarity Threshold | 最低相似度截断 | `0.70` |
-| High Score Threshold | 高分颜色阈值 | `0.85` |
-| Medium Score Threshold | 中分颜色阈值 | `0.75` |
-| Enable on Mobile | 移动端是否启用 | `false` |
-| Exclusion Rules | 不索引的路径（Glob） | — |
+在 Obsidian 中启用插件后，进入设置页配置：
 
-### 相似度分数说明
+- `Backend API URL`
+- `API Token`，如果后端启用了 `SEMANTIX_API_TOKEN`
 
-- 分数范围：`0.00-1.00`（数值越大越相似）
-- 颜色标签：
-  - 🟢 绿色 (>= 高分阈值)：高度相关
-  - 🔵 蓝色 (>= 中分阈值)：中度相关
-  - 🟡 黄色 (< 中分阈值)：边缘相关
-- 悬浮提示：显示相似度含义和详细对比
+然后点击 `Test Connection`。
 
-### 环境变量
+### 4. 初始化当前 Vault 索引
 
-| 变量 | 说明 | 示例 |
-|---|---|---|
-| `SEMANTIX_API_TOKEN` | API 访问令牌校验 | `my-secret-token` |
-| `SEMANTIX_ALLOWED_ORIGINS` | CORS Origin 白名单 | `http://localhost` |
-| `SEMANTIX_LOG_LEVEL` | 日志级别 | `INFO` |
+在插件设置页点击“初始化向量索引”后，插件会：
 
----
+- 枚举当前 Vault 的 Markdown 文件
+- 按排除规则过滤
+- 每批 `50` 篇调用一次 `/index/batch`
+- 在两个侧栏同步展示索引进度
 
-## 开发指南
+## 配置项
 
-### 前端构建
+### 插件设置
+
+| 配置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `Backend API URL` | `http://localhost:8000` | 后端地址 |
+| `API Token` | 空 | 对应后端 `SEMANTIX_API_TOKEN` |
+| `Whisperer Scope` | `paragraph` | `paragraph` 或 `document` |
+| `Debounce Delay` | `2000` | 编辑触发搜索的防抖时间，单位毫秒 |
+| `Sync Batch Interval` | `60` | 增量同步批次间隔，单位秒 |
+| `Exclusion Rules` | 空 | 每行一个前缀规则，例如 `Templates/` |
+| `Filter Linked Notes` | `true` | 搜索时排除当前笔记已链接目标 |
+| `Top N Results` | `5` | 返回结果数量 |
+| `Minimum Similarity Threshold` | `0.70` | 最低相似度过滤 |
+| `High Score Threshold` | `0.85` | 高分阈值，显示绿色 |
+| `Medium Score Threshold` | `0.75` | 中分阈值，显示蓝色 |
+| `Explainable Results` | `true` | 展示最相关 snippet |
+| `Enable on Mobile` | `false` | 是否在移动端启用 |
+
+### 后端环境变量
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `SEMANTIX_API_TOKEN` | 空 | 启用简单 token 鉴权 |
+| `SEMANTIX_ALLOWED_ORIGINS` | `http://localhost,http://127.0.0.1,app://obsidian.md,capacitor://localhost` | CORS 白名单 |
+| `SEMANTIX_LOG_LEVEL` | `INFO` | 日志级别 |
+| `SEMANTIX_DB_PATH` | `./semantix.db` | LanceDB 数据目录 |
+
+说明：`SEMANTIX_DB_PATH` 建议使用明确的目录路径，例如 `D:\Semantix\data\semantix-lance` 或 `/var/lib/semantix/lancedb`。
+
+## 当前实现细节
+
+### Markdown 清洗
+
+前端在发送文本前会做一次轻量清洗，去掉：
+
+- YAML frontmatter
+- 代码块与行内代码
+- 图片与嵌入
+- HTML 标签
+- Markdown 格式符号
+
+同时会保留普通链接文字与双链别名，以尽量保留语义内容。
+
+### 切块策略
+
+后端切块不是简单的全文 embedding：
+
+- 按空行拆 parent chunk
+- 识别最近的 Markdown 标题层级
+- 将 `文件名 + 最近标题` 注入 child chunk 的 embedding 文本
+- 结果存储为：
+  - `text`: parent chunk
+  - `child_text`: 实际用于定位的子块
+
+搜索时先按 child chunk 找到最相关片段，再聚合回文档级结果。
+
+### Vault 隔离
+
+前端根据 `vault name + base path` 计算稳定的 `vaultId` 哈希值，并随所有请求发送。后端索引与查询都按 `vault_id` 做隔离。
+
+## 开发
+
+### 前端
 
 ```bash
 cd frontend
-npm install           # 安装依赖
-npm run dev           # 开发模式
-npm run build         # 生产构建
-npm run lint          # 代码检查
+npm install
+npm run dev
+npm run build
+npm run lint
 ```
 
-### 后端开发
+### 后端
 
 ```bash
 cd backend
-uv sync                                  # 安装依赖
-uv run uvicorn main:app --reload         # 开发模式
+uv sync
+uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-### 项目结构
+## 已知边界
 
-```
-Semantix/
-├── frontend/                # Obsidian 插件
-│   ├── src/
-│   │   ├── api/            # API 客户端
-│   │   ├── core/           # 核心逻辑 (whisperer, radar, sync)
-│   │   ├── ui/             # 视图组件
-│   │   ├── utils/          # 工具函数
-│   │   ├── main.ts         # 插件入口
-│   │   └── settings.ts     # 设置面板
-│   ├── manifest.json
-│   └── package.json
-└── backend/                 # Python 后端
-    ├── main.py             # FastAPI 入口
-    ├── model_svc.py        # Embedding 模型服务
-    ├── db_svc.py           # LanceDB 服务
-    └── utils/chunker.py    # 分块器
-```
+- 搜索目前是纯向量检索，不包含关键词倒排召回
+- 排除规则当前是“按路径前缀匹配”，不是完整 glob 或正则
+- 模型与数据库都运行在本地，首次模型加载可能较慢
+- 文档中的“未来计划”以 [FEATURE_ROADMAP.md](./FEATURE_ROADMAP.md) 为准
 
----
+## 相关文档
 
-## 工作原理
-
-### Real-time Whisperer
-
-```
-用户编辑 / 切换文件 / 点击段落
-        │
-        ▼
-  防抖计时 (2000ms / 300ms)
-        │
-        ▼
-  提取上下文（当前段落 or 全文）
-        │
-        ▼
-  Markdown 降噪
-        │
-        ▼
-  POST /search/semantic
-        │
-        ▼
-  侧边栏渲染结果
-    • 标题 + 相似度分数
-    • 关键词高亮的 snippet
-    • 悬浮提示
-```
-
-### Orphan Node Rescuer
-
-通过 `app.metadataCache` 统计笔记的出度和入度，列出链接数为 0 的孤岛笔记，点击后展示语义推荐连接。
-
-### 核心检索处理规则 (v0.x 深度架构)
-
-为了解决传统的粗颗粒度向量检索中出现的“关联度不高、变成纯字面匹配”问题，Semantix 后端在摄取和查重逻辑上进行了如下深度架构升级：
-
-1. **BGE 对称指令补齐 (Query Instruction)**
-   - 在使用零散短句搜索长文档的“非对称检索”时，后端会自动为用户的查询动态追加 `为这个句子生成表示以用于检索相关文章：` 前缀。修正了短 Query 导致的高维向量大幅度漂移现象，极大拉升了跨字面意义召回的下限。
-
-2. **Markdown 结构化标题感知切分 (Header-aware Chunking)**
-   - 传统的 `\n\n` 切分会让子段落严重丢失其上下文主题（例如孤立的“导致端口冲突”在向量中毫无业务属性）。
-   - 在笔记入库时，解析引擎会提取正文最邻近的前置 Header 状态树（例如 `# 环境部署 -> ## Nginx`），并在构建向量矩阵前将这层逻辑骨架硬编码进每一段细小的切片中，让所有碎片都死死绑定正确的话题向心力。
-
-3. **父子混合粒度截断 (Parent-child Retrieval & Deduplication)**
-   - **切分逻辑**：单篇文章被宏观剥离为数百字的“大父段落 (Parent Chunk)”，进而应用滑动窗口模式将其精细切分成拥有交叠边缘的“极小语句块 (Child Chunk)”。
-   - **高锐度打分**：真正交由大模型算力生成 Embedding 的仅为“小语句块”。极细的检索视界防止了长文本包含过多信息被“均值化模糊”的弊端。
-   - **聚合去重截断 (Deduplication)**：匹配出最高分的结果后，绝不直接将孤立残缺的部分直接发给前台。后端通过文段 Hash 执行内存查重工作，把从属同一个父段落内的所有高分短语重合为一次投递。顺带提取完整的含有正确因果关系的上下文环境作为 Snippet 推流到底端设备上。
-
----
-
-## 技术架构
-
-<details>
-<summary>点击展开详细架构说明</summary>
-
-### 前端模块
-
-#### API 契约层 (`frontend/src/api/`)
-- 使用 `requestUrl` 解决跨域问题
-- 完整的 TypeScript 类型定义
-- 支持 `min_similarity` 相似度过滤
-
-#### Whisperer (`frontend/src/core/whisperer.ts`)
-- **三重触发机制**：
-  - `file-open`: 文件切换时触发
-  - `editor-change`: 编辑时防抖触发（2000ms）
-  - `cursor-activity`: 光标活动触发（300ms，仅 paragraph 模式）
-- **关键词高亮**：N-gram 算法 + 停用字过滤
-- **Snippet 聚焦**：以匹配关键词为中心截取
-
-#### Orphan Radar (`frontend/src/core/radar.ts`)
-- 前端计算入度/出度，找出孤岛笔记
-- 支持展开显示推荐连接
-
-### 后端模块
-
-#### 数据库服务 (`backend/db_svc.py`)
-```python
-Schema: [vault_id, path, chunk_index, vector, text]
-# 索引时分块存储，检索时聚合
-```
-
-#### 分块器 (`backend/utils/chunker.py`)
-- 按段落分块（空行分割）
-- 超长段落按句子边界切分
-- max 500 字符，min 50 字符
-
-### 关键算法
-
-#### N-gram 关键词提取
-```
-输入: "机器学习是人工智能"
-输出: ["机器学", "器学习", "人工智", ...]  # 过滤含停用字的组合
-```
-
-#### Snippet 聚焦截取
-```
-以第一个匹配关键词为中心
-前后各取 40 字符
-超出边界添加省略号
-```
-
-</details>
-
----
-
-## Roadmap
-
-- [x] Real-time Whisperer（MVP）
-- [x] Orphan Node Rescuer（MVP）
-- [x] 增量批量同步
-- [x] 索引统计面板
-- [x] 一键重建索引
-- [x] 相似度阈值过滤
-- [x] 分数颜色标签
-- [x] 索引时分块存储
-- [x] 光标活动监听
-- [x] 关键词高亮
-- [x] 悬浮提示
-- [x] BGE 查询指令补偿与 Chunking 上下文强化 (v0.2.x 优化)
-- [ ] 混合检索与双路召回 (BM25 + Vector)
-- [ ] Cross-encoder 深度重排支持
-- [ ] 孤岛笔记专属推荐算法
-- [ ] 侧边栏知识图谱可视化
-
----
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request。提交代码请遵循 Conventional Commits 规范：
-
-```
-feat(whisperer): 添加段落级语义触发逻辑
-fix(sync): 修复 rename 事件导致的重复索引问题
-```
-
----
+- [部署说明](./DEPLOYMENT.md)
+- [路线图与当前状态](./FEATURE_ROADMAP.md)
+- [前端开发说明](./frontend/README.md)
 
 ## License
 
-MIT © 2026 Semantix Contributors
-
----
-
-## 致谢
-
-感谢以下项目对本开发的帮助：
-
-- **[Antigravity](https://github.com/antigravity)** - 代码启发与架构参考
-- **[Codex](https://github.com/codex)** - 开发工具链支持
-- **[OpenCode](https://github.com/opencode)** - AI 辅助编程，让开发更高效
+MIT

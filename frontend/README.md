@@ -1,48 +1,107 @@
-# Semantix (语义雷达) Plugin for Obsidian
+# Semantix Frontend
 
-一款基于本地大模型与向量数据库的 Obsidian 侧边栏插件，自动发现笔记库中语义相近但缺乏显式链接的知识节点。
+`frontend/` 是 Semantix 的 Obsidian 插件部分。
 
-## 核心功能 (Core Features)
+它负责：
 
-- **Real-time Whisperer (动态灵感)**
-  根据您当前在编辑器中输入的内容（或正在阅读的段落全文），在右侧边栏实时推荐语义相似的历史笔记。
-  - 支持防抖配置，避免频繁触发 API。
-  - 支持双向链接过滤，隐藏已经建立链接的笔记。
+- 注册插件设置与两个侧边栏视图
+- 监听编辑器与 Vault 文件事件
+- 清洗 Markdown 文本
+- 调用后端完成索引与语义搜索
 
-- **Orphan Node Rescuer (游离笔记雷达)**
-  一键扫描您的整个 Obsidian Vault，找出没有任何出度 (`links`) 和入度 (`backlinks`) 的“孤岛笔记”。
-  点击任意孤岛笔记，即可展开查看为其推荐的语义相似笔记，帮助您将灵感碎片连接入网。
+## 目录结构
 
-- **Incremental Sync (增量同步)**
-  自动监听 Obsidian 的文件变更（创建、修改、重命名、删除），并将变更排入防抖队列，打包批量发送给本地向量数据库。
-
-## 安装与开发步骤 (Development)
-
-本项目使用 TypeScript 和官方的 Obsidian Plugin API 构建。
-
-### 1. 环境准备
-- Node.js (建议 >= 18)
-- Obsidian 桌面版
-
-### 2. 编译插件
-```bash
-# 安装依赖
-npm install
-
-# 开发模式（监听文件变化并自动重新编译）
-npm run dev
-
-# 生产环境编译（压缩并生成 main.js）
-npm run build
+```text
+src/
+  api/
+    client.ts          后端 API 客户端
+    types.ts           前后端请求与响应类型
+  core/
+    whisperer.ts       实时搜索触发逻辑
+    radar.ts           孤岛笔记扫描与推荐
+    sync.ts            增量同步队列
+  ui/
+    whisperer-view.ts  Whisperer 侧边栏
+    radar-view.ts      Radar 侧边栏
+  utils/
+    markdown.ts        Markdown 清洗
+  main.ts              插件入口
+  settings.ts          设置页定义
 ```
 
-### 3. 安装到 Vault
-由于本插件需要配合专门的本地 FastAPI 后端运作，尚未提交至官方插件市场。
-请将编译后的 `main.js`, `manifest.json` 和 `styles.css`（如有）直接拷贝到您的 Vault 插件目录下：
-`<your-vault>/.obsidian/plugins/obsidian-semantix/`
+## 关键行为
 
-然后在 Obsidian 设置的“第三方插件”中找到并启用 **Semantix**。
+### Whisperer
 
-## 后端服务依赖
-此插件必须连接到对应的 Python 向量服务（`semantix-backend`）。您可以在插件的设置面板中配置 `Backend API URL` 并点击“测试连接”。
-完整的后端代码和架构文档，请参阅代码仓库根目录。
+- 文件打开时立即尝试搜索
+- 编辑内容时使用防抖触发搜索
+- 在段落模式下，光标移动后也会触发搜索
+- 可排除当前文件和已链接文件
+
+### SyncManager
+
+- 监听 `create / modify / rename / delete`
+- 合并为待更新队列和待删除队列
+- 到达批次时间后统一 flush
+- 重命名按“删旧路径 + 写新路径”处理
+
+### Orphan Radar
+
+- 基于 `app.metadataCache.resolvedLinks` 统计出链和入链
+- 选出总链接数为 `0` 的 Markdown 文件
+- 用户展开某项时再发起语义推荐请求
+
+## 构建
+
+要求：
+
+- Node.js `>= 18`
+
+安装与构建：
+
+```bash
+npm install
+npm run dev
+npm run build
+npm run lint
+```
+
+## 安装到 Vault
+
+构建完成后，把以下文件复制到：
+
+```text
+<your-vault>/.obsidian/plugins/obsidian-semantix/
+```
+
+需要复制：
+
+- `main.js`
+- `manifest.json`
+
+当前没有单独的 `styles.css` 文件。
+
+## 与后端的契约
+
+插件当前依赖以下接口：
+
+- `GET /health`
+- `GET /index/status`
+- `POST /index/batch`
+- `POST /index/delete`
+- `POST /search/semantic`
+- `POST /index/clear/request`
+- `POST /index/clear/confirm`
+
+说明：
+
+- 全量索引不是后端单独任务，而是前端多次调用 `/index/batch`
+- `vault_id` 由插件本地计算
+
+## 当前实现注意事项
+
+- 移动端默认休眠，除非用户在设置里显式开启
+- `Exclusion Rules` 当前是路径前缀匹配，不是完整 glob
+- `Explainable Results` 在 UI 中存在；当前后端本身就会返回 snippet
+
+更完整的整体说明见 [root README](../README.md)。
