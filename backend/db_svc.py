@@ -193,6 +193,15 @@ class DatabaseService:
             logger.error("Error inserting documents: %s", e)
             raise
 
+    def rebuild_fts_index(self):
+        try:
+            # Rebuild Lance native Full Text Search index for hybrid queries
+            if self.table:
+                self.table.create_fts_index("text", replace=True)
+                logger.info("FTS index on 'text' rebuilt successfully.")
+        except Exception as e:
+            logger.error("Failed to rebuild FTS index: %s", e)
+
     def search(
         self,
         vault_id: str,
@@ -200,15 +209,25 @@ class DatabaseService:
         top_k: int = 5,
         exclude_paths: List[str] = None,
         min_similarity: float = 0.0,
+        query_text: str = None,
     ) -> List[Dict[str, Any]]:
         """
         Search for similar chunks and aggregate by document path.
         Returns document-level results with the best matching chunk as snippet.
         """
         try:
-            query = self.table.search(query_vector).metric("cosine").limit(top_k * 3)
+            is_hybrid = False
+            if query_text:
+                try:
+                    query = self.table.search(query_type="hybrid").vector(query_vector).text(query_text).limit(top_k * 3)
+                    is_hybrid = True
+                except Exception as e:
+                    logger.warning("Hybrid search failed (%s), falling back to vector search.", e)
+                    query = self.table.search(query_vector).metric("cosine").limit(top_k * 3)
+            else:
+                query = self.table.search(query_vector).metric("cosine").limit(top_k * 3)
 
-            if min_similarity > 0:
+            if min_similarity > 0 and not is_hybrid:
                 max_distance = 1.0 - min_similarity
                 query = query.distance_range(upper_bound=max_distance)
 
@@ -227,11 +246,19 @@ class DatabaseService:
 
             for row in res_list:
                 path = row["path"]
-                distance = row["_distance"]
-                similarity = 1 - distance
+                
+                if "_relevance_score" in row:
+                    similarity = row["_relevance_score"]
+                else:
+                    distance = row.get("_distance", 1.0)
+                    similarity = 1.0 - distance
+
                 parent_text = row.get("text", "")
                 child_text = row.get("child_text", "")
                 chunk_index = row.get("chunk_index", 0)
+
+                if not is_hybrid and min_similarity > 0 and similarity < min_similarity:
+                    continue
 
                 # Path去重: 每篇文章只取最高分的一个上下文块展示
                 if path not in path_results or similarity > path_results[path]["score"]:

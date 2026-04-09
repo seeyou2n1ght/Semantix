@@ -2,7 +2,7 @@ import os
 import time
 import logging
 import secrets
-from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi import FastAPI, HTTPException, Depends, Header, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta
 from typing import Dict, Optional
@@ -122,7 +122,7 @@ def get_metrics():
 
 
 @app.post("/index/batch", tags=["Index"])
-def batch_index(request: BatchIndexRequest):
+def batch_index(request: BatchIndexRequest, background_tasks: BackgroundTasks):
     """Batch embed and index documents."""
     if not request.documents:
         return {"status": "success", "indexed": 0}
@@ -156,6 +156,7 @@ def batch_index(request: BatchIndexRequest):
     # 3. Upsert into database
     try:
         db_svc.upsert_documents(data_to_insert)
+        background_tasks.add_task(db_svc.rebuild_fts_index)
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Database insertion failed: {str(e)}"
@@ -171,13 +172,14 @@ def batch_index(request: BatchIndexRequest):
 
 
 @app.post("/index/delete", tags=["Index"])
-def delete_index(request: DeleteIndexRequest):
+def delete_index(request: DeleteIndexRequest, background_tasks: BackgroundTasks):
     """Delete specific paths from the index."""
     if not request.paths:
         return {"status": "success"}
 
     try:
         db_svc.delete_by_paths(request.vault_id, request.paths)
+        background_tasks.add_task(db_svc.rebuild_fts_index)
         return {"status": "success", "deleted": len(request.paths)}
     except Exception as e:
         raise HTTPException(
@@ -279,6 +281,7 @@ def semantic_search(request: SemanticSearchRequest):
             top_k=request.top_k,
             exclude_paths=request.exclude_paths or [],
             min_similarity=request.min_similarity or 0.0,
+            query_text=request.text,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database search failed: {str(e)}")
