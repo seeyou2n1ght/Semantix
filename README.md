@@ -159,7 +159,7 @@ npm run build
 | `Whisperer Scope` | `paragraph` | `paragraph` 或 `document` |
 | `Debounce Delay` | `2000` | 编辑触发搜索的防抖时间，单位毫秒 |
 | `Sync Batch Interval` | `60` | 增量同步批次间隔，单位秒 |
-| `Exclusion Rules` | 空 | 每行一个前缀规则，例如 `Templates/` |
+| `Exclusion Rules` | 空 | 每行一个匹配规则，支持全语法 Glob (例如 `**/*.canvas`) |
 | `Filter Linked Notes` | `true` | 搜索时排除当前笔记已链接目标 |
 | `Top N Results` | `5` | 返回结果数量 |
 | `Minimum Similarity Threshold` | `0.70` | 最低相似度过滤 |
@@ -232,8 +232,7 @@ uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000
 
 ## 已知边界
 
-- 搜索目前是纯向量检索，不包含关键词倒排召回
-- 排除规则当前是“按路径前缀匹配”，不是完整 glob 或正则
+- 目前支持基于 LanceDB 驱动的 FTS 混合检索进行关键词与语义补充
 - 模型与数据库都运行在本地，首次模型加载可能较慢
 - 文档中的“未来计划”以 [FEATURE_ROADMAP.md](./FEATURE_ROADMAP.md) 为准
 
