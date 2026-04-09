@@ -29,12 +29,19 @@ jobs:
               working-directory: frontend
               run: npm run build
 
+            - name: Package frontend artifacts
+              working-directory: frontend
+              run: |
+                  mkdir -p release
+                  cp main.js manifest.json release/
+                  if [ -f styles.css ]; then cp styles.css release/; fi
+                  cd release
+                  zip -r "../semantix-${{ github.ref_name }}.zip" .
+
             - name: Create Release
               uses: softprops/action-gh-release@v2
               with:
-                  files: |
-                      frontend/main.js
-                      frontend/manifest.json
+                  files: frontend/semantix-${{ github.ref_name }}.zip
                   generate_release_notes: true
                   draft: false
                   prerelease: false
