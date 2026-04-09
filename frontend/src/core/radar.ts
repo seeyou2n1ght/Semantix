@@ -57,16 +57,38 @@ export class OrphanRadar {
 
     /**
      * 针对某篇孤岛笔记获取推荐结果
+     * P1 优化：注入文件名、Tags、路径等上下文以增强推荐准确度
      */
     public async getRecommendationsForOrphan(file: TFile): Promise<SearchResultItem[]> {
         const rawText = await this.plugin.app.vault.cachedRead(file);
         const cleaned = cleanMarkdown(rawText);
         
-        if (cleaned.length < 5) {
-            const titleCleared = cleanMarkdown(file.basename);
-            return await this.fetchSearch(titleCleared, [file.path]);
+        // 获取元数据增强上下文
+        const cache = this.plugin.app.metadataCache.getFileCache(file);
+        const tags = cache?.tags?.map(t => t.tag) || [];
+        const frontmatterTags = cache?.frontmatter?.tags;
+        if (frontmatterTags) {
+            if (Array.isArray(frontmatterTags)) {
+                tags.push(...frontmatterTags);
+            } else if (typeof frontmatterTags === 'string') {
+                tags.push(...frontmatterTags.split(',').map(t => t.trim()));
+            }
         }
-        return await this.fetchSearch(cleaned, [file.path]);
+        
+        const uniqueTags = [...new Set(tags)];
+        const folder = file.parent?.path && file.parent.path !== '/' ? `目录: ${file.parent.path}\n` : '';
+        const tagStr = uniqueTags.length > 0 ? `标签: ${uniqueTags.join(' ')}\n` : '';
+        const titleStr = `标题: ${file.basename}\n`;
+        
+        // 组装增强型的查询文本
+        const enrichedQuery = `${titleStr}${folder}${tagStr}${cleaned}`;
+        
+        if (cleaned.length < 5 && uniqueTags.length === 0) {
+            const titleOnly = cleanMarkdown(file.basename);
+            return await this.fetchSearch(titleOnly, [file.path]);
+        }
+        
+        return await this.fetchSearch(enrichedQuery, [file.path]);
     }
 
     private async fetchSearch(query: string, excludes: string[]): Promise<SearchResultItem[]> {

@@ -109,9 +109,19 @@ public getCursorActivityExtension(): Extension {
         console.debug("Semantix Whisperer: Triggering semantic search...");
         this.showLoading();
 
+        // P1: 为全篇搜索注入增强上下文
+        let queryText = cleaned;
+        if (this.plugin.settings.whispererScope === 'document') {
+            const cache = this.plugin.app.metadataCache.getFileCache(view.file);
+            const tags = cache?.tags?.map(t => t.tag) || [];
+            const uniqueTags = [...new Set(tags)];
+            const tagStr = uniqueTags.length > 0 ? `标签: ${uniqueTags.join(' ')}\n` : '';
+            queryText = `标题: ${view.file.basename}\n${tagStr}${cleaned}`;
+        }
+
         const response = await this.plugin.apiClient.semanticSearch({
             vault_id: this.plugin.vaultId,
-            text: cleaned,
+            text: queryText,
             top_k: this.plugin.settings.topNResults,
             exclude_paths: excludes,
             min_similarity: this.plugin.settings.minSimilarityThreshold,
