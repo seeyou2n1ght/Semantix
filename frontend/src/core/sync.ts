@@ -2,6 +2,7 @@ import { TFile, TAbstractFile } from 'obsidian';
 import SemantixPlugin from '../main';
 import { IndexDocument } from '../api/types';
 import { cleanMarkdown } from '../utils/markdown';
+import picomatch from 'picomatch';
 
 export class SyncManager {
     plugin: SemantixPlugin;
@@ -13,6 +14,9 @@ export class SyncManager {
     
     private syncTimer: number | null = null;
     private isFlushing: boolean = false;
+
+    private cachedRulesStr: string | null = null;
+    private cachedMatchers: any[] = [];
 
     constructor(plugin: SemantixPlugin) {
         this.plugin = plugin;
@@ -66,12 +70,39 @@ export class SyncManager {
      */
     private isExcluded(path: string): boolean {
         const rulesStr = this.plugin.settings.exclusionRules || "";
-        const rules = rulesStr.split('\n').map(r => r.trim()).filter(r => r.length > 0);
         
-        for (const rule of rules) {
-            // 基本的简单 Glob/前缀匹配 (MVP 实现)
-            // 例如 rule 是 'Templates/'，path 是 'Templates/Daily.md' -> return true
-            if (path.startsWith(rule)) return true;
+        if (this.cachedRulesStr !== rulesStr) {
+            this.cachedRulesStr = rulesStr;
+            this.cachedMatchers = [];
+            const rules = rulesStr.split('\n').map(r => r.trim()).filter(r => r.length > 0);
+            
+            for (const r of rules) {
+                let globRule = r;
+                // Downward compatibility: If rule doesn't contain glob characters, make it a prefix match
+                if (!r.includes('*') && !r.includes('?') && !r.includes('[') && !r.includes(']')) {
+                    if (r.endsWith('/')) {
+                        globRule = `${r}**`;
+                    } else if (r.includes('.')) {
+                        // Keep as is for file matches (picomatch natively handles it or we could use **/${r})
+                    } else {
+                        globRule = `${r}/**`;
+                    }
+                }
+
+                try {
+                    this.cachedMatchers.push(picomatch(globRule));
+                } catch (e) {
+                    console.error(`Semantix: Invalid glob matching rule "${globRule}":`, e);
+                }
+            }
+        }
+        
+        for (const isMatch of this.cachedMatchers) {
+            try {
+                if (isMatch(path)) return true;
+            } catch (e) {
+                // Ignore matching errors for invalid paths against a rule
+            }
         }
         return false;
     }

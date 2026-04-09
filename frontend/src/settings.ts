@@ -132,9 +132,9 @@ export class SemantixSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Exclusion Rules')
-            .setDesc('每行输入一个不需要索引的路径模式 (如 Templates/)')
+            .setDesc('每行输入一个不需要索引的路径，支持标准的 Glob 通配符（如 Templates/** 排除目录内所有，**/*.canvas 排除所有画板）')
             .addTextArea(text => text
-                .setPlaceholder('Templates/\nAttachments/')
+                .setPlaceholder('Templates/**\n**/*.canvas\nArchive/**/*.md')
                 .setValue(this.plugin.settings.exclusionRules)
                 .onChange(async (value) => {
                     this.plugin.settings.exclusionRules = value;
