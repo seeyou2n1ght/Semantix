@@ -2,6 +2,7 @@ import { TFile, TAbstractFile } from 'obsidian';
 import SemantixPlugin from '../main';
 import { IndexDocument } from '../api/types';
 import { cleanMarkdown } from '../utils/markdown';
+// @ts-expect-error No type declarations for picomatch
 import picomatch from 'picomatch';
 
 export class SyncManager {

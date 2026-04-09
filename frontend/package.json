@@ -29,6 +29,7 @@
 		"jiti": "2.6.1"
 	},
 	"dependencies": {
-		"obsidian": "latest"
+		"obsidian": "latest",
+		"picomatch": "^4.0.2"
 	}
 }
