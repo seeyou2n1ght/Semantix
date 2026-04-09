@@ -219,10 +219,12 @@ class DatabaseService:
             is_hybrid = False
             if query_text:
                 try:
-                    query = self.table.search(query_type="hybrid").vector(query_vector).text(query_text).limit(top_k * 3)
+                    from lancedb.rerankers import LinearCombinationReranker
+                    reranker = LinearCombinationReranker(weight=0.7)
+                    query = self.table.search(query_type="hybrid").vector(query_vector).text(query_text).rerank(reranker=reranker).limit(top_k * 3)
                     is_hybrid = True
                 except Exception as e:
-                    logger.warning("Hybrid search failed (%s), falling back to vector search.", e)
+                    logger.warning("Hybrid search/rerank failed (%s), falling back to vector search.", e)
                     query = self.table.search(query_vector).metric("cosine").limit(top_k * 3)
             else:
                 query = self.table.search(query_vector).metric("cosine").limit(top_k * 3)
@@ -249,6 +251,8 @@ class DatabaseService:
                 
                 if "_relevance_score" in row:
                     similarity = row["_relevance_score"]
+                elif "_score" in row:
+                    similarity = row["_score"]
                 else:
                     distance = row.get("_distance", 1.0)
                     similarity = 1.0 - distance
