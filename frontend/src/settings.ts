@@ -123,6 +123,15 @@ export class SemantixSettingTab extends PluginSettingTab {
             ? path.join(backendPath, '.venv', 'Scripts', 'python.exe')
             : path.join(backendPath, '.venv', 'bin', 'python');
 
+        // 特殊逻辑：如果是 uv 项目（包含 uv.lock），我们强制使用 'uv' 命令，因为 uv run 比直连 .venv 更稳健
+        const uvLock = path.join(backendPath, 'uv.lock');
+        if (fs.existsSync(uvLock)) {
+            this.plugin.settings.pythonPath = 'uv';
+            this.plugin.saveSettings();
+            this.updateStatus('python', `✅ 已检测到 uv 项目，将通过 uv 驱动服务`);
+            return;
+        }
+
         if (fs.existsSync(venvPython)) {
             this.plugin.settings.pythonPath = venvPython;
             this.plugin.saveSettings();
