@@ -36,7 +36,7 @@ export function cleanMarkdown(text: string): string {
     cleaned = cleaned.replace(/~~(.*?)~~/g, "$1");
 
     // 6. Remove quote and list markers while keeping each item on its own line
-    cleaned = cleaned.replace(/^[>\-\*\+]\s+/gm, "");
+    cleaned = cleaned.replace(/^[>\-\*+]\s+/gm, "");
 
     // 7. Remove HTML tags
     cleaned = cleaned.replace(/<[^>]*>?/gm, "");

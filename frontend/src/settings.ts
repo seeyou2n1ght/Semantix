@@ -44,9 +44,9 @@ export class SemantixSettingTab extends PluginSettingTab {
     display(): void {
         const { containerEl } = this;
         containerEl.empty();
-        new Setting(containerEl).setName('Semantix (语义雷达) 配置').setHeading();
+        new Setting(containerEl).setName('配置 (Settings)').setHeading();
 
-        new Setting(containerEl).setName('连接与身份').setHeading();
+        new Setting(containerEl).setName('连接与身份 (Connection)').setHeading();
         new Setting(containerEl)
             .setName('Backend API URL')
             .setDesc('本地或远程后端服务的接口地址')
@@ -72,7 +72,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                  }));
 
         new Setting(containerEl)
-            .setName('API Token')
+            .setName('API token')
             .setDesc('可选：后端开启 SEMANTIX_API_TOKEN 时需填写')
             .addText(text => {
                 text.setPlaceholder('optional');
@@ -91,7 +91,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                 .setValue(this.plugin.vaultId || '')
                 .setDisabled(true));
 
-        new Setting(containerEl).setName('索引与同步').setHeading();
+        new Setting(containerEl).setName('索引与同步 (Indexing)').setHeading();
 
         new Setting(containerEl)
             .setName('初始化向量雷达')
@@ -118,7 +118,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Sync Batch Interval (s)')
+            .setName('Sync batch interval (s)')
             .setDesc('增量同步批量发送的间隔秒数')
             .addText(text => text
                 .setValue(this.plugin.settings.syncBatchInterval.toString())
@@ -131,7 +131,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Exclusion Rules')
+            .setName('Exclusion rules')
             .setDesc('每行输入一个不需要索引的路径，支持标准的 Glob 通配符（如 Templates/** 排除目录内所有，**/*.canvas 排除所有画板）')
             .addTextArea(text => text
                 .setPlaceholder('Templates/**\n**/*.canvas\nArchive/**/*.md')
@@ -142,7 +142,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Explainable Results')
+            .setName('Explainable results')
             .setDesc('返回最匹配的段落片段而非全文开头。默认开启（索引时分块存储，无额外性能开销）。')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.enableExplainableResults)
@@ -151,10 +151,10 @@ export class SemantixSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
-        new Setting(containerEl).setName('搜索与推荐').setHeading();
+        new Setting(containerEl).setName('搜索与推荐 (Search)').setHeading();
 
         new Setting(containerEl)
-            .setName('Whisperer Scope')
+            .setName('Whisperer scope')
             .setDesc('动态灵感的作用域')
             .addDropdown(dropdown => dropdown
                 .addOption('paragraph', 'Current Paragraph (当前段落)')
@@ -166,7 +166,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Debounce Delay (ms)')
+            .setName('Debounce delay (ms)')
             .setDesc('输入防抖延迟毫秒数 (500ms - 5000ms)')
             .addText(text => text
                 .setValue(this.plugin.settings.debounceDelay.toString())
@@ -179,7 +179,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Top N Results')
+            .setName('Top N results')
             .setDesc('呈现的最大相关笔记数量')
             .addText(text => text
                 .setValue(this.plugin.settings.topNResults.toString())
@@ -192,7 +192,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Minimum Similarity Threshold')
+            .setName('Minimum similarity threshold')
             .setDesc(`滤除低于此分数的弱相关笔记。调高此值可获得更精准的灵感，调低可获得更发散的联想。当前: ${this.plugin.settings.minSimilarityThreshold.toFixed(2)}`)
             .addSlider(slider => slider
                 .setLimits(0, 100, 1)
@@ -204,7 +204,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Filter Linked Notes')
+            .setName('Filter linked notes')
             .setDesc('是否在推荐列表中隐藏当前笔记已链接过的文件')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.filterLinkedNotes)
@@ -214,7 +214,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('High Score Threshold (Green)')
+            .setName('High score threshold (green)')
             .setDesc(`相似度 >= 此值显示绿色。必须大于蓝色阈值。当前: ${this.plugin.settings.colorThresholdHigh.toFixed(2)}`)
             .addSlider(slider => slider
                 .setLimits(0, 100, 1)
@@ -232,7 +232,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Medium Score Threshold (Blue)')
+            .setName('Medium score threshold (blue)')
             .setDesc(`相似度 >= 此值显示蓝色，< 此值显示黄色。当前: ${this.plugin.settings.colorThresholdMedium.toFixed(2)}`)
             .addSlider(slider => slider
                 .setLimits(0, 100, 1)
@@ -252,7 +252,7 @@ export class SemantixSettingTab extends PluginSettingTab {
         new Setting(containerEl).setName('移动端与性能').setHeading();
 
         new Setting(containerEl)
-            .setName('Enable on Mobile')
+            .setName('Enable on mobile')
             .setDesc('在移动端强制工作（开启可能增加耗电；修改后需要重启插件生效）')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.enableOnMobile)
@@ -271,13 +271,13 @@ export class SemantixSettingTab extends PluginSettingTab {
                 .setButtonText("重建索引")
                 .setWarning()
                 .onClick(async () => {
-                    // 第一次确认
+                    // eslint-disable-next-line no-alert
                     const firstConfirm = confirm(
                         "⚠️ 确定要清空向量数据库吗？\n\n此操作将删除所有已建立的语义索引数据，之后需要重新进行全量索引。"
                     );
                     if (!firstConfirm) return;
 
-                    // 第二次确认
+                    // eslint-disable-next-line no-alert
                     const secondConfirm = confirm(
                         "⚠️ 再次确认：此操作不可逆！\n\n点击「确定」将立即清空向量库。"
                     );

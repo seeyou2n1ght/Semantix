@@ -48,6 +48,7 @@ export class ApiClient {
             }
             return false;
         } catch (error) {
+            // eslint-disable-next-line no-console
             console.error("Semantix: Health check failed.", error);
             return false;
         }
@@ -77,6 +78,7 @@ export class ApiClient {
             }
             return null;
         } catch (error) {
+            // eslint-disable-next-line no-console
             console.error("Semantix: Batch index failed.", error);
             return null;
         }
@@ -104,6 +106,7 @@ export class ApiClient {
             }
             return null;
         } catch (error) {
+            // eslint-disable-next-line no-console
             console.error("Semantix: Delete index failed.", error);
             return null;
         }
@@ -132,6 +135,7 @@ export class ApiClient {
             }
             return null;
         } catch (error) {
+            // eslint-disable-next-line no-console
             console.error("Semantix: Semantic search failed.", error);
             return null;
         }
@@ -151,6 +155,7 @@ export class ApiClient {
             }
             return null;
         } catch (error) {
+            // eslint-disable-next-line no-console
             console.error("Semantix: Index status failed.", error);
             return null;
         }
@@ -189,6 +194,7 @@ export class ApiClient {
             
             return confirmRes.status === 200;
         } catch (error) {
+            // eslint-disable-next-line no-console
             console.error("Semantix: Clear index failed.", error);
             return false;
         }

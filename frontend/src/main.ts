@@ -70,14 +70,14 @@ export default class SemantixPlugin extends Plugin {
         // 6. 全局命令
         this.addCommand({
             id: 'semantix-open-whisperer',
-            name: 'Semantix: 打开动态灵感面板 (Open Whisperer)',
+            name: 'Semantix: 打开动态灵感面板 (Open whisperer)',
             callback: () => {
                 this.activateWhispererView();
             }
         });
         this.addCommand({
             id: 'semantix-scan-orphans',
-            name: 'Semantix: 扫描并分析孤岛笔记 (Scan Orphan Notes)',
+            name: 'Semantix: 扫描并分析孤岛笔记 (Scan orphan notes)',
             callback: () => {
                 this.activateRadarView();
                 this.orphanRadar.scanAndRender();
@@ -122,6 +122,7 @@ export default class SemantixPlugin extends Plugin {
             }));
         }
 
+        // eslint-disable-next-line no-console
         console.log("Semantix Plugin loaded.");
     }
 
@@ -169,12 +170,14 @@ export default class SemantixPlugin extends Plugin {
         this.updateAllViewStatus(isConnected ? 'connected' : 'disconnected');
 
         if (isConnected) {
+            // eslint-disable-next-line no-console
             console.log("Semantix: Backend connection successful.");
             const status = await this.apiClient.getIndexStatus();
             if (status) {
                 this.updateAllViewIndexStatus(status.total_notes, status.last_updated);
             }
         } else {
+            // eslint-disable-next-line no-console
             console.log("Semantix: Backend connection failed.");
             new Notice("Semantix: 无法连接到本地 AI 后端，请检查配置或服务是否启动。");
         }
@@ -284,6 +287,7 @@ export default class SemantixPlugin extends Plugin {
             "是否继续？"
         ].join("\n");
 
+        // eslint-disable-next-line no-alert
         if (!confirm(confirmMessage)) {
             return;
         }
@@ -379,6 +383,7 @@ export default class SemantixPlugin extends Plugin {
     private updateMobileMode() {
         this.isMobileHibernating = Platform.isMobile && !this.settings.enableOnMobile;
         if (this.isMobileHibernating) {
+            // eslint-disable-next-line no-console
             console.log("Semantix: Hibernating on mobile.");
         }
     }

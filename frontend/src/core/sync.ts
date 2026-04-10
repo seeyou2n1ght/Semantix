@@ -17,7 +17,7 @@ export class SyncManager {
     private isFlushing: boolean = false;
 
     private cachedRulesStr: string | null = null;
-    private cachedMatchers: any[] = [];
+    private cachedMatchers: ((path: string) => boolean)[] = [];
 
     constructor(plugin: SemantixPlugin) {
         this.plugin = plugin;
@@ -36,6 +36,7 @@ export class SyncManager {
         // 如果文件同时在删除队列里，移除它 (意味着它被重建/覆盖了)
         this.pendingDeletes.delete(file.path);
 
+        // eslint-disable-next-line no-console
         console.debug(`Semantix: Queued update for ${file.path}`);
         this.startTimerIfNeeded();
     }
@@ -50,6 +51,7 @@ export class SyncManager {
         // 如果正在等待更新，取消更新
         this.pendingUpdates.delete(file.path);
 
+        // eslint-disable-next-line no-console
         console.debug(`Semantix: Queued delete for ${file.path}`);
         this.startTimerIfNeeded();
     }
@@ -93,6 +95,7 @@ export class SyncManager {
                 try {
                     this.cachedMatchers.push(picomatch(globRule));
                 } catch (e) {
+                    // eslint-disable-next-line no-console
                     console.error(`Semantix: Invalid glob matching rule "${globRule}":`, e);
                 }
             }
@@ -101,7 +104,7 @@ export class SyncManager {
         for (const isMatch of this.cachedMatchers) {
             try {
                 if (isMatch(path)) return true;
-            } catch (e) {
+            } catch (_e) {
                 // Ignore matching errors for invalid paths against a rule
             }
         }
@@ -146,6 +149,7 @@ const intervalMs = this.plugin.settings.syncBatchInterval * 1000;
         }
         this.isFlushing = true;
 
+        // eslint-disable-next-line no-console
         console.log(`Semantix Sync: Flushing queue. Deletes: ${this.pendingDeletes.size}, Updates: ${this.pendingUpdates.size}`);
 
         try {
