@@ -8,9 +8,22 @@ export class ServiceManager {
     private plugin: SemantixPlugin;
     private process: ChildProcess | null = null;
     private isStarting: boolean = false;
+    private onStatusCallback?: (msg: string) => void;
 
     constructor(plugin: SemantixPlugin) {
         this.plugin = plugin;
+    }
+
+    /**
+     * 注册状态消费者
+     */
+    public setStatusConsumer(callback: (msg: string) => void) {
+        this.onStatusCallback = callback;
+    }
+
+    private reportStatus(msg: string) {
+        if (this.onStatusCallback) this.onStatusCallback(msg);
+        console.log(`[Semantix Service]: ${msg}`);
     }
 
     /**
@@ -44,7 +57,7 @@ export class ServiceManager {
             if (force) {
                 const status = await this.plugin.apiClient.checkFullHealth();
                 if (status === HealthStatus.READY) {
-                    new Notice("Semantix: 后端已在运行中，无需重复启动。");
+                    this.reportStatus("后端已在运行中 ✅");
                     this.isStarting = false;
                     this.plugin.checkConnection();
                     return;
@@ -53,6 +66,7 @@ export class ServiceManager {
 
             // 1. (可选) 执行 uv sync
             if (settings.uvSyncOnStart && settings.pythonPath === 'uv') {
+                this.reportStatus("正在同步后端依赖 (uv sync)...");
                 await this.runSync();
             }
 
@@ -61,20 +75,44 @@ export class ServiceManager {
                 ? ['run', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', '8000']
                 : ['-m', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', '8000'];
 
+            this.reportStatus("正在唤醒后端服务...");
             this.process = spawn(settings.pythonPath, args, {
                 cwd: settings.backendPath,
                 shell: Platform.isWin,
                 detached: false
             });
 
+            // 实时监听日志流
+            this.process.stdout?.on('data', (data) => {
+                const line = data.toString();
+                if (line.includes("Model loaded")) {
+                    this.reportStatus("模型加载完成 🧠");
+                } else if (line.includes("Uvicorn running on")) {
+                    this.reportStatus("服务已就绪 🚀");
+                }
+            });
+
+            this.process.stderr?.on('data', (data) => {
+                const line = data.toString();
+                // 识别一些常见的加载提示或错误
+                if (line.includes("Loading model")) {
+                    this.reportStatus("正在加载语义引擎 (约需 10-30s)...");
+                } else if (line.includes("ERROR")) {
+                    this.reportStatus(`出错了: ${line.split('\n')[0].substring(0, 50)}...`);
+                }
+            });
+
             this.process.on('close', (code) => {
                 this.process = null;
                 this.isStarting = false;
                 this.plugin.checkConnection();
+                if (code !== 0 && code !== null) {
+                    this.reportStatus(`服务异常退出 (Code: ${code}) ❌`);
+                }
             });
 
             this.process.on('error', (err) => {
-                new Notice(`Semantix: 边车启动失败 - ${err.message}`);
+                this.reportStatus(`启动失败: ${err.message} ❌`);
                 this.process = null;
                 this.isStarting = false;
             });
@@ -83,6 +121,7 @@ export class ServiceManager {
             setTimeout(() => this.plugin.checkConnection(), 3000);
 
         } catch (error) {
+            this.reportStatus("启动流程遭遇意外错误 ❌");
             this.isStarting = false;
         }
     }
@@ -91,7 +130,7 @@ export class ServiceManager {
      * 强力清理并重新启动
      */
     public async forceKillAndStart() {
-        new Notice("Semantix: 正在清理 8000 端口并尝试启动...");
+        this.reportStatus("正在清理 8000 端口并重新尝试手动启动...");
         await this.killPortConflict();
         // 给系统一点释放资源的时间
         await new Promise(r => setTimeout(r, 1000));
@@ -145,6 +184,7 @@ export class ServiceManager {
      */
     public stop() {
         if (this.process) {
+            this.reportStatus("正在停止服务...");
             this.process.kill();
             this.process = null;
         }

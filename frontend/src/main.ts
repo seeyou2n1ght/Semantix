@@ -31,6 +31,7 @@ export default class SemantixPlugin extends Plugin {
     private lastConnectionStatus: 'connected' | 'disconnected' | 'syncing' | 'disabled' = 'disabled';
     private isFullIndexing: boolean = false;
     private fullIndexCancelRequested: boolean = false;
+    private startupNotice: Notice | null = null;
 
     async onload() {
         // 1. 加载配置
@@ -44,6 +45,24 @@ export default class SemantixPlugin extends Plugin {
         this.whisperer = new Whisperer(this);
         this.orphanRadar = new OrphanRadar(this);
         this.serviceManager = new ServiceManager(this);
+
+        // 2.1 注册状态播报消费者（实现右上角动态 Notice）
+        this.serviceManager.setStatusConsumer((msg) => {
+            if (!this.startupNotice) {
+                // 创建一个持久化的 Notice (timeout 为 0 表示手动关闭或后续代码关闭)
+                this.startupNotice = new Notice(`Semantix: ${msg}`, 0);
+            } else {
+                this.startupNotice.setMessage(`Semantix: ${msg}`);
+            }
+
+            // 如果是结束态，则设置一个较短的延迟后关闭
+            const isClosingMsg = msg.includes("✅") || msg.includes("🚀") || msg.includes("❌");
+            if (isClosingMsg) {
+                const noticeToClose = this.startupNotice;
+                this.startupNotice = null; // 立即置空，防止后续消息再次刷新已标记关闭的 Notice
+                setTimeout(() => noticeToClose.hide(), 4000);
+            }
+        });
 
         // 2.1 注册 CodeMirror 扩展（光标活动监听）
         if (!this.isMobileHibernating) {
