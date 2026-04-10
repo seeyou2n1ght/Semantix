@@ -56,65 +56,42 @@ export class RadarView extends ItemView {
         
         // --- 状态指示灯 ---
         const statusArea = wrapper.createEl("div", { cls: "semantix-status-area" });
-        statusArea.style.display = "block";
-        statusArea.style.padding = "10px";
-        statusArea.style.borderBottom = "1px solid var(--background-modifier-border)";
 
-        const statusRow = statusArea.createEl("div");
-        statusRow.style.display = "flex";
-        statusRow.style.alignItems = "center";
-        statusRow.style.gap = "8px";
+        const statusRow = statusArea.createEl("div", { cls: "semantix-status-row" });
 
-        this.indicatorEl = statusRow.createEl("div");
-        this.indicatorEl.style.width = "10px";
-        this.indicatorEl.style.height = "10px";
-        this.indicatorEl.style.borderRadius = "50%";
-        this.indicatorEl.style.backgroundColor = "var(--color-yellow)";
+        this.indicatorEl = statusRow.createEl("div", { cls: "semantix-status-indicator" });
         
-        this.statusTextEl = statusRow.createEl("span", { text: "Connecting..." });
-        this.statusTextEl.style.fontSize = "0.9em";
-        this.statusTextEl.style.color = "var(--text-muted)";
+        this.statusTextEl = statusRow.createEl("span", { 
+            text: "Connecting...", 
+            cls: "semantix-status-text" 
+        });
 
-        this.indexStatusEl = statusArea.createEl("span", { text: "Indexed: -" });
-        this.indexStatusEl.style.fontSize = "0.8em";
-        this.indexStatusEl.style.color = "var(--text-muted)";
-        this.indexStatusEl.style.display = "block";
-        this.indexStatusEl.style.marginTop = "4px";
+        this.indexStatusEl = statusArea.createEl("span", { 
+            text: "Indexed: -", 
+            cls: "semantix-index-status" 
+        });
 
-        this.indexTimestampEl = statusArea.createEl("span", { text: "" });
-        this.indexTimestampEl.style.fontSize = "0.75em";
-        this.indexTimestampEl.style.color = "var(--text-muted)";
+        this.indexTimestampEl = statusArea.createEl("span", { 
+            text: "", 
+            cls: "semantix-index-timestamp" 
+        });
         this.indexTimestampEl.style.display = "none";
 
         this.indexProgressRowEl = statusArea.createEl("div", { cls: "semantix-indexing-row" });
-        this.indexProgressRowEl.style.display = "none";
-        this.indexProgressRowEl.style.flexDirection = "column";
-        this.indexProgressRowEl.style.gap = "4px";
-        this.indexProgressRowEl.style.marginTop = "6px";
 
-        this.indexProgressTextEl = this.indexProgressRowEl.createEl("span", { text: "Indexing: 0 / 0" });
-        this.indexProgressTextEl.style.fontSize = "0.8em";
-        this.indexProgressTextEl.style.color = "var(--text-muted)";
+        this.indexProgressTextEl = this.indexProgressRowEl.createEl("span", { 
+            text: "Indexing: 0 / 0", 
+            cls: "semantix-index-status" 
+        });
 
         const progressBar = this.indexProgressRowEl.createEl("div", { cls: "semantix-progress-bar" });
-        progressBar.style.height = "6px";
-        progressBar.style.background = "var(--background-modifier-border)";
-        progressBar.style.borderRadius = "999px";
-        progressBar.style.overflow = "hidden";
-
         this.indexProgressBarEl = progressBar.createEl("div", { cls: "semantix-progress-bar-fill" });
-        this.indexProgressBarEl.style.height = "100%";
-        this.indexProgressBarEl.style.width = "0%";
-        this.indexProgressBarEl.style.background = "var(--interactive-accent)";
 
         // --- 孤岛雷达区 ---
         const contentArea = wrapper.createEl("div", { cls: "semantix-content-area" });
         contentArea.style.padding = "10px";
 
         const radarHeader = contentArea.createEl("div", { cls: "semantix-radar-header" });
-        radarHeader.style.display = "flex";
-        radarHeader.style.justifyContent = "space-between";
-        radarHeader.style.alignItems = "center";
         radarHeader.createEl("h4", { text: "孤岛雷达", cls: "semantix-radar-title" });
         
         const scanBtn = radarHeader.createEl("button", { text: "扫描" });
@@ -150,16 +127,11 @@ export class RadarView extends ItemView {
         }
 
         const listEl = this.orphanResultsEl.createEl("ul", { cls: "semantix-orphan-list" });
-        listEl.style.paddingLeft = "20px";
 
         for (const orphan of orphans) {
-            const li = listEl.createEl("li");
-            li.style.marginBottom = "5px";
+            const li = listEl.createEl("li", { cls: "semantix-orphan-row" });
 
-            const titleRow = li.createEl("div");
-            titleRow.style.display = "flex";
-            titleRow.style.justifyContent = "space-between";
-            titleRow.style.cursor = "pointer";
+            const titleRow = li.createEl("div", { cls: "semantix-orphan-header" });
             
             const link = titleRow.createEl("a", { text: this.getBasename(orphan.file.path) });
             link.style.fontWeight = "bold";
@@ -172,11 +144,8 @@ export class RadarView extends ItemView {
             expandBtn.title = "Find recommendations";
             
             // 推荐结果展开容器
-            const recsContainer = li.createEl("div");
+            const recsContainer = li.createEl("div", { cls: "semantix-recs-container" });
             recsContainer.style.display = "none";
-            recsContainer.style.marginTop = "5px";
-            recsContainer.style.paddingLeft = "10px";
-            recsContainer.style.borderLeft = "2px solid var(--background-modifier-border)";
 
             let loaded = false;
             titleRow.addEventListener("click", async (e) => {
@@ -195,13 +164,12 @@ export class RadarView extends ItemView {
                         recsContainer.createEl("span", { text: "No recommendations." });
                     } else {
                         for (const res of results) {
-                            const recLi = recsContainer.createEl("div");
-                            recLi.style.marginBottom = "4px";
-                            recLi.style.fontSize = "0.85em";
-                            recLi.style.display = "flex";
-                            recLi.style.justifyContent = "space-between";
+                            const recLi = recsContainer.createEl("div", { cls: "semantix-rec-item" });
                             
-                            const recLink = recLi.createEl("a", { text: this.getBasename(res.path) });
+                            const recLink = recLi.createEl("a", { 
+                                text: this.getBasename(res.path),
+                                cls: "semantix-result-link"
+                            });
                             recLink.href = "#";
                             recLink.addEventListener("click", (e) => {
                                 e.preventDefault();
@@ -262,14 +230,16 @@ export class RadarView extends ItemView {
     public updateStatus(status: 'connected' | 'disconnected' | 'syncing') {
         if (!this.indicatorEl || !this.statusTextEl) return;
 
+        this.indicatorEl.classList.remove('is-connected', 'is-disconnected', 'is-syncing');
+
         if (status === 'connected') {
-            this.indicatorEl.style.backgroundColor = "var(--color-green)";
+            this.indicatorEl.classList.add('is-connected');
             this.statusTextEl.innerText = "Connected";
         } else if (status === 'disconnected') {
-            this.indicatorEl.style.backgroundColor = "var(--color-red)";
+            this.indicatorEl.classList.add('is-disconnected');
             this.statusTextEl.innerText = "Disconnected";
         } else if (status === 'syncing') {
-            this.indicatorEl.style.backgroundColor = "var(--color-yellow)";
+            this.indicatorEl.classList.add('is-syncing');
             this.statusTextEl.innerText = "Syncing...";
         }
     }
@@ -297,24 +267,9 @@ export class RadarView extends ItemView {
         loading.style.marginTop = "8px";
 
         for (let i = 0; i < 2; i += 1) {
-            const card = loading.createEl("div");
-            card.style.background = "var(--background-modifier-border)";
-            card.style.borderRadius = "6px";
-            card.style.padding = "10px";
-            card.style.marginBottom = "8px";
-
-            const title = card.createEl("div");
-            title.style.height = "12px";
-            title.style.width = "60%";
-            title.style.background = "var(--background-modifier-border-hover)";
-            title.style.borderRadius = "4px";
-            title.style.marginBottom = "6px";
-
-            const text = card.createEl("div");
-            text.style.height = "10px";
-            text.style.width = "100%";
-            text.style.background = "var(--background-modifier-border-hover)";
-            text.style.borderRadius = "4px";
+            const card = loading.createEl("div", { cls: "semantix-loading-card" });
+            card.createEl("div", { cls: "semantix-skeleton-title" });
+            card.createEl("div", { cls: "semantix-skeleton-text" });
         }
 
         this.loadingEl = loading;

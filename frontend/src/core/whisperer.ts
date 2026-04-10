@@ -11,6 +11,7 @@ export class Whisperer {
     
     private lastSearchedText: string = "";
     private lastParagraphText: string = "";
+    private currentSearchId: number = 0;
     
     public debouncedSearch: () => void;
     private cursorActivityTimer: number | null = null;
@@ -109,6 +110,9 @@ public getCursorActivityExtension(): Extension {
         console.debug("Semantix Whisperer: Triggering semantic search...");
         this.showLoading();
 
+        // 捕获当前搜索 ID 以处理竞态条件
+        const searchId = ++this.currentSearchId;
+
         // P1: 为全篇搜索注入增强上下文
         let queryText = cleaned;
         if (this.plugin.settings.whispererScope === 'document') {
@@ -127,6 +131,11 @@ public getCursorActivityExtension(): Extension {
             min_similarity: this.plugin.settings.minSimilarityThreshold,
             with_context: this.plugin.settings.enableExplainableResults
         });
+
+        // 如果搜索 ID 已过时，丢弃结果
+        if (searchId !== this.currentSearchId) {
+            return;
+        }
 
         if (response && response.results) {
             this.renderResults(response.results, cleaned, {

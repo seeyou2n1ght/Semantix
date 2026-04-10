@@ -135,6 +135,7 @@ export class ApiClient {
             }
             return null;
         } catch (error) {
+            if (error instanceof Error && error.name === 'AbortError') return null;
             // eslint-disable-next-line no-console
             console.error("Semantix: Semantic search failed.", error);
             return null;

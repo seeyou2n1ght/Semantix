@@ -57,56 +57,36 @@ export class WhispererView extends ItemView {
         
         // --- 状态指示灯 ---
         const statusArea = wrapper.createEl("div", { cls: "semantix-status-area" });
-        statusArea.style.display = "block";
-        statusArea.style.padding = "10px";
-        statusArea.style.borderBottom = "1px solid var(--background-modifier-border)";
 
-        const statusRow = statusArea.createEl("div");
-        statusRow.style.display = "flex";
-        statusRow.style.alignItems = "center";
-        statusRow.style.gap = "8px";
+        const statusRow = statusArea.createEl("div", { cls: "semantix-status-row" });
 
-        this.indicatorEl = statusRow.createEl("div");
-        this.indicatorEl.style.width = "10px";
-        this.indicatorEl.style.height = "10px";
-        this.indicatorEl.style.borderRadius = "50%";
-        this.indicatorEl.style.backgroundColor = "var(--color-yellow)";
+        this.indicatorEl = statusRow.createEl("div", { cls: "semantix-status-indicator" });
         
-        this.statusTextEl = statusRow.createEl("span", { text: "Connecting..." });
-        this.statusTextEl.style.fontSize = "0.9em";
-        this.statusTextEl.style.color = "var(--text-muted)";
+        this.statusTextEl = statusRow.createEl("span", { 
+            text: "Connecting...", 
+            cls: "semantix-status-text" 
+        });
 
-        this.indexStatusEl = statusArea.createEl("span", { text: "Indexed: -" });
-        this.indexStatusEl.style.fontSize = "0.8em";
-        this.indexStatusEl.style.color = "var(--text-muted)";
-        this.indexStatusEl.style.display = "block";
-        this.indexStatusEl.style.marginTop = "4px";
+        this.indexStatusEl = statusArea.createEl("span", { 
+            text: "Indexed: -", 
+            cls: "semantix-index-status" 
+        });
 
-        this.indexTimestampEl = statusArea.createEl("span", { text: "" });
-        this.indexTimestampEl.style.fontSize = "0.75em";
-        this.indexTimestampEl.style.color = "var(--text-muted)";
+        this.indexTimestampEl = statusArea.createEl("span", { 
+            text: "", 
+            cls: "semantix-index-timestamp" 
+        });
         this.indexTimestampEl.style.display = "none";
 
         this.indexProgressRowEl = statusArea.createEl("div", { cls: "semantix-indexing-row" });
-        this.indexProgressRowEl.style.display = "none";
-        this.indexProgressRowEl.style.flexDirection = "column";
-        this.indexProgressRowEl.style.gap = "4px";
-        this.indexProgressRowEl.style.marginTop = "6px";
 
-        this.indexProgressTextEl = this.indexProgressRowEl.createEl("span", { text: "Indexing: 0 / 0" });
-        this.indexProgressTextEl.style.fontSize = "0.8em";
-        this.indexProgressTextEl.style.color = "var(--text-muted)";
+        this.indexProgressTextEl = this.indexProgressRowEl.createEl("span", { 
+            text: "Indexing: 0 / 0", 
+            cls: "semantix-index-status" 
+        });
 
         const progressBar = this.indexProgressRowEl.createEl("div", { cls: "semantix-progress-bar" });
-        progressBar.style.height = "6px";
-        progressBar.style.background = "var(--background-modifier-border)";
-        progressBar.style.borderRadius = "999px";
-        progressBar.style.overflow = "hidden";
-
         this.indexProgressBarEl = progressBar.createEl("div", { cls: "semantix-progress-bar-fill" });
-        this.indexProgressBarEl.style.height = "100%";
-        this.indexProgressBarEl.style.width = "0%";
-        this.indexProgressBarEl.style.background = "var(--interactive-accent)";
 
         // --- 动态灵感结果区 ---
         const contentArea = wrapper.createEl("div", { cls: "semantix-content-area" });
@@ -152,15 +132,9 @@ export class WhispererView extends ItemView {
         const settings = colorSettings || defaultSettings;
 
         const listEl = this.whispererResultsEl.createEl("ul", { cls: "semantix-result-list" });
-        listEl.style.paddingLeft = "20px";
-        listEl.style.marginTop = "0px";
 
         for (const item of results) {
-            const li = listEl.createEl("li");
-            li.style.marginBottom = "8px";
-            li.style.display = "flex";
-            li.style.justifyContent = "space-between";
-            li.style.alignItems = "flex-start";
+            const li = listEl.createEl("li", { cls: "semantix-result-item" });
             
             // 结果悬浮提示：显示详细对比
             if (queryText) {
@@ -168,22 +142,19 @@ export class WhispererView extends ItemView {
             }
             
             // 左侧：链接 + 摘要
-            const leftDiv = li.createEl("div");
-            leftDiv.style.flex = "1";
+            const leftDiv = li.createEl("div", { cls: "semantix-result-content" });
             
-            const link = leftDiv.createEl("a", { text: this.getBasename(item.path) });
+            const link = leftDiv.createEl("a", { 
+                text: this.getBasename(item.path), 
+                cls: "semantix-result-link" 
+            });
             link.href = "#";
-            link.style.fontWeight = "bold";
             link.addEventListener("click", (e) => {
                 e.preventDefault();
                 this.plugin.app.workspace.openLinkText(item.path, "", false);
             });
             
-            const snippetEl = leftDiv.createEl("div");
-            snippetEl.style.fontSize = "0.85em";
-            snippetEl.style.color = "var(--text-muted)";
-            snippetEl.style.marginTop = "4px";
-            snippetEl.style.lineHeight = "1.4";
+            const snippetEl = leftDiv.createEl("div", { cls: "semantix-result-snippet" });
             
             // 高亮关键词
             if (queryText) {
@@ -197,11 +168,6 @@ export class WhispererView extends ItemView {
                 text: item.score.toFixed(2),
                 cls: "semantix-score-badge"
             });
-            scoreEl.style.fontSize = "0.75em";
-            scoreEl.style.fontWeight = "bold";
-            scoreEl.style.padding = "2px 6px";
-            scoreEl.style.borderRadius = "4px";
-            scoreEl.style.marginLeft = "8px";
             scoreEl.style.color = this.getScoreColor(item.score, settings.colorThresholdHigh, settings.colorThresholdMedium);
             scoreEl.title = this.getScoreTooltip(item.score, settings.colorThresholdHigh, settings.colorThresholdMedium);
         }
@@ -376,14 +342,16 @@ export class WhispererView extends ItemView {
     public updateStatus(status: 'connected' | 'disconnected' | 'syncing') {
         if (!this.indicatorEl || !this.statusTextEl) return;
 
+        this.indicatorEl.classList.remove('is-connected', 'is-disconnected', 'is-syncing');
+
         if (status === 'connected') {
-            this.indicatorEl.style.backgroundColor = "var(--color-green)";
+            this.indicatorEl.classList.add('is-connected');
             this.statusTextEl.innerText = "Connected";
         } else if (status === 'disconnected') {
-            this.indicatorEl.style.backgroundColor = "var(--color-red)";
+            this.indicatorEl.classList.add('is-disconnected');
             this.statusTextEl.innerText = "Disconnected";
         } else if (status === 'syncing') {
-            this.indicatorEl.style.backgroundColor = "var(--color-yellow)";
+            this.indicatorEl.classList.add('is-syncing');
             this.statusTextEl.innerText = "Syncing...";
         }
     }
@@ -411,24 +379,9 @@ export class WhispererView extends ItemView {
         loading.style.marginTop = "8px";
 
         for (let i = 0; i < 2; i += 1) {
-            const card = loading.createEl("div");
-            card.style.background = "var(--background-modifier-border)";
-            card.style.borderRadius = "6px";
-            card.style.padding = "10px";
-            card.style.marginBottom = "8px";
-
-            const title = card.createEl("div");
-            title.style.height = "12px";
-            title.style.width = "60%";
-            title.style.background = "var(--background-modifier-border-hover)";
-            title.style.borderRadius = "4px";
-            title.style.marginBottom = "6px";
-
-            const text = card.createEl("div");
-            text.style.height = "10px";
-            text.style.width = "100%";
-            text.style.background = "var(--background-modifier-border-hover)";
-            text.style.borderRadius = "4px";
+            const card = loading.createEl("div", { cls: "semantix-loading-card" });
+            card.createEl("div", { cls: "semantix-skeleton-title" });
+            card.createEl("div", { cls: "semantix-skeleton-text" });
         }
 
         this.loadingEl = loading;

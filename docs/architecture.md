@@ -38,6 +38,21 @@ Obsidian (UI/Event) <--- REST API (CORS) ---> FastAPI (Computation)
 
 - `frontend/src/core/`: 存放无状态的业务逻辑算法。
 - `frontend/src/ui/`: 存放视图渲染逻辑。
+- `frontend/src/styles.css`: 样式源文件（由 esbuild 编译至根目录）。
 - `backend/db_svc.py`: 检索算法与数据库交互。
 - `backend/model_svc.py`: 模型生命周期管理。
 - `backend/utils/chunker.py`: 文本切分策略。
+
+---
+
+## 4. 性能与稳定性
+
+### 并发行控制 (Race Condition Prevention)
+在「Whisperer」实时检索场景下，为了防止用户快速输入或连跳光标导致的网络请求竞态冲突，我们实现了 **Search Versioning** 机制：
+1. **版本标记**：每次触发 API 请求前，逻辑层递增 `currentSearchId`。
+2. **闭包捕获**：异步请求通过闭包捕获发起时的 `searchId`。
+3. **合法性检查**：当 Promise 返回后，对比捕获的 ID 与全局最新 ID。只有一致时才进行 UI 渲染，过时的结果将被静默丢弃。
+
+### UI 渲染策略
+- **样式解耦**：所有交互逻辑与视觉样式通过 CSS Class 解耦。状态切换（如 `is-connected`）由 CSS 动画驱动，避免了大量的 DOM 样板代码，提升了渲染性能。
+

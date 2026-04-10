@@ -35,8 +35,11 @@ Semantix 后端基于高性能的 FastAPI 与 LanceDB。
    npm install
    npm run build
    ```
-2. 复制生成的 `main.js` 和 `manifest.json` 到 Vault 的插件目录：
+2. 复制生成的 `main.js`、`manifest.json` 和 `styles.css`（位于前端根目录）到 Vault 的插件目录：
    `<your-vault>/.obsidian/plugins/obsidian-semantix/`
+
+> [!NOTE]
+> 样式的源文件位于 `src/styles.css`，构建过程会自动处理并输出到根目录。请勿直接修改根目录下的 `styles.css`。
 
 ### 插件配置
 在 Obsidian 内部启用插件后，进入设置面板：
