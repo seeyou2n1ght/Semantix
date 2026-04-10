@@ -285,8 +285,9 @@ class DatabaseService:
         Returns document-level results with the best matching chunk as snippet.
         """
         try:
-            # 放大候选池，确保去重后仍有足够候选
-            candidate_limit = max(top_k * 5, 30)
+            # 放大候选池，确保去重后仍有足够候选进行精排
+            # 基础召回量扩大到 top_k 的 10 倍，最少 50 条，给精排留出足够空间
+            candidate_limit = max(top_k * 10, 50)
 
             is_hybrid = False
             # 只对短查询启用 hybrid；长查询（如 document 模式）走纯向量，

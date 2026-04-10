@@ -1,6 +1,6 @@
 [project]
 name = "semantix-backend"
-version = "0.4.0"
+version = "0.6.1"
 description = "Semantix 语义雷达 - 本地 AI 后端服务"
 requires-python = ">=3.11"
 dependencies = [

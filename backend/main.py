@@ -115,7 +115,7 @@ def verify_token(x_semantix_token: str | None = Header(default=None)):
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="Semantix AI Backend", version="0.6.0", dependencies=[Depends(verify_token)]
+    title="Semantix AI Backend", version="0.6.1", dependencies=[Depends(verify_token)]
 )
 
 # Add CORS middleware (Obsidian uses file:// or similar, but we should allow all for local MVP)

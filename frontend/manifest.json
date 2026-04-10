@@ -1,7 +1,7 @@
 {
 	"id": "obsidian-semantix",
 	"name": "语义雷达 (SemantixRadar)",
-	"version": "0.6.0",
+	"version": "0.6.1",
 	"minAppVersion": "1.4.0",
 	"description": "基于本地大模型与向量数据库的隐式知识链接发现工具",
 	"author": "Semantix Contributors",

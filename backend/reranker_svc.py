@@ -1,6 +1,7 @@
 import logging
 import threading
 import time
+import math
 from sentence_transformers import CrossEncoder
 from typing import List, Dict, Any, Optional
 
@@ -42,6 +43,16 @@ class RerankerService:
     def is_ready(self) -> bool:
         return self._model is not None and not self._loading
 
+    def _sigmoid(self, x: float, offset: float = 1.1) -> float:
+        """
+        将原始 Logit 映射到 0-1 概率空间，并加入偏移量以对齐 UI 体感。
+        Offset = 1.1 意味着 Logit=0 (模型认为中等相关) 时，输出约为 0.75 (对齐前端中位色)。
+        """
+        try:
+            return 1 / (1 + math.exp(-(x + offset)))
+        except OverflowError:
+            return 0.0 if x < 0 else 1.0
+
     def rerank(self, query: str, candidates: List[Dict[str, Any]], top_k: int = 10) -> List[Dict[str, Any]]:
         """
         对召回候选进行精排
@@ -66,14 +77,17 @@ class RerankerService:
             
             # 将新分数赋给候选，并重新排序
             for i, score in enumerate(scores):
-                # 归一化处理（Cross-encoder 的分数范围通常在 0-1 或更广，取决于模型）
-                # 这里我们简单替换或加权合并。通常直接按新分数排即可。
-                candidates[i]["rerank_score"] = float(score)
+                # 应用 Sigmoid 归一化和体感偏移
+                normalized_score = self._sigmoid(float(score))
+                
+                candidates[i]["rerank_score"] = normalized_score
                 # 保留原始分作为参考，但主序改为新分
-                candidates[i]["score"] = float(score)
+                candidates[i]["score"] = normalized_score
 
             # 按精排分数降序排列
             candidates.sort(key=lambda x: x["score"], reverse=True)
+            
+            # 严格遵守 top_k 截断
             return candidates[:top_k]
             
         except Exception as e:
