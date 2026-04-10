@@ -92,32 +92,31 @@ class DatabaseService:
         try:
             if not self.table:
                 return 0
+            
+            # 优化：只选取 'path' 列，避免拉取所有字段 (包括向量)，极大减少内存和带宽
             if not vault_id:
-                rows = self.table.to_list()
-                unique_paths = set(row.get("path") for row in rows if row.get("path"))
+                # 获取所有不重复的路径
+                rows = self.table.to_list(columns=["path"])
+                unique_paths = {row.get("path") for row in rows if row.get("path")}
                 return len(unique_paths)
 
+            # 指定 vault_id 的情况
             try:
-                query = (
-                    self.table.search(None)
-                    .where(f"vault_id = '{self._escape_sql_string(vault_id)}'")
-                    .limit(10_000_000)
-                )
-                rows = query.to_list()
-                unique_paths = set(row.get("path") for row in rows if row.get("path"))
+                # 尽量通过 pushdown 过滤
+                where_clause = f"vault_id = '{self._escape_sql_string(vault_id)}'"
+                rows = self.table.search(None).where(where_clause).select(["path"]).to_list()
+                unique_paths = {row.get("path") for row in rows if row.get("path")}
                 return len(unique_paths)
             except Exception as e:
-                logger.warning("Fast count_notes via where() failed: %s", e)
+                logger.warning("Optimized count_notes failed: %s, falling back...", e)
 
-            logger.warning(
-                "Using slow fallback for count_notes with vault_id=%s", vault_id
-            )
-            rows = self.table.to_list()
-            unique_paths = set(
+            # 通用回退方案
+            rows = self.table.to_list(columns=["path", "vault_id"])
+            unique_paths = {
                 row.get("path")
                 for row in rows
                 if row.get("vault_id") == vault_id and row.get("path")
-            )
+            }
             return len(unique_paths)
         except Exception as e:
             logger.error("Error counting notes: %s", e)

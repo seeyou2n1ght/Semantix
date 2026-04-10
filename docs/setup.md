@@ -22,7 +22,11 @@ Semantix 后端基于高性能的 FastAPI 与 LanceDB。
    uv sync
    uv run uvicorn main:app --host 127.0.0.1 --port 8000
    ```
-3. **健康检查**：访问 `http://127.0.0.1:8000/health`。首次启动会下载模型（约 100MB），加载期间会返回 `{"status": "loading"}`。
+3. **模型自动下载**：
+   - 首次启动会拉取 `BAAI/bge-small-zh-v1.5` 与 `BAAI/bge-reranker-base`（共约 1.2GB）。
+   - **国内加速**：系统内置了镜像探测，会自动使用 `hf-mirror.com` 加速下载。
+   - **离线预装**：如需在完全离线环境下使用，请先在联网环境下运行 `uv run scripts/download_models.py` 预下载模型。
+4. **健康检查**：访问 `http://127.0.0.1:8000/health`。
 
 ---
 

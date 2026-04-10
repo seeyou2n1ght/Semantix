@@ -21,6 +21,7 @@ from models import (
     IndexStatusResponse,
     MetricsResponse,
     ClearIndexConfirmRequest,
+    MaintenanceRequest,
 )
 from model_svc import model_svc
 from db_svc import DatabaseService
@@ -58,7 +59,7 @@ _pending_clear_requests: Dict[str, Dict] = {}
 LAST_ACTIVITY = time.time()
 PARENT_PID = int(os.getenv("SEMANTIX_PARENT_PID", "0"))
 WATCHDOG_INTERVAL = 20  # 检查频率 (秒)
-ACTIVITY_TIMEOUT = 120  # 无响应自杀阈值 (秒)
+ACTIVITY_TIMEOUT = 600  # 无响应自杀阈值 (秒)
 
 def is_process_running(pid):
     """跨平台检查进程是否仍在运行"""
@@ -114,7 +115,7 @@ def verify_token(x_semantix_token: str | None = Header(default=None)):
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="Semantix AI Backend", version="0.4.0", dependencies=[Depends(verify_token)]
+    title="Semantix AI Backend", version="0.6.0", dependencies=[Depends(verify_token)]
 )
 
 # Add CORS middleware (Obsidian uses file:// or similar, but we should allow all for local MVP)
