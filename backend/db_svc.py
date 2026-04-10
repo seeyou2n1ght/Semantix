@@ -43,25 +43,26 @@ class DatabaseService:
                 pa.field("path", pa.string()),
                 pa.field("chunk_index", pa.int32()),
                 pa.field("vector", pa.list_(pa.float32(), self.dim)),
-                pa.field("text", pa.string()),
-                pa.field("child_text", pa.string()),
+                pa.field("text", pa.string()),          # 子块内容 (被向量化的核心)
+                pa.field("parent_text", pa.string()),   # 父块或上下文内容 (用于展示)
+                pa.field("full_path", pa.string()),     # 语义路径
             ]
         )
 
         if COLLECTION_NAME in self.db.table_names():
             self.table = self.db.open_table(COLLECTION_NAME)
             existing_fields = {field.name for field in self.table.schema}
-            if "child_text" not in existing_fields:
+            # 如果缺少新字段，则触发重建
+            if "parent_text" not in existing_fields or "full_path" not in existing_fields:
                 logger.warning(
-                    "Existing table schema missing child_text, recreating table..."
+                    "Schema mismatch (missing parent_text/full_path), recreating table for RAG optimization..."
                 )
                 self.db.drop_table(COLLECTION_NAME)
                 self.table = self.db.create_table(COLLECTION_NAME, schema=schema)
-                logger.info("Table recreated with child_text.")
             else:
-                logger.info("Table %s already exists and opened.", COLLECTION_NAME)
+                logger.info("Table %s already exists and opened with new schema.", COLLECTION_NAME)
         else:
-            logger.info("Creating table %s with dim %s...", COLLECTION_NAME, self.dim)
+            logger.info("Creating table %s with dim %s and optimized schema...", COLLECTION_NAME, self.dim)
             self.table = self.db.create_table(COLLECTION_NAME, schema=schema)
             logger.info("Table created.")
 
@@ -192,15 +193,23 @@ class DatabaseService:
                     logger.error("Failed to encode chunks for %s: %s", path, e)
                     continue
 
-                for i, (parent_text, child_text, para_idx, _) in enumerate(chunks_with_idx):
+                for i, (parent_text, child_text, para_idx, h_str) in enumerate(chunks_with_idx):
+                    # 构造语义路径 (语义标签化)
+                    # 组合: [目录路径] > [文件名] > [标题层级]
+                    dir_name = os.path.dirname(path).replace("\\", "/").strip("/")
+                    full_semantic_path = f"{dir_name} > {file_basename}" if dir_name else file_basename
+                    if h_str:
+                        full_semantic_path += f" > {h_str}"
+
                     all_chunk_data.append(
                         {
                             "vault_id": vault_id,
                             "path": path,
                             "chunk_index": i,
                             "vector": embeddings[i],
-                            "text": parent_text,
-                            "child_text": child_text,
+                            "text": child_text,           # 子块 (用于召回打分)
+                            "parent_text": parent_text,    # 父块 (用于上下文展示)
+                            "full_path": full_semantic_path,
                         }
                     )
 
@@ -261,6 +270,7 @@ class DatabaseService:
         exclude_paths: List[str] = None,
         min_similarity: float = 0.0,
         query_text: str = None,
+        current_path: str = None,
     ) -> List[Dict[str, Any]]:
         """
         Search for similar chunks and aggregate by document path.
@@ -301,7 +311,7 @@ class DatabaseService:
                 query = query.where(" AND ".join(where_clauses))
 
             res_list = query.to_list()
-            path_results = self._aggregate_results(res_list, is_hybrid, min_similarity)
+            path_results = self._aggregate_results(res_list, is_hybrid, min_similarity, current_path)
 
             results = sorted(
                 path_results.values(), key=lambda x: x["score"], reverse=True
@@ -324,9 +334,18 @@ class DatabaseService:
             return snippet
         return self._truncate_snippet(parent_text)
 
-    def _aggregate_results(self, res_list: List[Dict[str, Any]], is_hybrid: bool, min_similarity: float) -> Dict[str, Dict[str, Any]]:
-        """Aggregate chunk-level results into path-level results with boosting."""
+    def _aggregate_results(
+        self,
+        res_list: List[Dict[str, Any]],
+        is_hybrid: bool,
+        min_similarity: float,
+        current_path: str = None,
+    ) -> Dict[str, Dict[str, Any]]:
+        """Aggregate chunk-level results into path-level results with boosting and path preference."""
         path_results: Dict[str, Dict[str, Any]] = {}
+        
+        # 提取当前笔记所在的目录，用于后续 Path Boosting
+        current_dir = os.path.dirname(current_path).replace("\\", "/").strip("/") if current_path else None
 
         for row in res_list:
             path = row["path"]
@@ -342,33 +361,45 @@ class DatabaseService:
             if not is_hybrid and min_similarity > 0 and similarity < min_similarity:
                 continue
 
-            parent_text = row.get("text", "")
-            child_text = row.get("child_text", "")
+            full_text = row.get("parent_text", row.get("text", ""))  # 优先展示父块内容
+            chunk_text = row.get("text", "") # 当前命中的子块
             chunk_index = row.get("chunk_index", 0)
+            full_path = row.get("full_path", "")
 
-            # 文档级聚合：取最高分 chunk 作为 snippet，同时累计命中 chunk 数
+            # 文档级聚合：取最高分 chunk 作为 snippet，同时各维度累加权重
             if path not in path_results:
                 path_results[path] = {
                     "path": path,
                     "score": similarity,
-                    "snippet": self._create_snippet(parent_text, child_text),
+                    "snippet": self._create_snippet(full_text, chunk_text), # 聚焦子块的父上下文
                     "matched_chunk_index": chunk_index,
                     "hit_count": 1,
+                    "full_path": full_path
                 }
             elif similarity > path_results[path]["score"]:
-                # 发现更高分的 chunk，替换 snippet 内容
                 path_results[path]["score"] = similarity
-                path_results[path]["snippet"] = self._create_snippet(parent_text, child_text)
+                path_results[path]["snippet"] = self._create_snippet(full_text, chunk_text)
                 path_results[path]["matched_chunk_index"] = chunk_index
                 path_results[path]["hit_count"] += 1
             else:
-                # 同一文档的其他较弱 chunk，仅累加命中计数
                 path_results[path]["hit_count"] += 1
 
-        # 最终排序：base score + 多 chunk 命中 bonus（上限 +0.06）
+        # 最终排序权重调整
         for item in path_results.values():
+            # 1. 命中数奖励 (Max +0.06)
             bonus = min(item["hit_count"] - 1, 3) * 0.02
-            item["score"] = item["score"] + bonus
+            
+            # 2. 路径亲和度奖励 (Path-based Boosting)
+            # 如果结果在同一个目录下，给予 10% 的得分加成
+            path_boost = 0.0
+            if current_dir:
+                item_dir = os.path.dirname(item["path"]).replace("\\", "/").strip("/")
+                if item_dir == current_dir:
+                    path_boost = 0.05  # 同目录加分
+                elif current_dir in item_dir or item_dir in current_dir:
+                    path_boost = 0.02  # 父子目录加分
+            
+            item["score"] = item["score"] + bonus + path_boost
             del item["hit_count"]
             
         return path_results

@@ -24,6 +24,7 @@ from models import (
 )
 from model_svc import model_svc
 from db_svc import DatabaseService
+from reranker_svc import reranker_svc
 
 API_TOKEN = os.getenv("SEMANTIX_API_TOKEN", "").strip() or None
 ALLOWED_ORIGINS = [
@@ -149,6 +150,8 @@ def startup_event():
     # 启动看门狗线程
     thread = threading.Thread(target=watchdog, daemon=True)
     thread.start()
+    # 预加载精排模型
+    reranker_svc.start_loading()
     logger.info("Semantix backend service started. Parent PID: %d", PARENT_PID)
 
 
@@ -348,6 +351,7 @@ def semantic_search(request: SemanticSearchRequest):
             exclude_paths=request.exclude_paths or [],
             min_similarity=request.min_similarity or 0.0,
             query_text=request.text,
+            current_path=request.current_path,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database search failed: {str(e)}")
@@ -358,8 +362,17 @@ def semantic_search(request: SemanticSearchRequest):
     METRICS["last_search_ms"] = duration_ms
     logger.info("Search completed in %.2fms", duration_ms)
 
+    # 精排逻辑 (Phase 4)
+    final_results = raw_results
+    if request.rerank:
+        try:
+            # 精排候选 Top 15 -> 结果 Top K
+            final_results = reranker_svc.rerank(request.text, raw_results, top_k=request.top_k)
+        except Exception as e:
+            logger.error("Reranking stage failed: %s", e)
+
     return SemanticSearchResponse(
-        results=[SearchResultItem(**res) for res in raw_results]
+        results=[SearchResultItem(**res) for res in final_results]
     )
 
 

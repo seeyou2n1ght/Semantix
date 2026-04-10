@@ -35,6 +35,12 @@ class SemanticSearchRequest(BaseModel):
     with_context: Optional[bool] = Field(
         False, description="Return most relevant chunk snippet if enabled"
     )
+    current_path: Optional[str] = Field(
+        None, description="Path of the currently active note for path-based boosting"
+    )
+    rerank: Optional[bool] = Field(
+        True, description="Enable cross-encoder reranking for higher accuracy"
+    )
 
 
 class SearchResultItem(BaseModel):
