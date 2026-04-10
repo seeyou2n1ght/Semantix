@@ -315,7 +315,7 @@ export class SemantixSettingTab extends PluginSettingTab {
 
             new Setting(containerEl)
                 .setName('Auto-start server')
-                .setDesc('Obsidian 启动时自动拉起后端进程')
+                .setDesc('Obsidian 启动时自动拉起后端。注：系统配套有“自毁”机制，后端在断连 120s 后会自动回收，无需担心残留。')
                 .addToggle(toggle => toggle
                     .setValue(this.plugin.settings.autoStartServer)
                     .onChange(async (value) => {
@@ -362,6 +362,13 @@ export class SemantixSettingTab extends PluginSettingTab {
                         btn.setDisabled(false);
                         btn.setButtonText("🚀 立即唤醒后端");
                     }));
+
+            // 存活机制说明
+            const tipEl = containerEl.createEl('div', { 
+                attr: { style: 'margin-top: 15px; padding: 12px; border-radius: 8px; border-left: 4px solid var(--text-accent); background-color: var(--background-secondary-alt); font-size: 0.85em; line-height: 1.4;' } 
+            });
+            tipEl.createEl('strong', { text: '🛡️ 后端生命周期保障：', attr: { style: 'display: block; margin-bottom: 4px; color: var(--text-accent);' } });
+            tipEl.createSpan({ text: '为确保系统资源不被浪费，后端集成了“存活看门狗”机制。一旦 Obsidian 意外关闭或心跳中断超过 120 秒，Python 进程会自动执行优雅退出并释放所有占用的内存。' });
         }
 
         new Setting(containerEl)
