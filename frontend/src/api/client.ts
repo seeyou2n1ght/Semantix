@@ -2,6 +2,12 @@ import { requestUrl, RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { SemantixSettings } from '../settings';
 import { BatchIndexRequest, BatchIndexResponse, DeleteIndexRequest, DeleteIndexResponse, SemanticSearchRequest, SemanticSearchResponse, IndexStatusResponse } from './types';
 
+export enum HealthStatus {
+    READY = "READY",       // 我们的后端已就绪
+    CONFLICT = "CONFLICT", // 端口被占用（非本插件后端）
+    NONE = "NONE"          // 端口空闲
+}
+
 export class ApiClient {
     private settings: SemantixSettings;
     private vaultId: string;
@@ -33,24 +39,37 @@ export class ApiClient {
      * @returns true if connected, false otherwise
      */
     async checkHealth(): Promise<boolean> {
+        const status = await this.checkFullHealth();
+        return status === HealthStatus.READY;
+    }
+
+    /**
+     * 深度探活：识别端口是被正确占用、被错误占用、还是空闲
+     */
+    async checkFullHealth(): Promise<HealthStatus> {
         try {
             const url = `${this.baseUrl}/health`;
             const req: RequestUrlParam = {
                 url,
                 method: 'GET',
                 contentType: 'application/json',
-                headers: this.getAuthHeaders()
+                headers: this.getAuthHeaders(),
+                throw: false // 我们需要手动处理响应，避免 Obsidian 弹出请求失败警告
             };
             
             const res: RequestUrlResponse = await requestUrl(req);
+            
+            // 匹配 Semantix 特有的指纹信息
             if (res.status === 200 && res.json && res.json.status === 'ok') {
-                return true;
+                return HealthStatus.READY;
             }
-            return false;
+            
+            // 端口通了（有 HTTP 响应），但内容不匹配签名 -> 冲突
+            return HealthStatus.CONFLICT;
         } catch (error) {
-            // eslint-disable-next-line no-console
-            console.error("Semantix: Health check failed.", error);
-            return false;
+            // 连接被拒绝 (Connection Refused) 通常意味着端口空闲
+            // 注意：在 Obsidian 环境下，如果地址不通，requestUrl 会抛出异常
+            return HealthStatus.NONE;
         }
     }
 

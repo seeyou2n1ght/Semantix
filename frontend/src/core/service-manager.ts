@@ -1,7 +1,8 @@
 import { Notice, Platform } from 'obsidian';
 import SemantixPlugin from '../main';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, ChildProcess, exec } from 'child_process';
 import * as path from 'path';
+import { HealthStatus } from '../api/client';
 
 export class ServiceManager {
     private plugin: SemantixPlugin;
@@ -14,79 +15,129 @@ export class ServiceManager {
 
     /**
      * 根据配置启动后端服务
+     * @param options.force 是否忽略 autoStartServer 配置强制启动
      */
-    public async start() {
+    public async start(options: { force?: boolean } = {}) {
+        const { force = false } = options;
         if (!Platform.isDesktop) return;
-        if (this.process || this.isStarting) return;
+        
+        // 如果进程已在运行，且不是为了修复重启，则直接跳过
+        if (this.process && !force) return;
+        if (this.isStarting) return;
 
         const { settings } = this.plugin;
-        if (settings.backendMode !== 'local' || !settings.autoStartServer) return;
+        if (settings.backendMode !== 'local') return;
+        
+        // 如果不是强制启动且自启选项没开，则跳过
+        if (!settings.autoStartServer && !force) return;
 
         if (!settings.backendPath || settings.backendPath.trim() === '') {
-            console.warn("Semantix: Backend path is not set. Sidecar startup skipped.");
+            if (force) new Notice("Semantix: 请先在设置中配置后端项目路径。");
             return;
         }
 
         this.isStarting = true;
         this.plugin.updateAllViewStatus('syncing');
-        console.log("Semantix Sidecar: Initializing startup...");
 
         try {
+            // 在启动前执行一次最终冲突检查
+            if (force) {
+                const status = await this.plugin.apiClient.checkFullHealth();
+                if (status === HealthStatus.READY) {
+                    new Notice("Semantix: 后端已在运行中，无需重复启动。");
+                    this.isStarting = false;
+                    this.plugin.checkConnection();
+                    return;
+                }
+            }
+
             // 1. (可选) 执行 uv sync
             if (settings.uvSyncOnStart && settings.pythonPath === 'uv') {
                 await this.runSync();
             }
 
             // 2. 构造启动命令
-            // 默认驱动命令: uv run uvicorn main:app --port 8000
-            // 如果 pythonPath 不是 uv，则尝试: python -m uvicorn main:app --port 8000
             const args = settings.pythonPath === 'uv' 
                 ? ['run', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', '8000']
                 : ['-m', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', '8000'];
 
-            console.log(`Semantix Sidecar: Spawning process ${settings.pythonPath} in ${settings.backendPath}`);
-
             this.process = spawn(settings.pythonPath, args, {
                 cwd: settings.backendPath,
-                shell: Platform.isWin, // Windows 必须开启 shell 才能正确拉起 uv/python
+                shell: Platform.isWin,
                 detached: false
             });
 
-            this.process.stdout?.on('data', (data) => {
-                console.log(`[Semantix Backend]: ${data}`);
-            });
-
-            this.process.stderr?.on('data', (data) => {
-                const msg = data.toString();
-                // 过滤掉一些普通的 uvicorn 输出，只记录真正的错误
-                if (msg.includes('ERROR') || msg.includes('Traceback')) {
-                    console.error(`[Semantix Backend Error]: ${msg}`);
-                } else {
-                    console.debug(`[Semantix Backend Log]: ${msg}`);
-                }
-            });
-
             this.process.on('close', (code) => {
-                console.log(`Semantix Sidecar: Process exited with code ${code}`);
                 this.process = null;
                 this.isStarting = false;
                 this.plugin.checkConnection();
             });
 
             this.process.on('error', (err) => {
-                console.error("Semantix Sidecar: Failed to start process.", err);
                 new Notice(`Semantix: 边车启动失败 - ${err.message}`);
                 this.process = null;
                 this.isStarting = false;
             });
 
-            // 给予一点点回弹时间再检查
-            setTimeout(() => this.plugin.checkConnection(), 2000);
+            // 给予一定时间再检查状态
+            setTimeout(() => this.plugin.checkConnection(), 3000);
 
         } catch (error) {
-            console.error("Semantix Sidecar: Unexpected error during startup.", error);
             this.isStarting = false;
         }
+    }
+
+    /**
+     * 强力清理并重新启动
+     */
+    public async forceKillAndStart() {
+        new Notice("Semantix: 正在清理 8000 端口并尝试启动...");
+        await this.killPortConflict();
+        // 给系统一点释放资源的时间
+        await new Promise(r => setTimeout(r, 1000));
+        await this.start({ force: true });
+    }
+
+    /**
+     * 扫描并结束 8000 端口上的非本插件进程 (Windows 优先支持)
+     */
+    private async killPortConflict(): Promise<void> {
+        return new Promise((resolve) => {
+            if (!Platform.isWin) {
+                // 非 Windows 系统暂不支持自动清理，仅提示
+                resolve();
+                return;
+            }
+
+            // 获取占用 8000 端口的 PID
+            exec('netstat -ano | findstr :8000', (error, stdout) => {
+                if (error || !stdout) {
+                    resolve();
+                    return;
+                }
+
+                const lines = stdout.split('\n');
+                const pids = new Set<string>();
+                lines.forEach(line => {
+                    const parts = line.trim().split(/\s+/);
+                    const pid = parts[parts.length - 1];
+                    if (pid && !isNaN(parseInt(pid)) && pid !== '0') {
+                        pids.add(pid);
+                    }
+                });
+
+                if (pids.size === 0) {
+                    resolve();
+                    return;
+                }
+
+                // 强制结束这些 PID
+                const pidStr = Array.from(pids).join(' /PID ');
+                exec(`taskkill /F /PID ${pidStr}`, () => {
+                    resolve();
+                });
+            });
+        });
     }
 
     /**
@@ -94,9 +145,6 @@ export class ServiceManager {
      */
     public stop() {
         if (this.process) {
-            console.log("Semantix Sidecar: Stopping process...");
-            // 在 Windows 上，简单的 kill 可能杀不掉 shell 派生的子树，
-            // 但对于 uvicorn 这种简单进程，通常有效。
             this.process.kill();
             this.process = null;
         }
@@ -107,18 +155,12 @@ export class ServiceManager {
      */
     private async runSync(): Promise<void> {
         return new Promise((resolve) => {
-            console.log("Semantix Sidecar: Syncing dependencies (uv sync)...");
             const syncProc = spawn('uv', ['sync'], {
                 cwd: this.plugin.settings.backendPath,
                 shell: Platform.isWin
             });
 
-            syncProc.on('close', (code) => {
-                if (code === 0) {
-                    console.log("Semantix Sidecar: Dependencies synced.");
-                } else {
-                    console.warn(`Semantix Sidecar: uv sync exited with code ${code}`);
-                }
+            syncProc.on('close', () => {
                 resolve();
             });
         });
@@ -133,5 +175,43 @@ export class ServiceManager {
      */
     public isActivating(): boolean {
         return this.isStarting || this.isRunning();
+    }
+
+    /**
+     * 一键初始化虚拟环境并同步依赖 (uv venv + uv sync)
+     */
+    public async initializeEnvironment(): Promise<void> {
+        const { backendPath } = this.plugin.settings;
+        if (!backendPath) return;
+
+        return new Promise(async (resolve, reject) => {
+            try {
+                // 1. 创建虚拟环境
+                const venvProc = spawn('uv', ['venv'], {
+                    cwd: backendPath,
+                    shell: Platform.isWin
+                });
+
+                venvProc.on('close', async (code) => {
+                    if (code !== 0) {
+                        reject(new Error(`uv venv 退出码: ${code}`));
+                        return;
+                    }
+
+                    // 2. 同步依赖
+                    try {
+                        await this.runSync();
+                        resolve();
+                    } catch (e) {
+                        reject(e);
+                    }
+                });
+
+                venvProc.on('error', (err) => reject(err));
+
+            } catch (error) {
+                reject(error);
+            }
+        });
     }
 }

@@ -3,6 +3,7 @@ import SemantixPlugin from "./main";
 import { exec } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
+import { HealthStatus } from "./api/client";
 
 export interface SemantixSettings {
     backendMode: 'local' | 'remote';
@@ -203,64 +204,7 @@ export class SemantixSettingTab extends PluginSettingTab {
         } else {
             new Setting(containerEl).setName('本地服务管理 (Local Sidecar)').setHeading();
             
-            new Setting(containerEl)
-                .setName('Auto-start server')
-                .setDesc('当 Obsidian 启动时，自动在后台拉起后端服务（约占用 400MB 内存）')
-                .addToggle(toggle => toggle
-                    .setValue(this.plugin.settings.autoStartServer)
-                    .onChange(async (value) => {
-                        this.plugin.settings.autoStartServer = value;
-                        await this.plugin.saveSettings();
-                        new Notice(value ? "已开启自启，重启插件或 Obsidian 生效。" : "已关闭自启。");
-                    }));
-
-            // 只有在未探测到(isError/Empty) 或者 用户点击了“修改”按钮时，才显示输入框
-            const isAutoDetected = this.pythonStatus.includes('✅');
-            const shouldShowInput = this.showPythonInput || !isAutoDetected;
-
-            if (shouldShowInput) {
-                new Setting(containerEl)
-                    .setName('Python / uv path')
-                    .setDesc('后端运行环境的执行路径 (例如 uv, python, C:\\Python311\\python.exe)')
-                    .addText(text => text
-                        .setPlaceholder('uv')
-                        .setValue(this.plugin.settings.pythonPath)
-                        .onChange(async (value) => {
-                            this.plugin.settings.pythonPath = value;
-                            await this.plugin.saveSettings();
-                            
-                            if (this.debounceTimer) window.clearTimeout(this.debounceTimer);
-                            this.debounceTimer = window.setTimeout(() => this.validatePython(value), 800);
-                        }));
-            }
-            
-            if (this.pythonStatus) {
-                const isError = this.pythonStatus.includes('❌') || this.pythonStatus.includes('⚠️');
-                const isSuccess = this.pythonStatus.includes('✅');
-                let color = 'var(--text-muted)';
-                if (isError) color = 'var(--text-accent)'; // 橙色/红色提示
-                if (isSuccess) color = 'var(--color-green)';
-
-                const statusDiv = containerEl.createEl('div', { 
-                    cls: 'setting-item-description', 
-                    attr: { style: `color: ${color}; margin-top: -10px; margin-bottom: 10px; font-size: 0.85em; font-weight: ${isSuccess ? 'bold' : 'normal'}; display: flex; align-items: center; justify-content: space-between;` } 
-                });
-                
-                statusDiv.createEl('span', { text: this.pythonStatus });
-
-                // 如果已经自动检测成功，提供一个“修改”按钮允许用户手动覆盖
-                if (isSuccess && !this.showPythonInput) {
-                    const changeBtn = statusDiv.createEl('a', { 
-                        text: '修改', 
-                        attr: { style: 'color: var(--text-accent); cursor: pointer; margin-left: 10px; text-decoration: underline;' } 
-                    });
-                    changeBtn.onclick = () => {
-                        this.showPythonInput = true;
-                        this.display();
-                    };
-                }
-            }
-
+            // 1. [核心输入] 后端项目路径
             new Setting(containerEl)
                 .setName('Backend project path')
                 .setDesc('后端代码所在的绝对路径（应指向包含 main.py 的文件夹）')
@@ -275,13 +219,94 @@ export class SemantixSettingTab extends PluginSettingTab {
                         this.debounceTimer = window.setTimeout(() => this.validateBackend(value), 800);
                     }));
 
-            if (this.backendStatus) {
-                containerEl.createEl('div', { text: this.backendStatus, cls: 'setting-item-description', attr: { style: 'color: var(--text-muted); margin-top: -10px; margin-bottom: 20px; font-size: 0.85em;' } });
+            // 2. [即时反馈] 环境探测状态（紧贴路径下方）
+            if (this.pythonStatus || this.backendStatus) {
+                const isError = this.pythonStatus.includes('❌') || this.pythonStatus.includes('⚠️');
+                const isSuccess = this.pythonStatus.includes('✅');
+                let color = 'var(--text-muted)';
+                if (isError) color = 'var(--text-accent)'; // 橙色/红色提示
+                if (isSuccess) color = 'var(--color-green)';
+
+                const statusDiv = containerEl.createEl('div', { 
+                    cls: 'setting-item-description', 
+                    attr: { style: `color: ${color}; margin-top: -15px; margin-bottom: 20px; font-size: 0.85em; font-weight: ${isSuccess ? 'bold' : 'normal'}; display: flex; align-items: center; justify-content: space-between;` } 
+                });
+                
+                // 优先显示环境状态，如果没有则显示路径校验状态
+                statusDiv.createEl('span', { text: this.pythonStatus || this.backendStatus });
+
+                const rightContainer = statusDiv.createEl('div', { attr: { style: 'display: flex; align-items: center; gap: 10px;' } });
+
+                // 辅助逻辑 A: 如果成功，显示“修改”
+                if (isSuccess && !this.showPythonInput) {
+                    const changeBtn = rightContainer.createEl('a', { 
+                        text: '修改', 
+                        attr: { style: 'color: var(--text-accent); cursor: pointer; text-decoration: underline;' } 
+                    });
+                    changeBtn.onclick = () => {
+                        this.showPythonInput = true;
+                        this.display();
+                    };
+                }
+
+                // 辅助逻辑 B: 如果缺失且是 UV 项目，显示“初始化环境”
+                if (this.pythonStatus.includes('⚠️') && this.pythonStatus.includes('uv')) {
+                    const repairBtn = rightContainer.createEl('button', { 
+                        text: '一键初始化环境', 
+                        cls: 'mod-cta',
+                        attr: { style: 'font-size: 10px; height: 20px; padding: 0 8px; line-height: 1;' } 
+                    });
+                    repairBtn.onclick = async () => {
+                        repairBtn.disabled = true;
+                        repairBtn.innerText = "正在初始化...";
+                        this.updateStatus('python', "⏳ 正在创建并同步环境 (uv venv + sync)...");
+                        try {
+                            await this.plugin.serviceManager.initializeEnvironment();
+                            new Notice("Semantix: 环境初始化成功 ✅");
+                            // 重新探测
+                            this.validateBackend(this.plugin.settings.backendPath);
+                        } catch (e) {
+                            new Notice(`Semantix: 环境初始化失败 ❌ ${e}`);
+                            this.updateStatus('python', `❌ 初始化失败: ${e}`);
+                        }
+                    };
+                }
             }
+
+            // 3. [高级配置] Python 路径（仅在需要时展开）
+            const isAutoDetected = this.pythonStatus.includes('✅');
+            const shouldShowInput = this.showPythonInput || (!isAutoDetected && this.plugin.settings.pythonPath !== 'uv');
+
+            if (shouldShowInput) {
+                new Setting(containerEl)
+                    .setName('Python / uv path (Manual Override)')
+                    .setDesc('后端运行环境的执行路径')
+                    .addText(text => text
+                        .setPlaceholder('uv')
+                        .setValue(this.plugin.settings.pythonPath)
+                        .onChange(async (value) => {
+                            this.plugin.settings.pythonPath = value;
+                            await this.plugin.saveSettings();
+                            if (this.debounceTimer) window.clearTimeout(this.debounceTimer);
+                            this.debounceTimer = window.setTimeout(() => this.validatePython(value), 800);
+                        }));
+            }
+
+            new Setting(containerEl).setName('自动化与控制 (Automation & Controls)').setHeading();
+
+            new Setting(containerEl)
+                .setName('Auto-start server')
+                .setDesc('Obsidian 启动时自动拉起后端进程')
+                .addToggle(toggle => toggle
+                    .setValue(this.plugin.settings.autoStartServer)
+                    .onChange(async (value) => {
+                        this.plugin.settings.autoStartServer = value;
+                        await this.plugin.saveSettings();
+                    }));
 
             new Setting(containerEl)
                 .setName('Sync dependencies on start')
-                .setDesc('启动前自动执行一次 uv sync (推荐开启，确保后端依赖最新)')
+                .setDesc('启动前自动执行一次 uv sync')
                 .addToggle(toggle => toggle
                     .setValue(this.plugin.settings.uvSyncOnStart)
                     .onChange(async (value) => {
@@ -290,8 +315,8 @@ export class SemantixSettingTab extends PluginSettingTab {
                     }));
 
             new Setting(containerEl)
-                .setName('本地后端测试')
-                .setDesc('手动尝试拉起或探测后端连接状态')
+                .setName('运行控制')
+                .setDesc('手动探测连接或控制服务状态')
                 .addButton(btn => btn
                     .setButtonText("测试自启动")
                     .onClick(async () => {
@@ -300,10 +325,29 @@ export class SemantixSettingTab extends PluginSettingTab {
                         if (isConnected) {
                             new Notice("Semantix: 后端已就绪 ✅");
                         } else {
-                            new Notice("Semantix: 目前无法连接，请确认路径配置并点击自启尝试。");
+                            new Notice("Semantix: 目前无法连接。");
                         }
                         this.plugin.checkConnection({ manual: true });
                         btn.setButtonText("测试自启动");
+                    }))
+                .addButton(btn => btn
+                    .setButtonText("🚀 手动启动服务")
+                    .setCta()
+                    .onClick(async () => {
+                        btn.setDisabled(true);
+                        btn.setButtonText("正在启动...");
+                        const status = await this.plugin.apiClient.checkFullHealth();
+                        if (status === "READY") {
+                            new Notice("Semantix: 后端已运行 ✅");
+                        } else if (status === "CONFLICT") {
+                            if (confirm("⚠️ 端口冲突预警\n\n是否强制清理 8000 端口并启动？")) {
+                                await this.plugin.serviceManager.forceKillAndStart();
+                            }
+                        } else {
+                            await this.plugin.serviceManager.start({ force: true });
+                        }
+                        btn.setDisabled(false);
+                        btn.setButtonText("🚀 手动启动服务");
                     }));
         }
 
