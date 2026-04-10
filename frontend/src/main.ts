@@ -277,6 +277,13 @@ export default class SemantixPlugin extends Plugin {
         return this.indexingState;
     }
 
+    /**
+     * 获取当前的连接状态
+     */
+    public getConnectionStatus() {
+        return this.lastConnectionStatus;
+    }
+
     private updateAllViewIndexingProgress(state: IndexingState) {
         for (const leaf of this.app.workspace.getLeavesOfType(WHISPERER_VIEW_TYPE)) {
             if (leaf.view instanceof WhispererView) {

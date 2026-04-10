@@ -107,6 +107,8 @@ export class RadarView extends ItemView {
         this.orphanResultsEl.createEl("p", { text: "Click scan to find orphans.", cls: "semantix-empty-text" });
 
         this.updateIndexingProgress(this.plugin.getIndexingState());
+        // 强制同步插件当前的连接状态，避免显示默认的 "Connecting..."
+        this.updateStatus(this.plugin.getConnectionStatus());
     }
 
     async onClose() {

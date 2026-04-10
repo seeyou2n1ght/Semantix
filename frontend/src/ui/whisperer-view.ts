@@ -103,6 +103,8 @@ export class WhispererView extends ItemView {
         });
 
         this.updateIndexingProgress(this.plugin.getIndexingState());
+        // 强制同步插件当前的连接状态，避免显示默认的 "Connecting..."
+        this.updateStatus(this.plugin.getConnectionStatus());
     }
 
     async onClose() {
