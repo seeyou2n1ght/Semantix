@@ -9,6 +9,7 @@ import { Whisperer } from './core/whisperer';
 import { OrphanRadar } from './core/radar';
 import { ServiceManager } from './core/service-manager';
 import { cleanMarkdown } from './utils/markdown';
+import { t } from './i18n/helpers';
 
 export type IndexingState = {
     active: boolean;
@@ -53,11 +54,19 @@ export default class SemantixPlugin extends Plugin {
             // 如果本轮启动已结束，则不再处理后续杂散日志
             if (this.isStartupNoticeCompleted) return;
 
+            // 状态消息映射转换
+            let translatedMsg = msg;
+            if (msg.includes("正在唤醒后端服务")) translatedMsg = t('STARTUP_WAKING');
+            if (msg.includes("同步依赖中")) translatedMsg = t('STARTUP_ENV_CHECK');
+            if (msg.includes("后端服务仍在启动中")) translatedMsg = t('STARTUP_STILL_WAKING');
+            if (msg.includes("后端就绪")) translatedMsg = t('STARTUP_READY');
+            if (msg.includes("后端启动失败")) translatedMsg = t('STARTUP_FAILED');
+
             if (!this.startupNotice) {
                 // 创建一个持久化的 Notice (timeout 为 0 表示手动关闭或后续代码关闭)
-                this.startupNotice = new Notice(`Semantix: ${msg}`, 0);
+                this.startupNotice = new Notice(translatedMsg, 0);
             } else {
-                this.startupNotice.setMessage(`Semantix: ${msg}`);
+                this.startupNotice.setMessage(translatedMsg);
             }
 
             // 如果是结束态，则设置一个较短的延迟后关闭
@@ -92,24 +101,24 @@ export default class SemantixPlugin extends Plugin {
         );
 
         // 5. Ribbon Icons —— 分别打开各自的视图
-        this.addRibbonIcon('message-circle', 'Semantix: 动态灵感', () => {
+        this.addRibbonIcon('message-circle', `${t('PLUGIN_NAME')}: Whisperer`, () => {
             this.activateWhispererView();
         });
-        this.addRibbonIcon('radar', 'Semantix: 孤岛雷达', () => {
+        this.addRibbonIcon('radar', `${t('PLUGIN_NAME')}: Radar`, () => {
             this.activateRadarView();
         });
 
         // 6. 全局命令
         this.addCommand({
             id: 'semantix-open-whisperer',
-            name: 'Semantix: 打开动态灵感面板 (Open whisperer)',
+            name: `${t('PLUGIN_NAME')}: Open whisperer`,
             callback: () => {
                 this.activateWhispererView();
             }
         });
         this.addCommand({
             id: 'semantix-scan-orphans',
-            name: 'Semantix: 扫描并分析孤岛笔记 (Scan orphan notes)',
+            name: `${t('PLUGIN_NAME')}: Scan orphan notes`,
             callback: () => {
                 this.activateRadarView();
                 this.orphanRadar.scanAndRender();
@@ -231,11 +240,11 @@ export default class SemantixPlugin extends Plugin {
         if (isConnected) {
             // 情况 A: 连接恢复 (从断连状态转为连接成功)
             if (this.lastConnectionStatus === 'disconnected') {
-                new Notice("Semantix: 后端连接已恢复 ✅");
+                new Notice(t('NOTICE_RECOVERED'));
             }
             // 情况 B: 手动测试成功 (排除本身已经在连接状态的情形，除非是手动点击)
             else if (manual) {
-                new Notice("Semantix: 后端连接正常 ✅");
+                new Notice(t('NOTICE_HEALTHY'));
             }
             
             // eslint-disable-next-line no-console
@@ -256,11 +265,11 @@ export default class SemantixPlugin extends Plugin {
         } else {
             // 情况 C: 首次发生断连 (从正常转为异常)
             if (this.lastConnectionStatus === 'connected' && !silent) {
-                new Notice("Semantix: 失去与后端的连接，请检查服务 ❌");
+                new Notice(t('NOTICE_DISCONNECTED'));
             }
             // 情况 D: 手动测试失败 (且不是因为 Disabled)
             else if (manual) {
-                new Notice("Semantix: 无法连接到后端，请检查配置或服务状态 ❌");
+                new Notice(t('NOTICE_DISCONNECTED'));
             }
             // 情况 E: 心跳周期内的持续断连 -> 保持静默
             

@@ -1,5 +1,6 @@
 import { ItemView, WorkspaceLeaf, TFile } from 'obsidian';
 import SemantixPlugin from '../main';
+import { t } from '../i18n/helpers';
 
 export const RADAR_VIEW_TYPE = "semantix-radar-view";
 
@@ -30,7 +31,7 @@ export class RadarView extends ItemView {
     }
 
     getDisplayText() {
-        return "Orphan Radar 孤岛雷达";
+        return t('VIEW_RADAR_TITLE');
     }
 
     getIcon() {
@@ -46,7 +47,7 @@ export class RadarView extends ItemView {
         // 移动端休眠检测
         if (this.plugin.isMobileHibernating) {
             container.createEl("div", { cls: "semantix-hibernating" }).createEl("p", {
-                text: "Semantix is hibernating on mobile. Enable it in settings if you want to run it here.",
+                text: t('MOBILE_HIBERNATING'),
                 cls: "semantix-empty-text"
             });
             return;
@@ -62,12 +63,12 @@ export class RadarView extends ItemView {
         this.indicatorEl = statusRow.createEl("div", { cls: "semantix-status-indicator" });
         
         this.statusTextEl = statusRow.createEl("span", { 
-            text: "Connecting...", 
+            text: t('TESTING'), 
             cls: "semantix-status-text" 
         });
 
         this.indexStatusEl = statusArea.createEl("span", { 
-            text: "Indexed: -", 
+            text: t('INDEXED_COUNT') + "-", 
             cls: "semantix-index-status" 
         });
 
@@ -80,7 +81,7 @@ export class RadarView extends ItemView {
         this.indexProgressRowEl = statusArea.createEl("div", { cls: "semantix-indexing-row" });
 
         this.indexProgressTextEl = this.indexProgressRowEl.createEl("span", { 
-            text: "Indexing: 0 / 0", 
+            text: t('INDEXING_PROGRESS') + "0 / 0", 
             cls: "semantix-index-status" 
         });
 
@@ -92,9 +93,9 @@ export class RadarView extends ItemView {
         contentArea.style.padding = "10px";
 
         const radarHeader = contentArea.createEl("div", { cls: "semantix-radar-header" });
-        radarHeader.createEl("h4", { text: "孤岛雷达", cls: "semantix-radar-title" });
+        radarHeader.createEl("h4", { text: t('RADAR_HEADER'), cls: "semantix-radar-title" });
         
-        const scanBtn = radarHeader.createEl("button", { text: "扫描" });
+        const scanBtn = radarHeader.createEl("button", { text: t('SCAN') });
         scanBtn.addEventListener("click", () => {
             if (this.plugin.orphanRadar) {
                 this.plugin.orphanRadar.scanAndRender();
@@ -104,7 +105,7 @@ export class RadarView extends ItemView {
         this.orphanContainer = contentArea.createEl("div", { cls: "semantix-orphan-results" });
         this.orphanContainer.style.transition = "opacity 150ms ease";
         this.orphanResultsEl = this.orphanContainer.createEl("div", { cls: "semantix-orphan-results-inner" });
-        this.orphanResultsEl.createEl("p", { text: "Click scan to find orphans.", cls: "semantix-empty-text" });
+        this.orphanResultsEl.createEl("p", { text: t('WAITING_INPUT'), cls: "semantix-empty-text" });
 
         this.updateIndexingProgress(this.plugin.getIndexingState());
         // 强制同步插件当前的连接状态，避免显示默认的 "Connecting..."
@@ -124,7 +125,7 @@ export class RadarView extends ItemView {
         this.orphanResultsEl.empty();
 
         if (orphans.length === 0) {
-            this.orphanResultsEl.createEl("p", { text: "没有发现孤岛笔记 🎉", cls: "semantix-empty-text" });
+            this.orphanResultsEl.createEl("p", { text: t('NO_ORPHANS'), cls: "semantix-empty-text" });
             return;
         }
 
@@ -143,7 +144,7 @@ export class RadarView extends ItemView {
             });
 
             const expandBtn = titleRow.createEl("span", { text: " 💡" });
-            expandBtn.title = "Find recommendations";
+            expandBtn.title = t('SCAN_FOR_REC');
             
             // 推荐结果展开容器
             const recsContainer = li.createEl("div", { cls: "semantix-recs-container" });
@@ -158,12 +159,12 @@ export class RadarView extends ItemView {
                 
                 if (isHidden && !loaded) {
                     recsContainer.empty();
-                    recsContainer.createEl("span", { text: "Loading..." });
+                    recsContainer.createEl("span", { text: t('LOADING') });
                     const results = await this.plugin.orphanRadar.getRecommendationsForOrphan(orphan.file as TFile);
                     recsContainer.empty();
                     
                     if (results.length === 0) {
-                        recsContainer.createEl("span", { text: "No recommendations." });
+                        recsContainer.createEl("span", { text: t('NO_RECS') });
                     } else {
                         for (const res of results) {
                             const recLi = recsContainer.createEl("div", { cls: "semantix-rec-item" });
@@ -205,12 +206,12 @@ export class RadarView extends ItemView {
         const thresholdMedium = this.plugin.settings.colorThresholdMedium || 0.75;
         
         if (score >= thresholdHigh) {
-            return "高度相关：内容主题高度一致";
+            return t('SCORE_HIGH');
         }
         if (score >= thresholdMedium) {
-            return "相关：内容有较多共同点";
+            return t('SCORE_MED');
         }
-        return "可能相关：内容有一定关联";
+        return t('SCORE_LOW');
     }
 
     private getScoreColor(score: number): string {
@@ -236,25 +237,25 @@ export class RadarView extends ItemView {
 
         if (status === 'connected') {
             this.indicatorEl.classList.add('is-connected');
-            this.statusTextEl.innerText = "已连接 (Connected)";
+            this.statusTextEl.innerText = t('STATUS_CONNECTED');
         } else if (status === 'disconnected') {
             this.indicatorEl.classList.add('is-disconnected');
-            this.statusTextEl.innerText = "运行异常 (Disconnected)";
+            this.statusTextEl.innerText = t('STATUS_DISCONNECTED');
         } else if (status === 'syncing') {
             this.indicatorEl.classList.add('is-syncing');
-            this.statusTextEl.innerText = "准备中 (Connecting...)";
+            this.statusTextEl.innerText = t('TESTING');
         } else if (status === 'disabled') {
             this.indicatorEl.classList.add('is-disabled');
-            this.statusTextEl.innerText = "未启用 (Disabled)";
+            this.statusTextEl.innerText = t('STATUS_DISABLED');
         }
     }
 
     public updateIndexStatus(totalNotes: number, lastUpdated?: string) {
         if (!this.indexStatusEl) return;
-        this.indexStatusEl.innerText = `Indexed: ${totalNotes}`;
+        this.indexStatusEl.innerText = `${t('INDEXED_COUNT')}${totalNotes}`;
         if (this.indexTimestampEl) {
             if (lastUpdated) {
-                this.indexTimestampEl.innerText = `Last update: ${lastUpdated}`;
+                this.indexTimestampEl.innerText = `${t('LAST_UPDATE')}${lastUpdated}`;
                 this.indexTimestampEl.style.display = "block";
             } else {
                 this.indexTimestampEl.innerText = "";
@@ -298,7 +299,7 @@ export class RadarView extends ItemView {
         if (state.active && total > 0) {
             this.indexProgressRowEl.style.display = "flex";
             const percent = Math.min(100, Math.round((current / total) * 100));
-            this.indexProgressTextEl.innerText = `Indexing: ${current} / ${total}`;
+            this.indexProgressTextEl.innerText = `${t('INDEXING_PROGRESS')}${current} / ${total}`;
             this.indexProgressBarEl.style.width = `${percent}%`;
             this.indexProgressBarEl.style.background = "var(--interactive-accent)";
         } else {

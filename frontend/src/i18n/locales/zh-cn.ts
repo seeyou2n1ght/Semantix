@@ -1,0 +1,162 @@
+export default {
+    // PLUGIN
+    PLUGIN_NAME: "语义雷达",
+
+    // 状态 (Status)
+    STATUS_UNKNOWN: "未知",
+    STATUS_CONNECTED: "已连接",
+    STATUS_DISCONNECTED: "断开连接",
+    STATUS_SYNCING: "同步中",
+    STATUS_DISABLED: "已禁用",
+    
+    // 设置页眉 (Settings Header)
+    SETTINGS_TITLE: "配置",
+    SETTINGS_GENERAL_SECTION: "通用配置",
+    
+    // 后端模式 (Backend Mode)
+    BACKEND_MODE_NAME: "后端运行模式",
+    BACKEND_MODE_DESC: "选择后端运行位置。本地边车模式可随插件自动拉起后台进程。",
+    BACKEND_MODE_LOCAL: "本地边车",
+    BACKEND_MODE_REMOTE: "远程服务",
+    
+    // 远程设置 (Remote Settings)
+    REMOTE_SECTION: "远程连接配置",
+    BACKEND_URL_NAME: "后端 API 地址",
+    BACKEND_URL_DESC: "远程后端服务的接口地址",
+    TEST_CONNECTION: "测试连接",
+    TESTING: "测试中...",
+    API_TOKEN_NAME: "API 令牌",
+    API_TOKEN_DESC: "可选：远程后端开启鉴权时需填写",
+    
+    // 本地边车 (Local Sidecar)
+    LOCAL_SECTION: "本地服务管理",
+    BACKEND_PATH_NAME: "后端项目路径",
+    BACKEND_PATH_DESC: "后端代码所在的绝对路径（应指向包含 main.py 的文件夹）。",
+    PYTHON_PATH_NAME: "Python / uv 路径",
+    PYTHON_PATH_DESC: "后端运行环境的执行路径。",
+    
+    // 反馈 (Feedback)
+    VALIDATING_PYTHON: "⏳ 正在检测 Python 环境...",
+    PYTHON_INVALID: "❌ 无效路径或程序不可执行",
+    PYTHON_IDENTIFIED: "✅ 已识别: ",
+    PATH_NOT_EXIST: "❌ 路径不存在",
+    PATH_NOT_DIR: "❌ 提供的路径不是一个目录",
+    MAIN_NOT_FOUND: "❌ 未找到 main.py",
+    PATH_VALID: "✅ 合法的后端项目路径",
+    UV_DETECTED: "✅ 已检测到 uv 项目，将通过 uv 驱动服务",
+    VENV_DETECTED: "✅ 已自动关联项目虚拟环境: ",
+    VENV_NOT_FOUND: "⚠️ 未发现项目虚拟环境，将使用默认配置",
+    INITIALIZE_ENV: "一键初始化环境",
+    INITIALIZING: "正在初始化...",
+    SYNCING_ENV: "⏳ 正在创建并同步环境...",
+    ENV_SUCCESS: "环境初始化成功 ✅",
+    ENV_FAILED: "环境初始化失败 ❌ ",
+    
+    // 自动化 (Automation)
+    AUTOMATION_SECTION: "自动化与控制",
+    AUTO_START_NAME: "自动启动服务",
+    AUTO_START_DESC: "Obsidian 启动时自动拉起后端。注：系统配套有“自毁”机制，后端在断连 120s 后会自动回收。",
+    SYNC_ON_START_NAME: "启动时同步依赖",
+    SYNC_ON_START_DESC: "启动前自动执行一次 uv sync",
+    RUN_CONTROL_NAME: "运行控制",
+    RUN_CONTROL_DESC: "检查后端存活状态，或在服务未自动拉起时尝试手动启动。",
+    PROBE_CONNECTION: "探测服务连接",
+    WAKE_UP_BACKEND: "🚀 立即唤醒后端",
+    WAKING_UP: "正在唤醒...",
+    BACKEND_RUNNING: "后端已在运行中 ✅",
+    PORT_CONFLICT: "⚠️ 端口冲突预警\n\n检测到 8000 端口已被占用（非本插件进程）。\n\n是否尝试强制清理该端口并启动？",
+    
+    // 看门狗说明 (Watchdog)
+    WATCHDOG_TITLE: "🛡️ 后端生命周期保障：",
+    WATCHDOG_DESC: "为确保系统资源不被浪费，后端集成了“存活看门狗”机制。一旦 Obsidian 意外关闭或心跳中断超过 120 秒，Python 进程会自动执行优雅退出并释放所有占用的内存。",
+    
+    // 索引 (Indexing)
+    INDEXING_SECTION: "索引与同步",
+    VAULT_ID_NAME: "仓库标识",
+    VAULT_ID_DESC: "自动生成的仓库标识。",
+    START_INDEX_NAME: "初始化向量雷达",
+    START_INDEX_DESC: "全量索引当前仓库。进度不会持久化，关闭或重启将重置。",
+    START_INDEX_BTN: "开始索引",
+    INDEXING_BTN: "索引中...",
+    CANCEL_INDEX_NAME: "取消当前索引",
+    CANCEL_INDEX_DESC: "请求取消当前全量索引，当前批次完成后停止。",
+    CANCEL_INDEX_BTN: "取消索引",
+    SYNC_INTERVAL_NAME: "增量同步间隔 (秒)",
+    SYNC_INTERVAL_DESC: "增量同步批量发送的间隔秒数。",
+    EXCLUSION_NAME: "路径排除规则",
+    EXCLUSION_DESC: "每行输入一个排除路径。支持 Glob 通配符（如 Templates/**, **/*.canvas）。",
+    EXPLAINABLE_NAME: "启用可解释结果",
+    EXPLAINABLE_DESC: "返回最匹配的段落片段而非全文开头。默认开启。",
+    
+    // 搜索 (Search)
+    SEARCH_SECTION: "搜索与推荐",
+    WHISPERER_SCOPE_NAME: "建议作用域",
+    WHISPERER_SCOPE_DESC: "动态建议的作用范围。",
+    WHISPERER_PARAGRAPH: "当前段落",
+    WHISPERER_DOCUMENT: "当前全文",
+    DEBOUNCE_NAME: "防抖延迟 (毫秒)",
+    DEBOUNCE_DESC: "输入防抖延迟毫秒数 (500ms - 5000ms)。",
+    TOP_N_NAME: "最大结果数",
+    TOP_N_DESC: "呈现的最大相关笔记数量。",
+    MIN_SIMILARITY_NAME: "最低相似度阈值",
+    MIN_SIMILARITY_DESC: "滤除低于此分数的弱相关笔记。当前: ",
+    FILTER_LINKED_NAME: "过滤已链接笔记",
+    FILTER_LINKED_DESC: "是否在推荐列表中隐藏当前笔记已链接过的文件。",
+    THRESHOLD_HIGH_NAME: "高分阈值 (绿色)",
+    THRESHOLD_HIGH_DESC: "相似度 >= 此值显示绿色。当前: ",
+    THRESHOLD_MED_NAME: "中分阈值 (蓝色)",
+    THRESHOLD_MED_DESC: "相似度 >= 此值显示蓝色，< 此值显示黄色。当前: ",
+    THRESHOLD_ERROR_HIGH: "高分阈值必须大于中分阈值！",
+    THRESHOLD_ERROR_MED: "中分阈值必须小于高分阈值！",
+    
+    // 移动端 (Mobile)
+    MOBILE_SECTION: "移动端与性能",
+    ENABLE_MOBILE_NAME: "移动端强制开启",
+    ENABLE_MOBILE_DESC: "开启可能增加耗电；修改后需要重启插件生效。",
+    MOBILE_RESTART_NOTICE: "移动端开关修改后请重启插件生效。",
+    
+    // 危险操作 (Danger)
+    DANGER_SECTION: "危险操作",
+    REBUILD_INDEX_NAME: "重建向量索引",
+    REBUILD_INDEX_DESC: "清空向量数据库并重新触发全量索引。此操作不可逆。",
+    REBUILD_BTN: "重建索引",
+    REBUILDING: "清空中...",
+    CONFIRM_CLEAR_1: "⚠️ 确定要清空向量数据库吗？\n\n此操作将删除所有已建立的语义索引数据。",
+    CONFIRM_CLEAR_2: "⚠️ 再次确认：此操作不可逆！",
+    CLEAR_SUCCESS: "向量索引已清空 ✅ 请手动触发全量索引或重启插件。",
+    CLEAR_FAILED: "清空索引失败 ❌ 请检查后端服务。",
+    
+    // 通知 (Notices)
+    NOTICE_RECOVERED: "后端连接已恢复 ✅",
+    NOTICE_HEALTHY: "后端连接正常 ✅",
+    NOTICE_DISCONNECTED: "后端连接中断 ❌",
+    
+    // 启动服务 (Service Manager)
+    STARTUP_WAKING: "正在唤醒后端服务...",
+    STARTUP_ENV_CHECK: "同步依赖中...",
+    STARTUP_STILL_WAKING: "后端服务仍在启动中...",
+    STARTUP_READY: "后端就绪 ✅",
+    STARTUP_FAILED: "后端启动失败 ❌ ",
+
+    // 视图相关 (Views)
+    VIEW_WHISPERER_TITLE: "建议灵感",
+    VIEW_RADAR_TITLE: "孤岛雷达",
+    WHISPERER_HEADER: "动态灵感",
+    RADAR_HEADER: "孤岛雷达",
+    WAITING_INPUT: "等待输入...",
+    INDEXED_COUNT: "已索引: ",
+    LAST_UPDATE: "上次更新: ",
+    INDEXING_PROGRESS: "索引进度: ",
+    NO_RESULTS: "未发现相关度高的笔记。",
+    NO_ORPHANS: "没有发现孤岛笔记 🎉",
+    SCAN: "扫描",
+    SCAN_FOR_REC: "寻找关联建议",
+    LOADING: "正在加载...",
+    NO_RECS: "暂无推荐关联。",
+    COMPARE_QUERY: "查询内容：",
+    COMPARE_MATCH: "匹配内容：",
+    SCORE_HIGH: "高度相关：内容主题高度一致",
+    SCORE_MED: "相关：内容有较多共同点",
+    SCORE_LOW: "可能相关：内容有一定关联",
+    MOBILE_HIBERNATING: "语义雷达在移动端处于休眠状态。如需开启请前往设置。",
+}

@@ -4,6 +4,7 @@ import { exec } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import { HealthStatus } from "./api/client";
+import { t } from "./i18n/helpers";
 
 export interface SemantixSettings {
     backendMode: 'local' | 'remote';
@@ -75,16 +76,16 @@ export class SemantixSettingTab extends PluginSettingTab {
             this.updateStatus('python', "");
             return;
         }
-        this.pythonStatus = "⏳ 正在检测 Python 环境...";
+        this.pythonStatus = t('VALIDATING_PYTHON');
         // 简单触发一次刷新
         this.display();
 
         exec(`"${pythonPath}" --version`, (error, stdout, stderr) => {
             if (error) {
-                this.updateStatus('python', `❌ 无效路径或程序不可执行 (${error.message.split('\n')[0]})`);
+                this.updateStatus('python', t('PYTHON_INVALID') + ` (${error.message.split('\n')[0]})`);
             } else {
                 const version = stdout.trim() || stderr.trim();
-                this.updateStatus('python', `✅ 已识别: ${version}`);
+                this.updateStatus('python', t('PYTHON_IDENTIFIED') + version);
             }
         });
     }
@@ -134,16 +135,16 @@ export class SemantixSettingTab extends PluginSettingTab {
         if (fs.existsSync(uvLock)) {
             this.plugin.settings.pythonPath = 'uv';
             this.plugin.saveSettings();
-            this.updateStatus('python', `✅ 已检测到 uv 项目，将通过 uv 驱动服务`);
+            this.updateStatus('python', t('UV_DETECTED'));
             return;
         }
 
         if (fs.existsSync(venvPython)) {
             this.plugin.settings.pythonPath = venvPython;
             this.plugin.saveSettings();
-            this.updateStatus('python', `✅ 已自动关联项目虚拟环境: ${venvPython}`);
+            this.updateStatus('python', t('VENV_DETECTED') + venvPython);
         } else {
-            this.updateStatus('python', `⚠️ 未发现项目虚拟环境，将使用默认配置或系统环境变量`);
+            this.updateStatus('python', t('VENV_NOT_FOUND'));
         }
     }
 
@@ -154,31 +155,31 @@ export class SemantixSettingTab extends PluginSettingTab {
 
         // 状态页眉
         const status = this.plugin.getConnectionStatus();
-        let statusText = "未知";
+        let statusText = t('STATUS_UNKNOWN');
         let statusColor = "var(--text-muted)";
         
         switch (status) {
-            case 'connected': statusText = "已连接"; statusColor = "var(--color-green)"; break;
-            case 'disconnected': statusText = "未连接"; statusColor = "var(--text-accent)"; break;
-            case 'syncing': statusText = "连接中/索引中"; statusColor = "var(--color-blue)"; break;
-            case 'disabled': statusText = "已禁用 (移动端休眠或手动停止)"; statusColor = "var(--text-muted)"; break;
+            case 'connected': statusText = t('STATUS_CONNECTED'); statusColor = "var(--color-green)"; break;
+            case 'disconnected': statusText = t('STATUS_DISCONNECTED'); statusColor = "var(--text-accent)"; break;
+            case 'syncing': statusText = t('STATUS_SYNCING'); statusColor = "var(--color-blue)"; break;
+            case 'disabled': statusText = t('STATUS_DISABLED'); statusColor = "var(--text-muted)"; break;
         }
 
         const header = containerEl.createEl('div', { attr: { style: 'display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding: 10px; border-radius: 8px; background-color: var(--background-secondary);' } });
-        header.createEl('h2', { text: 'Semantix 配置', attr: { style: 'margin: 0;' } });
+        header.createEl('h2', { text: t('SETTINGS_TITLE'), attr: { style: 'margin: 0;' } });
         
         const badge = header.createEl('div', { attr: { style: `display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 12px; border: 1px solid ${statusColor}; font-size: 0.85em;` } });
         badge.createEl('span', { attr: { style: `width: 8px; height: 8px; border-radius: 50%; background-color: ${statusColor};` } });
         badge.createEl('span', { text: statusText, attr: { style: `color: ${statusColor}; font-weight: bold;` } });
 
-        new Setting(containerEl).setName('通用配置 (General)').setHeading();
+        new Setting(containerEl).setName(t('SETTINGS_GENERAL_SECTION')).setHeading();
 
         new Setting(containerEl)
-            .setName('Backend mode')
-            .setDesc('选择后端运行位置。本地边车模式可随插件自动拉起后台进程。')
+            .setName(t('BACKEND_MODE_NAME'))
+            .setDesc(t('BACKEND_MODE_DESC'))
             .addDropdown(dropdown => dropdown
-                .addOption('local', 'Local Sidecar (本地边车)')
-                .addOption('remote', 'Remote Service (远程服务)')
+                .addOption('local', t('BACKEND_MODE_LOCAL'))
+                .addOption('remote', t('BACKEND_MODE_REMOTE'))
                 .setValue(this.plugin.settings.backendMode)
                 .onChange(async (value) => {
                     this.plugin.settings.backendMode = value as 'local' | 'remote';
@@ -190,10 +191,10 @@ export class SemantixSettingTab extends PluginSettingTab {
                 }));
 
         if (this.plugin.settings.backendMode === 'remote') {
-            new Setting(containerEl).setName('远程连接配置 (Remote Connection)').setHeading();
+            new Setting(containerEl).setName(t('REMOTE_SECTION')).setHeading();
             new Setting(containerEl)
-                .setName('Backend API URL')
-                .setDesc('远程后端服务的接口地址')
+                .setName(t('BACKEND_URL_NAME'))
+                .setDesc(t('BACKEND_URL_DESC'))
                 .addText(text => text
                     .setPlaceholder('http://your-server:8000')
                     .setValue(this.plugin.settings.backendUrl)
@@ -202,16 +203,16 @@ export class SemantixSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     }))
                 .addButton(btn => btn
-                    .setButtonText("测试连接")
+                    .setButtonText(t('TEST_CONNECTION'))
                     .onClick(async () => {
-                        btn.setButtonText("测试中...");
+                        btn.setButtonText(t('TESTING'));
                         await this.plugin.checkConnection({ manual: true });
-                        btn.setButtonText("测试连接");
+                        btn.setButtonText(t('TEST_CONNECTION'));
                     }));
 
             new Setting(containerEl)
-                .setName('API token')
-                .setDesc('可选：远程后端开启鉴权时需填写')
+                .setName(t('API_TOKEN_NAME'))
+                .setDesc(t('API_TOKEN_DESC'))
                 .addText(text => {
                     text.setPlaceholder('optional');
                     text.setValue(this.plugin.settings.apiToken);
@@ -222,12 +223,12 @@ export class SemantixSettingTab extends PluginSettingTab {
                     });
                 });
         } else {
-            new Setting(containerEl).setName('本地服务管理 (Local Sidecar)').setHeading();
+            new Setting(containerEl).setName(t('LOCAL_SECTION')).setHeading();
             
             // 1. [核心输入] 后端项目路径
             new Setting(containerEl)
-                .setName('Backend project path')
-                .setDesc('后端代码所在的绝对路径（应指向包含 main.py 的文件夹）')
+                .setName(t('BACKEND_PATH_NAME'))
+                .setDesc(t('BACKEND_PATH_DESC'))
                 .addText(text => text
                     .setPlaceholder('C:\\Projects\\Semantix\\backend')
                     .setValue(this.plugin.settings.backendPath)
@@ -260,7 +261,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                 // 辅助逻辑 A: 如果成功，显示“修改”
                 if (isSuccess && !this.showPythonInput) {
                     const changeBtn = rightContainer.createEl('a', { 
-                        text: '修改', 
+                        text: t('BACKEND_MODE_NAME'), // Reuse or use specific 'Modify' key
                         attr: { style: 'color: var(--text-accent); cursor: pointer; text-decoration: underline;' } 
                     });
                     changeBtn.onclick = () => {
@@ -272,22 +273,22 @@ export class SemantixSettingTab extends PluginSettingTab {
                 // 辅助逻辑 B: 如果缺失且是 UV 项目，显示“初始化环境”
                 if (this.pythonStatus.includes('⚠️') && this.pythonStatus.includes('uv')) {
                     const repairBtn = rightContainer.createEl('button', { 
-                        text: '一键初始化环境', 
+                        text: t('INITIALIZE_ENV'), 
                         cls: 'mod-cta',
                         attr: { style: 'font-size: 10px; height: 20px; padding: 0 8px; line-height: 1;' } 
                     });
                     repairBtn.onclick = async () => {
                         repairBtn.disabled = true;
-                        repairBtn.innerText = "正在初始化...";
-                        this.updateStatus('python', "⏳ 正在创建并同步环境 (uv venv + sync)...");
+                        repairBtn.innerText = t('INITIALIZING');
+                        this.updateStatus('python', t('SYNCING_ENV'));
                         try {
                             await this.plugin.serviceManager.initializeEnvironment();
-                            new Notice("Semantix: 环境初始化成功 ✅");
+                            new Notice(t('ENV_SUCCESS'));
                             // 重新探测
                             this.validateBackend(this.plugin.settings.backendPath);
                         } catch (e) {
-                            new Notice(`Semantix: 环境初始化失败 ❌ ${e}`);
-                            this.updateStatus('python', `❌ 初始化失败: ${e}`);
+                            new Notice(t('ENV_FAILED') + e);
+                            this.updateStatus('python', t('PYTHON_INVALID') + `: ${e}`);
                         }
                     };
                 }
@@ -299,8 +300,8 @@ export class SemantixSettingTab extends PluginSettingTab {
 
             if (shouldShowInput) {
                 new Setting(containerEl)
-                    .setName('Python / uv path (Manual Override)')
-                    .setDesc('后端运行环境的执行路径')
+                    .setName(t('PYTHON_PATH_NAME'))
+                    .setDesc(t('PYTHON_PATH_DESC'))
                     .addText(text => text
                         .setPlaceholder('uv')
                         .setValue(this.plugin.settings.pythonPath)
@@ -312,11 +313,11 @@ export class SemantixSettingTab extends PluginSettingTab {
                         }));
             }
 
-            new Setting(containerEl).setName('自动化与控制 (Automation & Controls)').setHeading();
+            new Setting(containerEl).setName(t('AUTOMATION_SECTION')).setHeading();
 
             new Setting(containerEl)
-                .setName('Auto-start server')
-                .setDesc('Obsidian 启动时自动拉起后端。注：系统配套有“自毁”机制，后端在断连 120s 后会自动回收，无需担心残留。')
+                .setName(t('AUTO_START_NAME'))
+                .setDesc(t('AUTO_START_DESC'))
                 .addToggle(toggle => toggle
                     .setValue(this.plugin.settings.autoStartServer)
                     .onChange(async (value) => {
@@ -325,8 +326,8 @@ export class SemantixSettingTab extends PluginSettingTab {
                     }));
 
             new Setting(containerEl)
-                .setName('Sync dependencies on start')
-                .setDesc('启动前自动执行一次 uv sync')
+                .setName(t('SYNC_ON_START_NAME'))
+                .setDesc(t('SYNC_ON_START_DESC'))
                 .addToggle(toggle => toggle
                     .setValue(this.plugin.settings.uvSyncOnStart)
                     .onChange(async (value) => {
@@ -335,70 +336,70 @@ export class SemantixSettingTab extends PluginSettingTab {
                     }));
 
             new Setting(containerEl)
-                .setName('运行控制')
-                .setDesc('检查后端存活状态，或在服务未自动拉起时尝试手动启动。')
+                .setName(t('RUN_CONTROL_NAME'))
+                .setDesc(t('RUN_CONTROL_DESC'))
                 .addButton(btn => btn
-                    .setButtonText("探测服务连接")
+                    .setButtonText(t('PROBE_CONNECTION'))
                     .onClick(async () => {
-                        btn.setButtonText("探测中...");
+                        btn.setButtonText(t('TESTING'));
                         await this.plugin.checkConnection({ manual: true });
-                        btn.setButtonText("探测服务连接");
+                        btn.setButtonText(t('PROBE_CONNECTION'));
                     }))
                 .addButton(btn => btn
-                    .setButtonText("🚀 立即唤醒后端")
+                    .setButtonText(t('WAKE_UP_BACKEND'))
                     .setCta()
                     .onClick(async () => {
                         btn.setDisabled(true);
-                        btn.setButtonText("正在唤醒...");
+                        btn.setButtonText(t('WAKING_UP'));
                         const status = await this.plugin.apiClient.checkFullHealth();
                         if (status === "READY") {
-                            new Notice("Semantix: 后端已在运行中 ✅");
+                            new Notice(t('BACKEND_RUNNING'));
                         } else if (status === "CONFLICT") {
-                            if (confirm("⚠️ 端口冲突预警\n\n检测到 8000 端口已被占用（非本插件进程）。\n\n是否尝试强制清理该端口并启动？")) {
+                            if (confirm(t('PORT_CONFLICT'))) {
                                 await this.plugin.serviceManager.forceKillAndStart();
                             }
                         } else {
                             await this.plugin.serviceManager.start({ force: true });
                         }
                         btn.setDisabled(false);
-                        btn.setButtonText("🚀 立即唤醒后端");
+                        btn.setButtonText(t('WAKE_UP_BACKEND'));
                     }));
 
             // 存活机制说明
             const tipEl = containerEl.createEl('div', { 
                 attr: { style: 'margin-top: 15px; padding: 12px; border-radius: 8px; border-left: 4px solid var(--text-accent); background-color: var(--background-secondary-alt); font-size: 0.85em; line-height: 1.4;' } 
             });
-            tipEl.createEl('strong', { text: '🛡️ 后端生命周期保障：', attr: { style: 'display: block; margin-bottom: 4px; color: var(--text-accent);' } });
-            tipEl.createSpan({ text: '为确保系统资源不被浪费，后端集成了“存活看门狗”机制。一旦 Obsidian 意外关闭或心跳中断超过 120 秒，Python 进程会自动执行优雅退出并释放所有占用的内存。' });
+            tipEl.createEl('strong', { text: t('WATCHDOG_TITLE'), attr: { style: 'display: block; margin-bottom: 4px; color: var(--text-accent);' } });
+            tipEl.createSpan({ text: t('WATCHDOG_DESC') });
         }
 
         new Setting(containerEl)
-            .setName('Vault ID')
-            .setDesc('自动生成的仓库标识（多库切换的关键）')
+            .setName(t('VAULT_ID_NAME'))
+            .setDesc(t('VAULT_ID_DESC'))
             .addText(text => text
                 .setValue(this.plugin.vaultId || '')
                 .setDisabled(true));
 
-        new Setting(containerEl).setName('索引与同步 (Indexing)').setHeading();
+        new Setting(containerEl).setName(t('INDEXING_SECTION')).setHeading();
 
         new Setting(containerEl)
-            .setName('初始化向量雷达')
-            .setDesc('全量索引当前 Vault。进度不会持久化，关闭或重启将重置。')
+            .setName(t('START_INDEX_NAME'))
+            .setDesc(t('START_INDEX_DESC'))
             .addButton(btn => btn
-                .setButtonText("开始索引")
+                .setButtonText(t('START_INDEX_BTN'))
                 .setDisabled(this.plugin.isFullIndexingActive())
                 .onClick(async () => {
                     btn.setDisabled(true);
-                    btn.setButtonText("索引中...");
+                    btn.setButtonText(t('INDEXING_BTN'));
                     await this.plugin.startFullIndexing();
                     this.display();
                 }));
 
         new Setting(containerEl)
-            .setName('取消当前索引')
-            .setDesc('请求取消当前全量索引，当前批次完成后停止。')
+            .setName(t('CANCEL_INDEX_NAME'))
+            .setDesc(t('CANCEL_INDEX_DESC'))
             .addButton(btn => btn
-                .setButtonText("取消索引")
+                .setButtonText(t('CANCEL_INDEX_BTN'))
                 .setDisabled(!this.plugin.isFullIndexingActive())
                 .onClick(() => {
                     this.plugin.cancelFullIndexing();
@@ -406,8 +407,8 @@ export class SemantixSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Sync batch interval (s)')
-            .setDesc('增量同步批量发送的间隔秒数')
+            .setName(t('SYNC_INTERVAL_NAME'))
+            .setDesc(t('SYNC_INTERVAL_DESC'))
             .addText(text => text
                 .setValue(this.plugin.settings.syncBatchInterval.toString())
                 .onChange(async (value) => {
@@ -419,8 +420,8 @@ export class SemantixSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Exclusion rules')
-            .setDesc('每行输入一个不需要索引的路径，支持标准的 Glob 通配符（如 Templates/** 排除目录内所有，**/*.canvas 排除所有画板）')
+            .setName(t('EXCLUSION_NAME'))
+            .setDesc(t('EXCLUSION_DESC'))
             .addTextArea(text => text
                 .setPlaceholder('Templates/**\n**/*.canvas\nArchive/**/*.md')
                 .setValue(this.plugin.settings.exclusionRules)
@@ -430,8 +431,8 @@ export class SemantixSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Explainable results')
-            .setDesc('返回最匹配的段落片段而非全文开头。默认开启（索引时分块存储，无额外性能开销）。')
+            .setName(t('EXPLAINABLE_NAME'))
+            .setDesc(t('EXPLAINABLE_DESC'))
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.enableExplainableResults)
                 .onChange(async (value) => {
@@ -439,14 +440,14 @@ export class SemantixSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
-        new Setting(containerEl).setName('搜索与推荐 (Search)').setHeading();
+        new Setting(containerEl).setName(t('SEARCH_SECTION')).setHeading();
 
         new Setting(containerEl)
-            .setName('Whisperer scope')
-            .setDesc('动态灵感的作用域')
+            .setName(t('WHISPERER_SCOPE_NAME'))
+            .setDesc(t('WHISPERER_SCOPE_DESC'))
             .addDropdown(dropdown => dropdown
-                .addOption('paragraph', 'Current Paragraph (当前段落)')
-                .addOption('document', 'Current File (当前全文)')
+                .addOption('paragraph', t('WHISPERER_PARAGRAPH'))
+                .addOption('document', t('WHISPERER_DOCUMENT'))
                 .setValue(this.plugin.settings.whispererScope)
                 .onChange(async (value) => {
                     this.plugin.settings.whispererScope = value as 'paragraph' | 'document';
@@ -454,8 +455,8 @@ export class SemantixSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Debounce delay (ms)')
-            .setDesc('输入防抖延迟毫秒数 (500ms - 5000ms)')
+            .setName(t('DEBOUNCE_NAME'))
+            .setDesc(t('DEBOUNCE_DESC'))
             .addText(text => text
                 .setValue(this.plugin.settings.debounceDelay.toString())
                 .onChange(async (value) => {
@@ -467,8 +468,8 @@ export class SemantixSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Top N results')
-            .setDesc('呈现的最大相关笔记数量')
+            .setName(t('TOP_N_NAME'))
+            .setDesc(t('TOP_N_DESC'))
             .addText(text => text
                 .setValue(this.plugin.settings.topNResults.toString())
                 .onChange(async (value) => {
@@ -480,8 +481,8 @@ export class SemantixSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Minimum similarity threshold')
-            .setDesc(`滤除低于此分数的弱相关笔记。调高此值可获得更精准的灵感，调低可获得更发散的联想。当前: ${this.plugin.settings.minSimilarityThreshold.toFixed(2)}`)
+            .setName(t('MIN_SIMILARITY_NAME'))
+            .setDesc(t('MIN_SIMILARITY_DESC') + this.plugin.settings.minSimilarityThreshold.toFixed(2))
             .addSlider(slider => slider
                 .setLimits(0, 100, 1)
                 .setValue(Math.round(this.plugin.settings.minSimilarityThreshold * 100))
@@ -492,8 +493,8 @@ export class SemantixSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Filter linked notes')
-            .setDesc('是否在推荐列表中隐藏当前笔记已链接过的文件')
+            .setName(t('FILTER_LINKED_NAME'))
+            .setDesc(t('FILTER_LINKED_DESC'))
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.filterLinkedNotes)
                 .onChange(async (value) => {
@@ -502,8 +503,8 @@ export class SemantixSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('High score threshold (green)')
-            .setDesc(`相似度 >= 此值显示绿色。必须大于蓝色阈值。当前: ${this.plugin.settings.colorThresholdHigh.toFixed(2)}`)
+            .setName(t('THRESHOLD_HIGH_NAME'))
+            .setDesc(t('THRESHOLD_HIGH_DESC') + this.plugin.settings.colorThresholdHigh.toFixed(2))
             .addSlider(slider => slider
                 .setLimits(0, 100, 1)
                 .setValue(Math.round(this.plugin.settings.colorThresholdHigh * 100))
@@ -512,7 +513,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                     const newValue = value / 100;
                     // 确保高分阈值始终大于中分阈值
                     if (newValue <= this.plugin.settings.colorThresholdMedium) {
-                        new Notice('高分阈值必须大于中分阈值！');
+                        new Notice(t('THRESHOLD_ERROR_HIGH'));
                         return;
                     }
                     this.plugin.settings.colorThresholdHigh = newValue;
@@ -520,8 +521,8 @@ export class SemantixSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Medium score threshold (blue)')
-            .setDesc(`相似度 >= 此值显示蓝色，< 此值显示黄色。当前: ${this.plugin.settings.colorThresholdMedium.toFixed(2)}`)
+            .setName(t('THRESHOLD_MED_NAME'))
+            .setDesc(t('THRESHOLD_MED_DESC') + this.plugin.settings.colorThresholdMedium.toFixed(2))
             .addSlider(slider => slider
                 .setLimits(0, 100, 1)
                 .setValue(Math.round(this.plugin.settings.colorThresholdMedium * 100))
@@ -530,60 +531,56 @@ export class SemantixSettingTab extends PluginSettingTab {
                     const newValue = value / 100;
                     // 确保中分阈值始终小于高分阈值
                     if (newValue >= this.plugin.settings.colorThresholdHigh) {
-                        new Notice('中分阈值必须小于高分阈值！');
+                        new Notice(t('THRESHOLD_ERROR_MED'));
                         return;
                     }
                     this.plugin.settings.colorThresholdMedium = newValue;
                     await this.plugin.saveSettings();
                 }));
 
-        new Setting(containerEl).setName('移动端与性能').setHeading();
+        new Setting(containerEl).setName(t('MOBILE_SECTION')).setHeading();
 
         new Setting(containerEl)
-            .setName('Enable on mobile')
-            .setDesc('在移动端强制工作（开启可能增加耗电；修改后需要重启插件生效）')
+            .setName(t('ENABLE_MOBILE_NAME'))
+            .setDesc(t('ENABLE_MOBILE_DESC'))
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.enableOnMobile)
                 .onChange(async (value) => {
                     this.plugin.settings.enableOnMobile = value;
                     await this.plugin.saveSettings();
-                    new Notice("Semantix: 移动端开关修改后请重启插件生效。");
+                    new Notice(t('MOBILE_RESTART_NOTICE'));
                 }));
 
-        new Setting(containerEl).setName('危险操作').setHeading();
+        new Setting(containerEl).setName(t('DANGER_SECTION')).setHeading();
 
         new Setting(containerEl)
-            .setName('重建向量索引')
-            .setDesc('清空向量数据库并重新触发全量索引。此操作不可逆，索引期间插件功能可能暂时不可用。')
+            .setName(t('REBUILD_INDEX_NAME'))
+            .setDesc(t('REBUILD_INDEX_DESC'))
             .addButton(btn => btn
-                .setButtonText("重建索引")
+                .setButtonText(t('REBUILD_BTN'))
                 .setWarning()
                 .onClick(async () => {
                     // eslint-disable-next-line no-alert
-                    const firstConfirm = confirm(
-                        "⚠️ 确定要清空向量数据库吗？\n\n此操作将删除所有已建立的语义索引数据，之后需要重新进行全量索引。"
-                    );
+                    const firstConfirm = confirm(t('CONFIRM_CLEAR_1'));
                     if (!firstConfirm) return;
 
                     // eslint-disable-next-line no-alert
-                    const secondConfirm = confirm(
-                        "⚠️ 再次确认：此操作不可逆！\n\n点击「确定」将立即清空向量库。"
-                    );
+                    const secondConfirm = confirm(t('CONFIRM_CLEAR_2'));
                     if (!secondConfirm) return;
 
-                    btn.setButtonText("清空中...");
+                    btn.setButtonText(t('REBUILDING'));
                     btn.setDisabled(true);
 
                     const success = await this.plugin.apiClient.clearIndex();
                     if (success) {
-                        new Notice("Semantix: 向量索引已清空 ✅ 请手动触发全量索引或重启插件。");
+                        new Notice(t('CLEAR_SUCCESS'));
                         // 更新状态显示
                         this.plugin.checkConnection({ silent: true });
                     } else {
-                        new Notice("Semantix: 清空索引失败 ❌ 请检查后端服务。");
+                        new Notice(t('CLEAR_FAILED'));
                     }
 
-                    btn.setButtonText("重建索引");
+                    btn.setButtonText(t('REBUILD_BTN'));
                     btn.setDisabled(false);
                 }));
 

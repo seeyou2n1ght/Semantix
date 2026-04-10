@@ -3,6 +3,7 @@ import SemantixPlugin from '../main';
 import { spawn, ChildProcess, exec, execSync } from 'child_process';
 import * as path from 'path';
 import { HealthStatus } from '../api/client';
+import { t } from '../i18n/helpers';
 
 export class ServiceManager {
     private plugin: SemantixPlugin;
@@ -81,9 +82,10 @@ export class ServiceManager {
             };
 
             this.reportStatus("正在唤醒后端服务...");
-            this.process = spawn(settings.pythonPath, args, {
+            // 为路径包含空格的情况加固
+            this.process = spawn(`"${settings.pythonPath}"`, args, {
                 cwd: settings.backendPath,
-                shell: Platform.isWin,
+                shell: true, // 在 Windows 下 spawn 字符串命令需要 shell
                 detached: false,
                 env
             });
@@ -194,6 +196,7 @@ export class ServiceManager {
                 try {
                     for (const pid of pids) {
                         // 使用 wmic 获取命令行信息 (Windows 通用)
+                        // 引号保护 PID 以防万一
                         const cmdInfo = execSync(`wmic process where processid=${pid} get commandline`).toString();
                         if (cmdInfo.includes("main:app") && (cmdInfo.includes(backendPathKey) || cmdInfo.includes("uv"))) {
                             targetPids.push(pid);
@@ -233,7 +236,8 @@ export class ServiceManager {
                 // Windows 下必须使用 taskkill /T (Tree) 才能杀死通过 shell 启动的子进程
                 // 使用 execSync 确保在插件 onunload 完成前同步结束进程
                 try {
-                    execSync(`taskkill /F /T /PID ${targetPid}`);
+                    // 对 PID 使用引号包裹增加安全性
+                    execSync(`taskkill /F /T /PID "${targetPid}"`);
                 } catch (e) {
                     // 忽略进程可能已经自行退出的报错
                 }
@@ -254,7 +258,7 @@ export class ServiceManager {
         return new Promise((resolve) => {
             const syncProc = spawn('uv', ['sync'], {
                 cwd: this.plugin.settings.backendPath,
-                shell: Platform.isWin
+                shell: true
             });
 
             syncProc.stderr?.on('data', (data) => {
@@ -297,7 +301,7 @@ export class ServiceManager {
 
                 venvProc.on('close', async (code) => {
                     if (code !== 0) {
-                        reject(new Error(`uv venv 退出码: ${code}`));
+                        reject(new Error(t('ENV_FAILED')));
                         return;
                     }
 
@@ -310,10 +314,9 @@ export class ServiceManager {
                     }
                 });
 
-                venvProc.on('error', (err) => reject(err));
-
+                venvProc.on('error', (err) => reject(new Error("Environment initialization failed (Process Error)")));
             } catch (error) {
-                reject(error);
+                reject(new Error("Environment initialization failed (Unexpected Error)"));
             }
         });
     }

@@ -1,6 +1,9 @@
 import esbuild from "esbuild";
 import process from "process";
 import { builtinModules } from 'node:module';
+import { readFileSync } from 'fs';
+
+const packageJson = JSON.parse(readFileSync('package.json', 'utf8'));
 
 const banner =
 `/*
@@ -43,6 +46,9 @@ const context = await esbuild.context({
 	outdir: ".",
 	entryNames: "[name]",
 	minify: prod,
+	define: {
+		PLUGIN_VERSION: JSON.stringify(packageJson.version),
+	},
 });
 
 if (prod) {

@@ -1,0 +1,162 @@
+export default {
+    // PLUGIN
+    PLUGIN_NAME: "SemantixRadar",
+
+    // Status
+    STATUS_UNKNOWN: "Unknown",
+    STATUS_CONNECTED: "Connected",
+    STATUS_DISCONNECTED: "Disconnected",
+    STATUS_SYNCING: "Connecting",
+    STATUS_DISABLED: "Disabled",
+    
+    // Settings Header
+    SETTINGS_TITLE: "Configuration",
+    SETTINGS_GENERAL_SECTION: "General Settings",
+    
+    // Backend Mode
+    BACKEND_MODE_NAME: "Backend mode",
+    BACKEND_MODE_DESC: "Choose where the backend runs. Local Sidecar allows the plugin to automatically spawn the background process.",
+    BACKEND_MODE_LOCAL: "Local Sidecar",
+    BACKEND_MODE_REMOTE: "Remote Service",
+    
+    // Remote Settings
+    REMOTE_SECTION: "Remote Connection",
+    BACKEND_URL_NAME: "Backend API URL",
+    BACKEND_URL_DESC: "API endpoint for the remote backend service",
+    TEST_CONNECTION: "Test Connection",
+    TESTING: "Testing...",
+    API_TOKEN_NAME: "API token",
+    API_TOKEN_DESC: "Optional: Required if remote backend has authentication enabled",
+    
+    // Local Sidecar
+    LOCAL_SECTION: "Local Sidecar Management",
+    BACKEND_PATH_NAME: "Backend project path",
+    BACKEND_PATH_DESC: "Absolute path to the backend code (directory containing main.py).",
+    PYTHON_PATH_NAME: "Python / uv path",
+    PYTHON_PATH_DESC: "Executable path for the backend environment.",
+    
+    // Feedback
+    VALIDATING_PYTHON: "⏳ Detecting Python environment...",
+    PYTHON_INVALID: "❌ Invalid path or program not executable",
+    PYTHON_IDENTIFIED: "✅ Identified: ",
+    PATH_NOT_EXIST: "❌ Path does not exist",
+    PATH_NOT_DIR: "❌ Provided path is not a directory",
+    MAIN_NOT_FOUND: "❌ main.py not found",
+    PATH_VALID: "✅ Valid backend project path",
+    UV_DETECTED: "✅ uv project detected, driving service via uv",
+    VENV_DETECTED: "✅ Auto-associated virtual environment: ",
+    VENV_NOT_FOUND: "⚠️ No virtual environment found, using default",
+    INITIALIZE_ENV: "Initialize Environment",
+    INITIALIZING: "Initializing...",
+    SYNCING_ENV: "⏳ Creating and syncing environment...",
+    ENV_SUCCESS: "Environment initialized successfully ✅",
+    ENV_FAILED: "Environment initialization failed ❌ ",
+    
+    // Automation
+    AUTOMATION_SECTION: "Automation & Controls",
+    AUTO_START_NAME: "Auto-start server",
+    AUTO_START_DESC: "Automatically spawn backend when Obsidian starts. Note: Includes 'Suicide' mechanism, backend will auto-recycle after 120s disconnection.",
+    SYNC_ON_START_NAME: "Sync dependencies on start",
+    SYNC_ON_START_DESC: "Run 'uv sync' once before starting",
+    RUN_CONTROL_NAME: "Run Control",
+    RUN_CONTROL_DESC: "Check backend health or manually wake up the service.",
+    PROBE_CONNECTION: "Probe Connection",
+    WAKE_UP_BACKEND: "🚀 Wake up backend",
+    WAKING_UP: "Waking up...",
+    BACKEND_RUNNING: "Backend is already running ✅",
+    PORT_CONFLICT: "⚠️ Port Conflict Warning\n\nPort 8000 is occupied by another process.\n\nTry to forcefully clear the port and start?",
+    
+    // Watchdog
+    WATCHDOG_TITLE: "🛡️ Backend Lifecycle Protection:",
+    WATCHDOG_DESC: "To ensure system resources are not wasted, the backend integrates a 'Watchdog' mechanism. If Obsidian unexpected shuts down or heartbeat stays interrupted for >120s, the Python process will gracefully exit and release all memory.",
+    
+    // Indexing
+    INDEXING_SECTION: "Indexing & Sync",
+    VAULT_ID_NAME: "Vault ID",
+    VAULT_ID_DESC: "Auto-generated ID for multi-vault isolation.",
+    START_INDEX_NAME: "Initialize Vector Radar",
+    START_INDEX_DESC: "Full index current Vault. Progress is not persistent (reset on close).",
+    START_INDEX_BTN: "Start Indexing",
+    INDEXING_BTN: "Indexing...",
+    CANCEL_INDEX_NAME: "Cancel Current Indexing",
+    CANCEL_INDEX_DESC: "Request to cancel full indexing, stops after current batch.",
+    CANCEL_INDEX_BTN: "Cancel Indexing",
+    SYNC_INTERVAL_NAME: "Sync batch interval (s)",
+    SYNC_INTERVAL_DESC: "Seconds interval for incremental sync batches.",
+    EXCLUSION_NAME: "Exclusion rules",
+    EXCLUSION_DESC: "One path per line. Supports Glob patterns (e.g., Templates/**, **/*.canvas).",
+    EXPLAINABLE_NAME: "Explainable results",
+    EXPLAINABLE_DESC: "Return matching paragraph snippets instead of full file beginnings. Default: On.",
+    
+    // Search
+    SEARCH_SECTION: "Search & Recommendations",
+    WHISPERER_SCOPE_NAME: "Whisperer scope",
+    WHISPERER_SCOPE_DESC: "Scope for dynamic inspirations.",
+    WHISPERER_PARAGRAPH: "Current Paragraph",
+    WHISPERER_DOCUMENT: "Current File",
+    DEBOUNCE_NAME: "Debounce delay (ms)",
+    DEBOUNCE_DESC: "Input debounce delay (500ms - 5000ms).",
+    TOP_N_NAME: "Top N results",
+    TOP_N_DESC: "Max number of relevant notes to display.",
+    MIN_SIMILARITY_NAME: "Minimum similarity threshold",
+    MIN_SIMILARITY_DESC: "Filter out weak links. Current: ",
+    FILTER_LINKED_NAME: "Filter linked notes",
+    FILTER_LINKED_DESC: "Hide files already linked in current note.",
+    THRESHOLD_HIGH_NAME: "High score threshold (green)",
+    THRESHOLD_HIGH_DESC: "Score >= this value shows green. Current: ",
+    THRESHOLD_MED_NAME: "Medium score threshold (blue)",
+    THRESHOLD_MED_DESC: "Score >= this value shows blue, < shows yellow. Current: ",
+    THRESHOLD_ERROR_HIGH: "High threshold must be greater than medium!",
+    THRESHOLD_ERROR_MED: "Medium threshold must be less than high!",
+    
+    // Mobile
+    MOBILE_SECTION: "Mobile & Performance",
+    ENABLE_MOBILE_NAME: "Enable on mobile",
+    ENABLE_MOBILE_DESC: "Force start on mobile (may increase battery usage; restart required).",
+    MOBILE_RESTART_NOTICE: "Please restart plugin after toggling mobile support.",
+    
+    // Danger
+    DANGER_SECTION: "Danger Zone",
+    REBUILD_INDEX_NAME: "Rebuild Vector Index",
+    REBUILD_INDEX_DESC: "Clear vector database and re-trigger full indexing. IRREVERSIBLE.",
+    REBUILD_BTN: "Rebuild Index",
+    REBUILDING: "Clearing...",
+    CONFIRM_CLEAR_1: "⚠️ Are you sure you want to clear the vector database?\n\nThis will delete all indexed semantic data.",
+    CONFIRM_CLEAR_2: "⚠️ FINAL CONFIRMATION: This action is irreversible!",
+    CLEAR_SUCCESS: "Vector index cleared ✅ Please manually trigger full index or restart.",
+    CLEAR_FAILED: "Failed to clear index ❌ Please check backend health.",
+    
+    // Notices
+    NOTICE_RECOVERED: "Backend connection recovered ✅",
+    NOTICE_HEALTHY: "Backend connection is healthy ✅",
+    NOTICE_DISCONNECTED: "Backend connection lost ❌",
+    
+    // Service Manager
+    STARTUP_WAKING: "Waking up backend service...",
+    STARTUP_ENV_CHECK: "Syncing environment...",
+    STARTUP_STILL_WAKING: "Backend service is still waking up...",
+    STARTUP_READY: "Backend ready ✅",
+    STARTUP_FAILED: "Backend failed ❌ ",
+
+    // Views
+    VIEW_WHISPERER_TITLE: "Recommendation",
+    VIEW_RADAR_TITLE: "Orphan Radar",
+    WHISPERER_HEADER: "Dynamic Inspiration",
+    RADAR_HEADER: "Orphan Radar",
+    WAITING_INPUT: "Waiting for input...",
+    INDEXED_COUNT: "Indexed: ",
+    LAST_UPDATE: "Last update: ",
+    INDEXING_PROGRESS: "Indexing: ",
+    NO_RESULTS: "No relevant notes found.",
+    NO_ORPHANS: "No orphans found 🎉",
+    SCAN: "Scan",
+    SCAN_FOR_REC: "Find recommendations",
+    LOADING: "Loading...",
+    NO_RECS: "No recommendations.",
+    COMPARE_QUERY: "Query: ",
+    COMPARE_MATCH: "Match: ",
+    SCORE_HIGH: "Highly related: Themes align closely",
+    SCORE_MED: "Related: Many commonalities",
+    SCORE_LOW: "Maybe related: Some connection found",
+    MOBILE_HIBERNATING: "Semantix is hibernating on mobile. Enable it in settings.",
+}

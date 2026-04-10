@@ -1,6 +1,7 @@
 import { ItemView, WorkspaceLeaf } from 'obsidian';
 import SemantixPlugin from '../main';
 import { SearchResultItem } from '../api/types';
+import { t } from '../i18n/helpers';
 
 export const WHISPERER_VIEW_TYPE = "semantix-whisperer-view";
 
@@ -31,7 +32,7 @@ export class WhispererView extends ItemView {
     }
 
     getDisplayText() {
-        return "Whisperer 动态灵感";
+        return t('VIEW_WHISPERER_TITLE');
     }
 
     getIcon() {
@@ -47,7 +48,7 @@ export class WhispererView extends ItemView {
         // 移动端休眠检测
         if (this.plugin.isMobileHibernating) {
             container.createEl("div", { cls: "semantix-hibernating" }).createEl("p", {
-                text: "Semantix is hibernating on mobile. Enable it in settings if you want to run it here.",
+                text: t('MOBILE_HIBERNATING'),
                 cls: "semantix-empty-text"
             });
             return;
@@ -63,12 +64,12 @@ export class WhispererView extends ItemView {
         this.indicatorEl = statusRow.createEl("div", { cls: "semantix-status-indicator" });
         
         this.statusTextEl = statusRow.createEl("span", { 
-            text: "Connecting...", 
+            text: t('TESTING'), 
             cls: "semantix-status-text" 
         });
 
         this.indexStatusEl = statusArea.createEl("span", { 
-            text: "Indexed: -", 
+            text: t('INDEXED_COUNT') + "-", 
             cls: "semantix-index-status" 
         });
 
@@ -81,7 +82,7 @@ export class WhispererView extends ItemView {
         this.indexProgressRowEl = statusArea.createEl("div", { cls: "semantix-indexing-row" });
 
         this.indexProgressTextEl = this.indexProgressRowEl.createEl("span", { 
-            text: "Indexing: 0 / 0", 
+            text: t('INDEXING_PROGRESS') + "0 / 0", 
             cls: "semantix-index-status" 
         });
 
@@ -92,13 +93,13 @@ export class WhispererView extends ItemView {
         const contentArea = wrapper.createEl("div", { cls: "semantix-content-area" });
         contentArea.style.padding = "10px";
         
-        contentArea.createEl("h4", { text: "动态灵感" });
+        contentArea.createEl("h4", { text: t('WHISPERER_HEADER') });
         
         this.whispererContainer = contentArea.createEl("div", { cls: "semantix-whisperer-results" });
         this.whispererContainer.style.transition = "opacity 150ms ease";
         this.whispererResultsEl = this.whispererContainer.createEl("div", { cls: "semantix-whisperer-results-inner" });
         this.whispererResultsEl.createEl("p", { 
-            text: "Waiting for input...", 
+            text: t('WAITING_INPUT'), 
             cls: "semantix-empty-text" 
         });
 
@@ -121,7 +122,7 @@ export class WhispererView extends ItemView {
 
         if (results.length === 0) {
             this.whispererResultsEl.createEl("p", { 
-                text: "没有找到相关度高的笔记。", 
+                text: t('NO_RESULTS'), 
                 cls: "semantix-empty-text" 
             });
             return;
@@ -177,18 +178,18 @@ export class WhispererView extends ItemView {
 
     private getScoreTooltip(score: number, thresholdHigh: number, thresholdMedium: number): string {
         if (score >= thresholdHigh) {
-            return "高度相关：内容主题高度一致";
+            return t('SCORE_HIGH');
         }
         if (score >= thresholdMedium) {
-            return "相关：内容有较多共同点";
+            return t('SCORE_MED');
         }
-        return "可能相关：内容有一定关联";
+        return t('SCORE_LOW');
     }
 
     private getComparisonTooltip(queryText: string, snippet: string): string {
         const queryPreview = queryText.length > 50 ? queryText.slice(0, 50) + "..." : queryText;
         const snippetPreview = snippet.length > 80 ? snippet.slice(0, 80) + "..." : snippet;
-        return `查询内容：${queryPreview}\n\n匹配内容：${snippetPreview}`;
+        return `${t('COMPARE_QUERY')}${queryPreview}\n\n${t('COMPARE_MATCH')}${snippetPreview}`;
     }
 
     private renderHighlightedSnippet(container: HTMLElement, snippet: string, queryText: string) {
@@ -348,25 +349,25 @@ export class WhispererView extends ItemView {
 
         if (status === 'connected') {
             this.indicatorEl.classList.add('is-connected');
-            this.statusTextEl.innerText = "已连接 (Connected)";
+            this.statusTextEl.innerText = t('STATUS_CONNECTED');
         } else if (status === 'disconnected') {
             this.indicatorEl.classList.add('is-disconnected');
-            this.statusTextEl.innerText = "运行异常 (Disconnected)";
+            this.statusTextEl.innerText = t('STATUS_DISCONNECTED');
         } else if (status === 'syncing') {
             this.indicatorEl.classList.add('is-syncing');
-            this.statusTextEl.innerText = "准备中 (Connecting...)";
+            this.statusTextEl.innerText = t('TESTING');
         } else if (status === 'disabled') {
             this.indicatorEl.classList.add('is-disabled');
-            this.statusTextEl.innerText = "未启用 (Disabled)";
+            this.statusTextEl.innerText = t('STATUS_DISABLED');
         }
     }
 
     public updateIndexStatus(totalNotes: number, lastUpdated?: string) {
         if (!this.indexStatusEl) return;
-        this.indexStatusEl.innerText = `Indexed: ${totalNotes}`;
+        this.indexStatusEl.innerText = `${t('INDEXED_COUNT')}${totalNotes}`;
         if (this.indexTimestampEl) {
             if (lastUpdated) {
-                this.indexTimestampEl.innerText = `Last update: ${lastUpdated}`;
+                this.indexTimestampEl.innerText = `${t('LAST_UPDATE')}${lastUpdated}`;
                 this.indexTimestampEl.style.display = "block";
             } else {
                 this.indexTimestampEl.innerText = "";
@@ -410,7 +411,7 @@ export class WhispererView extends ItemView {
         if (state.active && total > 0) {
             this.indexProgressRowEl.style.display = "flex";
             const percent = Math.min(100, Math.round((current / total) * 100));
-            this.indexProgressTextEl.innerText = `Indexing: ${current} / ${total}`;
+            this.indexProgressTextEl.innerText = `${t('INDEXING_PROGRESS')}${current} / ${total}`;
             this.indexProgressBarEl.style.width = `${percent}%`;
             this.indexProgressBarEl.style.background = "var(--interactive-accent)";
         } else {
