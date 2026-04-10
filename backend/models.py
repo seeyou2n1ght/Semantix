@@ -48,6 +48,7 @@ class SemanticSearchRequest(BaseModel):
 
 class MaintenanceRequest(BaseModel):
     retention_days: int = Field(7, ge=0, description="Number of days to keep old versions")
+    vault_id: Optional[str] = Field(None, description="Optional vault id for scoped operations")
 
 
 class SearchResultItem(BaseModel):

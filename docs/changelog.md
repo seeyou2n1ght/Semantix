@@ -1,4 +1,24 @@
-## [0.4.7] - 2026-04-10
+## [0.7.0] - 2026-04-11
+
+### 🚀 新功能 (Features)
+- **智能关键词高亮 (Intelligent Keyword Highlighting)**：弃用暴力 N-gram 切分，全面接入浏览器原生 `Intl.Segmenter` API 实现语言感知分词。高亮结果从"碎片化噪音"跃迁为真正有语义的关键词。
+- **权威停用词库 (Built-in Stopwords)**：内嵌约 150+ 词的权威中文停用词典（涵盖虚词、代词、连词、副词），自动过滤"怎么"、"由于"、"但是"等无意义高亮词汇。
+- **启发式噪音过滤 (Adaptive Noise Filtering)**：后端新增基于文档频率 (DF) 的自适应噪音词识别引擎。
+    - 自动统计仓库内所有词汇的出现频率，将在超过 80% 文档中出现的"大众脸"词汇动态加入停用词表。
+    - 前端新增设置开关 **"启发式噪音过滤"**，可一键开启/关闭。
+    - 新增 **"立即分析仓库噪音"** 按钮，支持手动触发词频分析。
+- **新增 API 端点**：`POST /index/compute-stopwords`，用于触发仓库词频分析并返回噪音词列表。
+- **状态同步增强**：`GET /index/status` 响应新增 `vault_stopwords` 字段，前端自动同步并缓存。
+
+### 🩹 修复 (Fixes)
+- **后端启动崩溃修复**：修复 `models.py` 中 `Dict` 类型未导入导致的 `NameError`（后端启动即退出，Code: 1）。
+- **MaintenanceRequest 模型补全**：为 `MaintenanceRequest` 添加缺失的 `vault_id` 字段，修复 `compute-stopwords` 端点调用时的 `AttributeError`。
+- **前端进程管理加固**：
+    - 修复后端服务未启用时仍刷新面板骨架的问题。
+    - 修复手动启动后端时提示异常退出的进程竞态问题（Process Pinning 机制）。
+    - 修复测试后端连接无响应问题（引入 5s 硬超时）。
+    - 修复跨平台端口清理逻辑（新增 Unix `lsof`/`kill` 支持）。
+
 
 ### 🚀 稳定性与生命周期 (Stability & Lifecycle)
 - **后端“看门狗”自杀机制 (Watchdog Suicide)**: 实现了一种高度稳健的后端进程管理方案。后端现在具备自我监控能力：
