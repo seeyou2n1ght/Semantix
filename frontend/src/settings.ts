@@ -316,11 +316,11 @@ export class SemantixSettingTab extends PluginSettingTab {
 
             new Setting(containerEl)
                 .setName('运行控制')
-                .setDesc('手动探测连接或控制服务状态')
+                .setDesc('检查后端存活状态，或在服务未自动拉起时尝试手动启动。')
                 .addButton(btn => btn
-                    .setButtonText("测试自启动")
+                    .setButtonText("探测服务连接")
                     .onClick(async () => {
-                        btn.setButtonText("测试中...");
+                        btn.setButtonText("探测中...");
                         const isConnected = await this.plugin.apiClient.checkHealth();
                         if (isConnected) {
                             new Notice("Semantix: 后端已就绪 ✅");
@@ -328,26 +328,26 @@ export class SemantixSettingTab extends PluginSettingTab {
                             new Notice("Semantix: 目前无法连接。");
                         }
                         this.plugin.checkConnection({ manual: true });
-                        btn.setButtonText("测试自启动");
+                        btn.setButtonText("探测服务连接");
                     }))
                 .addButton(btn => btn
-                    .setButtonText("🚀 手动启动服务")
+                    .setButtonText("🚀 立即唤醒后端")
                     .setCta()
                     .onClick(async () => {
                         btn.setDisabled(true);
-                        btn.setButtonText("正在启动...");
+                        btn.setButtonText("正在唤醒...");
                         const status = await this.plugin.apiClient.checkFullHealth();
                         if (status === "READY") {
-                            new Notice("Semantix: 后端已运行 ✅");
+                            new Notice("Semantix: 后端已在运行中 ✅");
                         } else if (status === "CONFLICT") {
-                            if (confirm("⚠️ 端口冲突预警\n\n是否强制清理 8000 端口并启动？")) {
+                            if (confirm("⚠️ 端口冲突预警\n\n检测到 8000 端口已被占用（非本插件进程）。\n\n是否尝试强制清理该端口并启动？")) {
                                 await this.plugin.serviceManager.forceKillAndStart();
                             }
                         } else {
                             await this.plugin.serviceManager.start({ force: true });
                         }
                         btn.setDisabled(false);
-                        btn.setButtonText("🚀 手动启动服务");
+                        btn.setButtonText("🚀 立即唤醒后端");
                     }));
         }
 
