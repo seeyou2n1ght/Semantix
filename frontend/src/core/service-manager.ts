@@ -75,11 +75,17 @@ export class ServiceManager {
                 ? ['run', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', '8000']
                 : ['-m', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', '8000'];
 
+            const env = { 
+                ...process.env, 
+                SEMANTIX_PARENT_PID: process.pid.toString() 
+            };
+
             this.reportStatus("正在唤醒后端服务...");
             this.process = spawn(settings.pythonPath, args, {
                 cwd: settings.backendPath,
                 shell: Platform.isWin,
-                detached: false
+                detached: false,
+                env
             });
 
             // 实时监听日志流

@@ -2,6 +2,8 @@ import os
 import time
 import logging
 import secrets
+import threading
+import signal
 from fastapi import FastAPI, HTTPException, Depends, Header, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta
@@ -47,6 +49,38 @@ METRICS = {
 
 _pending_clear_requests: Dict[str, Dict] = {}
 
+# --- Watchdog Configuration ---
+LAST_ACTIVITY = time.time()
+PARENT_PID = int(os.getenv("SEMANTIX_PARENT_PID", "0"))
+WATCHDOG_INTERVAL = 20  # 检查频率 (秒)
+ACTIVITY_TIMEOUT = 120  # 无响应自杀阈值 (秒)
+
+def watchdog():
+    """后台监控线程：检查心跳超时或父进程消失"""
+    global LAST_ACTIVITY
+    logger.info("Watchdog monitoring started (Interval: %ds, Timeout: %ds)", WATCHDOG_INTERVAL, ACTIVITY_TIMEOUT)
+    
+    while True:
+        time.sleep(WATCHDOG_INTERVAL)
+        now = time.time()
+        
+        # 1. 检查心跳超时
+        if now - LAST_ACTIVITY > ACTIVITY_TIMEOUT:
+            logger.warning("Heartbeat timeout (%ds). Sidecar initiating self-shutdown...", ACTIVITY_TIMEOUT)
+            # 触发优雅退出逻辑
+            os.kill(os.getpid(), signal.SIGTERM)
+            break
+            
+        # 2. 检查父进程存活 (如果注入了 PID)
+        if PARENT_PID > 0:
+            try:
+                # signal 0 仅用于探测进程存在，不会真正杀死进程
+                os.kill(PARENT_PID, 0)
+            except OSError:
+                logger.warning("Parent process (PID %d) lost. Sidecar initiating self-shutdown...", PARENT_PID)
+                os.kill(os.getpid(), signal.SIGTERM)
+                break
+
 
 def verify_token(x_semantix_token: str | None = Header(default=None)):
     if API_TOKEN and x_semantix_token != API_TOKEN:
@@ -89,6 +123,14 @@ db_path = os.getenv("SEMANTIX_DB_PATH", "./semantix.db")
 db_svc = DatabaseService(db_path=db_path)
 
 
+@app.on_event("startup")
+def startup_event():
+    # 启动看门狗线程
+    thread = threading.Thread(target=watchdog, daemon=True)
+    thread.start()
+    logger.info("Semantix backend service started. Parent PID: %d", PARENT_PID)
+
+
 @app.on_event("shutdown")
 def shutdown_event():
     logger.info("Semantix backend service is shutting down...")
@@ -104,6 +146,14 @@ def health_check():
     if not model_svc.is_ready:
         return {"status": "loading", "message": "Model is loading..."}
     return {"status": "ok", "message": "Semantix backend is running."}
+
+
+@app.get("/ping", tags=["System"])
+def ping():
+    """Heartbeat endpoint to keep the service alive."""
+    global LAST_ACTIVITY
+    LAST_ACTIVITY = time.time()
+    return {"status": "alive", "timestamp": LAST_ACTIVITY}
 
 
 @app.get("/ready", tags=["System"])

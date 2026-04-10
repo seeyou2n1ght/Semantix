@@ -223,4 +223,21 @@ export class ApiClient {
     public getVaultId(): string {
         return this.vaultId;
     }
+
+    /**
+     * 发送心跳信号，告诉后端我们还在运行
+     */
+    async ping(): Promise<void> {
+        try {
+            await requestUrl({
+                url: `${this.baseUrl}/ping`,
+                method: 'GET',
+                contentType: 'application/json',
+                headers: this.getAuthHeaders(),
+                throw: false
+            });
+        } catch (e) {
+            // 静默失败，心跳丢失一两次是正常的由后端缓冲区处理
+        }
+    }
 }

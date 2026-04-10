@@ -222,6 +222,9 @@ export default class SemantixPlugin extends Plugin {
 
         // 2. 只有非 Disabled 状态才进行心跳检测
         const isConnected = await this.apiClient.checkHealth();
+        if (isConnected) {
+            this.apiClient.ping(); // 同时发送后端存活心跳（异步执行，不阻塞 UI）
+        }
         const nextStatus = isConnected ? 'connected' : 'disconnected';
         
         // 3. 处理通知逻辑
