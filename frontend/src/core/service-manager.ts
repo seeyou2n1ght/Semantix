@@ -86,20 +86,24 @@ export class ServiceManager {
 
             this.reportStatus("正在唤醒后端服务...");
             // 为路径包含空格的情况加固
-            this.process = spawn(`"${settings.pythonPath}"`, args, {
+            const proc = spawn(`"${settings.pythonPath}"`, args, {
                 cwd: settings.backendPath,
                 shell: true, // 在 Windows 下 spawn 字符串命令需要 shell
                 detached: false,
                 env
             });
+            this.process = proc;
 
             // 实时监听日志流
-            this.process.stdout?.on('data', (data) => {
+            proc.stdout?.on('data', (data) => {
+                if (this.process !== proc) return; // 关键：丢弃非当前活跃进程的日志
                 const line = data.toString();
                 if (line.includes("Model loaded")) {
                     this.reportStatus("模型加载完成 🧠");
                 } else if (line.includes("Uvicorn running on")) {
                     this.reportStatus("服务已就绪 🚀");
+                    // 只有当前进程成功触发时才执行一次健康检查更新
+                    setTimeout(() => this.plugin.checkConnection({ silent: true }), 500);
                 } else if (line.includes("Downloading:")) {
                     // 尝试提取下载进度
                     const match = line.match(/Downloading[:\s]+(\d+%)|(\d+\.?\d*[kM]B\/s)/);
@@ -111,7 +115,8 @@ export class ServiceManager {
                 }
             });
 
-            this.process.stderr?.on('data', (data) => {
+            proc.stderr?.on('data', (data) => {
+                if (this.process !== proc) return; 
                 const line = data.toString();
                 // 识别一些常见的加载提示或错误
                 if (line.includes("Loading model") || line.includes("Loading embedding model")) {
@@ -123,7 +128,9 @@ export class ServiceManager {
                 }
             });
 
-            this.process.on('close', (code) => {
+            proc.on('close', (code) => {
+                if (this.process !== proc) return; // 关键：如果是旧进程关闭，不影响状态位和 UI 通知
+                
                 this.process = null;
                 this.isStarting = false;
                 this.plugin.checkConnection();
@@ -132,7 +139,8 @@ export class ServiceManager {
                 }
             });
 
-            this.process.on('error', (err) => {
+            proc.on('error', (err) => {
+                if (this.process !== proc) return;
                 this.reportStatus(`启动失败: ${err.message} ❌`);
                 this.process = null;
                 this.isStarting = false;

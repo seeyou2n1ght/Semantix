@@ -107,6 +107,10 @@ public getCursorActivityExtension(): Extension {
             }
         }
 
+        if (this.plugin.getConnectionStatus() !== 'connected') {
+            return;
+        }
+
         console.debug("Semantix Whisperer: Triggering semantic search...");
         this.showLoading();
 

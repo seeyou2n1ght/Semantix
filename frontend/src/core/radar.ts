@@ -108,6 +108,10 @@ export class OrphanRadar {
      * 主动触发扫描并更新 RadarView
      */
     public async scanAndRender() {
+        if (this.plugin.getConnectionStatus() !== 'connected') {
+            return;
+        }
+
         const leaves = this.plugin.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE);
         if (leaves.length > 0) {
             const leaf = leaves[0];

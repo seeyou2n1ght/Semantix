@@ -45,32 +45,36 @@ export class ApiClient {
 
     /**
      * 深度探活：识别端口是被正确占用、被错误占用、还是空闲
+     * 引入 5 秒硬超时机制，防止 Obsidian requestUrl 挂起导致 UI 无响应
      */
     async checkFullHealth(): Promise<HealthStatus> {
-        try {
-            const url = `${this.baseUrl}/health`;
-            const req: RequestUrlParam = {
-                url,
-                method: 'GET',
-                contentType: 'application/json',
-                headers: this.getAuthHeaders(),
-                throw: false // 我们需要手动处理响应，避免 Obsidian 弹出请求失败警告
-            };
-            
-            const res: RequestUrlResponse = await requestUrl(req);
-            
-            // 匹配 Semantix 特有的指纹信息
-            if (res.status === 200 && res.json && res.json.status === 'ok') {
-                return HealthStatus.READY;
+        const fetchStatus = async (): Promise<HealthStatus> => {
+            try {
+                const url = `${this.baseUrl}/health`;
+                const req: RequestUrlParam = {
+                    url,
+                    method: 'GET',
+                    contentType: 'application/json',
+                    headers: this.getAuthHeaders(),
+                    throw: false
+                };
+                
+                const res: RequestUrlResponse = await requestUrl(req);
+                
+                if (res.status === 200 && res.json && res.json.status === 'ok') {
+                    return HealthStatus.READY;
+                }
+                return HealthStatus.CONFLICT;
+            } catch (error) {
+                return HealthStatus.NONE;
             }
-            
-            // 端口通了（有 HTTP 响应），但内容不匹配签名 -> 冲突
-            return HealthStatus.CONFLICT;
-        } catch (error) {
-            // 连接被拒绝 (Connection Refused) 通常意味着端口空闲
-            // 注意：在 Obsidian 环境下，如果地址不通，requestUrl 会抛出异常
-            return HealthStatus.NONE;
-        }
+        };
+
+        const timeout = new Promise<HealthStatus>((resolve) => {
+            setTimeout(() => resolve(HealthStatus.NONE), 5000);
+        });
+
+        return Promise.race([fetchStatus(), timeout]);
     }
 
     /**
