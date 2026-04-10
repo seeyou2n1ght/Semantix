@@ -36,3 +36,8 @@ Semantix 采用深度的三阶段检索策略（Hybrid + Path Boost + Cross-rera
 后端返回经过 **Snippet Focusing** 处理的文本：
 - 如果命中点在长段落结尾，Snippet 会自动前移，确保关键词在展示框中心。
 - 指示灯映射：🟢 >= 0.85 (强相关), 🔵 >= 0.75 (相关), 🟡 < 0.75 (潜在关联)。
+
+## 6. 自动化维护 (Auto-Maintenance)
+为防止 `_transactions` 与 `_versions` 目录无限增长，系统会在后台：
+1. **定时任务**：每 24 小时执行一次 `table.optimize()`。
+2. **版本清理**：自动移除超过用户设定天数（默认 7 天）的历史版本，释放磁盘空间。

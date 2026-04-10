@@ -25,6 +25,7 @@ export interface SemantixSettings {
     colorThresholdMedium: number;
     enableExplainableResults: boolean;
     enableOnMobile: boolean;
+    dbRetentionDays: number;
 }
 
 export const DEFAULT_SETTINGS: SemantixSettings = {
@@ -45,7 +46,8 @@ export const DEFAULT_SETTINGS: SemantixSettings = {
     colorThresholdHigh: 0.85,
     colorThresholdMedium: 0.75,
     enableExplainableResults: true,
-    enableOnMobile: false
+    enableOnMobile: false,
+    dbRetentionDays: 7
 };
 
 export class SemantixSettingTab extends PluginSettingTab {
@@ -54,6 +56,9 @@ export class SemantixSettingTab extends PluginSettingTab {
     private backendStatus: string = "";
     private showPythonInput: boolean = false;
     private debounceTimer: number | null = null;
+    
+    // DB Metrics
+    private dbMetrics: any = null;
 
     constructor(app: App, plugin: SemantixPlugin) {
         super(app, plugin);
@@ -145,6 +150,13 @@ export class SemantixSettingTab extends PluginSettingTab {
             this.updateStatus('python', t('VENV_DETECTED') + venvPython);
         } else {
             this.updateStatus('python', t('VENV_NOT_FOUND'));
+        }
+    }
+
+    async onOpen() {
+        // 当设置页面打开时，尝试获取一次指标数据
+        if (this.plugin.apiClient) {
+            this.dbMetrics = await this.plugin.apiClient.getMetrics();
         }
     }
 
@@ -438,6 +450,49 @@ export class SemantixSettingTab extends PluginSettingTab {
                 .onChange(async (value) => {
                     this.plugin.settings.enableExplainableResults = value;
                     await this.plugin.saveSettings();
+                }));
+
+        // --- Database Maintenance Section ---
+        new Setting(containerEl).setName(t('DB_MAINTENANCE_SECTION')).setHeading();
+
+        const dbSizeMb = this.dbMetrics?.db_size_bytes ? (this.dbMetrics.db_size_bytes / (1024 * 1024)).toFixed(2) : "0.00";
+        const lastMt = this.dbMetrics?.last_maintenance_at ? new Date(this.dbMetrics.last_maintenance_at).toLocaleString() : t('STATUS_UNKNOWN');
+
+        const metricsEl = containerEl.createEl('div', { 
+            attr: { style: 'margin-bottom: 20px; padding: 15px; border-radius: 8px; background-color: var(--background-secondary-alt); border: 1px solid var(--background-modifier-border);' } 
+        });
+        metricsEl.createEl('div', { attr: { style: 'margin-bottom: 8px; font-size: 0.9em;' } }).innerHTML = `<strong>${t('DB_SIZE')}</strong> ${dbSizeMb} MB`;
+        metricsEl.createEl('div', { attr: { style: 'font-size: 0.9em;' } }).innerHTML = `<strong>${t('LAST_MAINTENANCE')}</strong> ${lastMt}`;
+
+        new Setting(containerEl)
+            .setName(t('RETENTION_DAYS'))
+            .setDesc(t('RETENTION_DAYS_DESC'))
+            .addSlider(slider => slider
+                .setLimits(0, 30, 1)
+                .setValue(this.plugin.settings.dbRetentionDays)
+                .setDynamicTooltip()
+                .onChange(async (value) => {
+                    this.plugin.settings.dbRetentionDays = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName(t('RUN_MAINTENANCE_BTN'))
+            .addButton(btn => btn
+                .setButtonText(t('RUN_MAINTENANCE_BTN'))
+                .onClick(async () => {
+                    btn.setDisabled(true);
+                    btn.setButtonText(t('MAINTENANCE_RUNNING'));
+                    const success = await this.plugin.apiClient.runMaintenance(this.plugin.settings.dbRetentionDays);
+                    if (success) {
+                        new Notice(t('MAINTENANCE_SUCCESS'));
+                        this.dbMetrics = await this.plugin.apiClient.getMetrics();
+                        this.display();
+                    } else {
+                        new Notice("❌ Maintenance failed.");
+                    }
+                    btn.setDisabled(false);
+                    btn.setButtonText(t('RUN_MAINTENANCE_BTN'));
                 }));
 
         new Setting(containerEl).setName(t('SEARCH_SECTION')).setHeading();

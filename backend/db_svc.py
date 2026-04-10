@@ -16,6 +16,7 @@ COLLECTION_NAME = "semantix_notes"
 class DatabaseService:
     def __init__(self, db_path: str = "./semantix_lance", dim: int = 512):
         logger.info("Initializing LanceDB at %s...", db_path)
+        self.db_path = db_path
         self.db = lancedb.connect(db_path)
         self.dim = dim
         self._fts_rebuild_lock = threading.Lock()
@@ -438,3 +439,43 @@ class DatabaseService:
             logger.info("Table cleared and recreated.")
         except Exception as e:
             logger.error("Error clearing table: %s", e)
+
+    def optimize_database(self, retention_days: int = 7):
+        """
+        Perform maintenance: compaction and old version cleanup.
+        """
+        from datetime import timedelta
+        try:
+            if not self.table:
+                return
+            
+            logger.info("Starting database optimization (retention: %d days)...", retention_days)
+            # 1. 第一步：整理碎片/合并细碎文件
+            self.table.optimize()
+            
+            # 2. 第二步：清理过期版本数据
+            self.table.cleanup_old_versions(older_than=timedelta(days=retention_days))
+            
+            logger.info("Database optimization completed.")
+        except Exception as e:
+            logger.error("Failed to optimize database: %s", e)
+            raise
+
+    def get_storage_metrics(self) -> int:
+        """
+        Calculate total size of the database directory in bytes.
+        """
+        total_size = 0
+        try:
+            if not os.path.exists(self.db_path):
+                return 0
+            
+            for dirpath, dirnames, filenames in os.walk(self.db_path):
+                for f in filenames:
+                    fp = os.path.join(dirpath, f)
+                    if os.path.exists(fp):
+                        total_size += os.path.getsize(fp)
+            return total_size
+        except Exception as e:
+            logger.error("Error calculating storage metrics: %s", e)
+            return 0

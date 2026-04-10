@@ -42,6 +42,9 @@ class SemanticSearchRequest(BaseModel):
         True, description="Enable cross-encoder reranking for higher accuracy"
     )
 
+class MaintenanceRequest(BaseModel):
+    retention_days: int = Field(7, ge=0, description="Number of days to keep old versions")
+
 
 class SearchResultItem(BaseModel):
     path: str
@@ -70,6 +73,9 @@ class MetricsResponse(BaseModel):
     last_index_ms: Optional[float]
     last_search_at: Optional[str]
     last_search_ms: Optional[float]
+    last_maintenance_at: Optional[str]
+    db_size_bytes: int = 0
+    current_retention_days: int = 7
 
 
 class ClearIndexConfirmRequest(BaseModel):

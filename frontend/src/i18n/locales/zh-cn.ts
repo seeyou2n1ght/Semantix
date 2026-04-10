@@ -120,7 +120,18 @@ export default {
     REBUILD_INDEX_NAME: "重建向量索引",
     REBUILD_INDEX_DESC: "清空向量数据库并重新触发全量索引。此操作不可逆。",
     REBUILD_BTN: "重建索引",
-    REBUILDING: "清空中...",
+    REBUILDING: "清理中...",
+
+    // 数据库维护 (Maintenance)
+    DB_MAINTENANCE_SECTION: "数据库健康与维护",
+    DB_SIZE: "数据库大小: ",
+    LAST_MAINTENANCE: "上次维护: ",
+    RETENTION_DAYS: "历史版本保留天数: ",
+    RETENTION_DAYS_DESC: "数据库保留冗余历史版本的时长（用于“时间旅行”回滚）。设为 0 则仅保留当前状态。",
+    RUN_MAINTENANCE_BTN: "立即执行磁盘优化",
+    MAINTENANCE_RUNNING: "正在优化...",
+    MAINTENANCE_SUCCESS: "数据库优化完成，已释放冗余空间。",
+
     CONFIRM_CLEAR_1: "⚠️ 确定要清空向量数据库吗？\n\n此操作将删除所有已建立的语义索引数据。",
     CONFIRM_CLEAR_2: "⚠️ 再次确认：此操作不可逆！",
     CLEAR_SUCCESS: "向量索引已清空 ✅ 请手动触发全量索引或重启插件。",

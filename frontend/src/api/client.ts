@@ -240,4 +240,42 @@ export class ApiClient {
             // 静默失败，心跳丢失一两次是正常的由后端缓冲区处理
         }
     }
+
+    /**
+     * 获取系统运行指标
+     */
+    async getMetrics(): Promise<any | null> {
+        try {
+            const res = await requestUrl({
+                url: `${this.baseUrl}/metrics`,
+                method: 'GET',
+                contentType: 'application/json',
+                headers: this.getAuthHeaders()
+            });
+            if (res.status === 200 && res.json) {
+                return res.json;
+            }
+            return null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    /**
+     * 手动触发磁盘维护
+     */
+    async runMaintenance(retentionDays: number): Promise<boolean> {
+        try {
+            const res = await requestUrl({
+                url: `${this.baseUrl}/maintenance/run`,
+                method: 'POST',
+                contentType: 'application/json',
+                headers: this.getAuthHeaders(),
+                body: JSON.stringify({ retention_days: retentionDays })
+            });
+            return res.status === 200;
+        } catch (e) {
+            return false;
+        }
+    }
 }

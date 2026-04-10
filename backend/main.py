@@ -46,7 +46,10 @@ METRICS = {
     "last_index_at": None,
     "last_index_ms": None,
     "last_search_at": None,
-    "last_search_ms": None,
+    "last_search_ms": 0.0,
+    "last_maintenance_at": None,
+    "db_size_bytes": 0,
+    "current_retention_days": 7,
 }
 
 _pending_clear_requests: Dict[str, Dict] = {}
@@ -145,11 +148,34 @@ db_path = os.getenv("SEMANTIX_DB_PATH", "./semantix.db")
 db_svc = DatabaseService(db_path=db_path)
 
 
+def maintenance_worker():
+    """后台定时维护任务：清理过期版本，优化磁盘空间"""
+    logger.info("Maintenance worker started.")
+    last_run = 0
+    while True:
+        try:
+            # 每 24 小时执行一次 (86400 秒)
+            now = time.time()
+            if now - last_run > 86400:
+                retention = METRICS.get("current_retention_days", 7)
+                db_svc.optimize_database(retention_days=retention)
+                METRICS["last_maintenance_at"] = datetime.now().isoformat()
+                METRICS["db_size_bytes"] = db_svc.get_storage_metrics()
+                last_run = now
+        except Exception as e:
+            logger.error("Error in maintenance worker: %s", e)
+        
+        # 每小时检查一次是否需要执行
+        time.sleep(3600)
+
 @app.on_event("startup")
 def startup_event():
     # 启动看门狗线程
     thread = threading.Thread(target=watchdog, daemon=True)
     thread.start()
+    # 启动后台维护线程
+    mt_thread = threading.Thread(target=maintenance_worker, daemon=True)
+    mt_thread.start()
     # 预加载精排模型
     reranker_svc.start_loading()
     logger.info("Semantix backend service started. Parent PID: %d", PARENT_PID)
@@ -197,9 +223,28 @@ def get_index_status(vault_id: str = "default"):
     )
 
 
-@app.get("/metrics", response_model=MetricsResponse, tags=["System"])
+@app.get("/metrics", response_model=MetricsResponse, tags=["Status"])
 def get_metrics():
+    # 实时刷新数据库大小指标
+    METRICS["db_size_bytes"] = db_svc.get_storage_metrics()
     return MetricsResponse(**METRICS)
+
+@app.post("/maintenance/run", tags=["Maintenance"])
+def run_maintenance(request: Optional[MaintenanceRequest] = None):
+    """手动触发数据库维护"""
+    try:
+        retention = request.retention_days if request else METRICS.get("current_retention_days", 7)
+        # 更新当前的全局配置
+        METRICS["current_retention_days"] = retention
+        
+        db_svc.optimize_database(retention_days=retention)
+        
+        METRICS["last_maintenance_at"] = datetime.now().isoformat()
+        METRICS["db_size_bytes"] = db_svc.get_storage_metrics()
+        
+        return {"status": "ok", "message": "Manual maintenance completed."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/index/batch", tags=["Index"])
