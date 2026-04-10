@@ -183,9 +183,22 @@ export class ServiceManager {
      * 停止后端服务
      */
     public stop() {
-        if (this.process) {
-            this.reportStatus("正在停止服务...");
-            this.process.kill();
+        if (!Platform.isDesktop) return;
+
+        if (this.process && this.process.pid) {
+            this.reportStatus("正在停止服务并回收资源...");
+            
+            if (Platform.isWin) {
+                // Windows 下必须使用 taskkill /T (Tree) 才能杀死通过 shell 启动的子进程
+                try {
+                    exec(`taskkill /F /T /PID ${this.process.pid}`);
+                } catch (e) {
+                    console.error("Semantix: 终止进程失败", e);
+                }
+            } else {
+                this.process.kill();
+            }
+            
             this.process = null;
         }
     }
@@ -194,6 +207,8 @@ export class ServiceManager {
      * 运行 uv sync 确保环境最新
      */
     private async runSync(): Promise<void> {
+        if (!Platform.isDesktop) return;
+
         return new Promise((resolve) => {
             const syncProc = spawn('uv', ['sync'], {
                 cwd: this.plugin.settings.backendPath,
@@ -214,7 +229,7 @@ export class ServiceManager {
      * 判断是否正在处理启动流程（包括环境同步或进程拉起）
      */
     public isActivating(): boolean {
-        return this.isStarting || this.isRunning();
+        return (this.isStarting || this.isRunning()) && Platform.isDesktop;
     }
 
     /**
