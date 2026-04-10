@@ -65,6 +65,11 @@ export class SemantixSettingTab extends PluginSettingTab {
         this.display(); // 触发全量刷新以显示状态
     }
 
+    public refreshStatusDisplay() {
+        // 触发设置面板重绘以反映最新连接状态
+        this.display();
+    }
+
     private async validatePython(pythonPath: string) {
         if (!pythonPath) {
             this.updateStatus('python', "");
@@ -145,7 +150,27 @@ export class SemantixSettingTab extends PluginSettingTab {
     display(): void {
         const { containerEl } = this;
         containerEl.empty();
-        new Setting(containerEl).setName('配置 (Settings)').setHeading();
+
+        // 状态页眉
+        const status = this.plugin.getConnectionStatus();
+        let statusText = "未知";
+        let statusColor = "var(--text-muted)";
+        
+        switch (status) {
+            case 'connected': statusText = "已连接"; statusColor = "var(--color-green)"; break;
+            case 'disconnected': statusText = "未连接"; statusColor = "var(--text-accent)"; break;
+            case 'syncing': statusText = "连接中/索引中"; statusColor = "var(--color-blue)"; break;
+            case 'disabled': statusText = "已禁用 (移动端休眠或手动停止)"; statusColor = "var(--text-muted)"; break;
+        }
+
+        const header = containerEl.createEl('div', { attr: { style: 'display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding: 10px; border-radius: 8px; background-color: var(--background-secondary);' } });
+        header.createEl('h2', { text: 'Semantix 配置', attr: { style: 'margin: 0;' } });
+        
+        const badge = header.createEl('div', { attr: { style: `display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 12px; border: 1px solid ${statusColor}; font-size: 0.85em;` } });
+        badge.createEl('span', { attr: { style: `width: 8px; height: 8px; border-radius: 50%; background-color: ${statusColor};` } });
+        badge.createEl('span', { text: statusText, attr: { style: `color: ${statusColor}; font-weight: bold;` } });
+
+        new Setting(containerEl).setName('通用配置 (General)').setHeading();
 
         new Setting(containerEl)
             .setName('Backend mode')
@@ -179,13 +204,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                     .setButtonText("测试连接")
                     .onClick(async () => {
                         btn.setButtonText("测试中...");
-                        const isConnected = await this.plugin.apiClient.checkHealth();
-                        if (isConnected) {
-                            new Notice("Semantix: 连接成功 ✅");
-                        } else {
-                            new Notice("Semantix: 连接失败 ❌ 请检查远程地址或网络环境。");
-                        }
-                        this.plugin.checkConnection({ manual: true });
+                        await this.plugin.checkConnection({ manual: true });
                         btn.setButtonText("测试连接");
                     }));
 
@@ -321,13 +340,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                     .setButtonText("探测服务连接")
                     .onClick(async () => {
                         btn.setButtonText("探测中...");
-                        const isConnected = await this.plugin.apiClient.checkHealth();
-                        if (isConnected) {
-                            new Notice("Semantix: 后端已就绪 ✅");
-                        } else {
-                            new Notice("Semantix: 目前无法连接。");
-                        }
-                        this.plugin.checkConnection({ manual: true });
+                        await this.plugin.checkConnection({ manual: true });
                         btn.setButtonText("探测服务连接");
                     }))
                 .addButton(btn => btn

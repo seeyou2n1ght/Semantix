@@ -32,6 +32,7 @@ export default class SemantixPlugin extends Plugin {
     private isFullIndexing: boolean = false;
     private fullIndexCancelRequested: boolean = false;
     private startupNotice: Notice | null = null;
+    private settingTab: SemantixSettingTab | null = null;
 
     async onload() {
         // 1. 加载配置
@@ -70,7 +71,8 @@ export default class SemantixPlugin extends Plugin {
         }
 
         // 3. 注册配置面板
-        this.addSettingTab(new SemantixSettingTab(this.app, this));
+        this.settingTab = new SemantixSettingTab(this.app, this);
+        this.addSettingTab(this.settingTab);
 
         // 4. 注册两个独立的 Sidebar View
         this.registerView(
@@ -221,9 +223,9 @@ export default class SemantixPlugin extends Plugin {
             if (this.lastConnectionStatus === 'disconnected') {
                 new Notice("Semantix: 后端连接已恢复 ✅");
             }
-            // 情况 B: 手动测试成功
+            // 情况 B: 手动测试成功 (排除本身已经在连接状态的情形，除非是手动点击)
             else if (manual) {
-                new Notice("Semantix: 连接成功 ✅");
+                new Notice("Semantix: 后端连接正常 ✅");
             }
             
             // eslint-disable-next-line no-console
@@ -235,11 +237,11 @@ export default class SemantixPlugin extends Plugin {
         } else {
             // 情况 C: 首次发生断连 (从正常转为异常)
             if (this.lastConnectionStatus === 'connected' && !silent) {
-                new Notice("Semantix: 失去与后端的连接，请检查服务。");
+                new Notice("Semantix: 失去与后端的连接，请检查服务 ❌");
             }
             // 情况 D: 手动测试失败 (且不是因为 Disabled)
             else if (manual) {
-                new Notice("Semantix: 无法连接到后端，请检查配置或服务是否启动。");
+                new Notice("Semantix: 无法连接到后端，请检查配置或服务状态 ❌");
             }
             // 情况 E: 心跳周期内的持续断连 -> 保持静默
             
@@ -265,6 +267,11 @@ export default class SemantixPlugin extends Plugin {
             if (leaf.view instanceof RadarView) {
                 (leaf.view as RadarView).updateStatus(status);
             }
+        }
+
+        // 同步通知设置面板刷新（如果已打开）
+        if (this.settingTab) {
+            this.settingTab.refreshStatusDisplay();
         }
     }
 

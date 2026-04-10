@@ -1,6 +1,6 @@
 import { Notice, Platform } from 'obsidian';
 import SemantixPlugin from '../main';
-import { spawn, ChildProcess, exec } from 'child_process';
+import { spawn, ChildProcess, exec, execSync } from 'child_process';
 import * as path from 'path';
 import { HealthStatus } from '../api/client';
 
@@ -170,8 +170,32 @@ export class ServiceManager {
                     return;
                 }
 
-                // 强制结束这些 PID
-                const pidStr = Array.from(pids).join(' /PID ');
+                // 特征校验逻辑 (基于命令行内容)
+                // 我们只清理那些命令行中同时包含 'main:app' 和当前设置的 backendPath 关键字的进程
+                const targetPids: string[] = [];
+                const backendPathKey = this.plugin.settings.backendPath.split(/[\\/]/).pop() || "";
+                
+                try {
+                    for (const pid of pids) {
+                        // 使用 wmic 获取命令行信息 (Windows 通用)
+                        const cmdInfo = execSync(`wmic process where processid=${pid} get commandline`).toString();
+                        if (cmdInfo.includes("main:app") && (cmdInfo.includes(backendPathKey) || cmdInfo.includes("uv"))) {
+                            targetPids.push(pid);
+                        }
+                    }
+                } catch (e) {
+                    // 如果 wmic 报错，作为降级方案，我们信任端口监听者（如果用户已经 confirm 过）
+                    // 暂不做静默强杀
+                }
+
+                if (targetPids.length === 0) {
+                    console.log("[Semantix]: 发现 8000 端口占用，但非本插件进程，跳过自动清理。");
+                    resolve();
+                    return;
+                }
+
+                // 强制结束这些特征匹配的 PID
+                const pidStr = targetPids.join(' /PID ');
                 exec(`taskkill /F /PID ${pidStr}`, () => {
                     resolve();
                 });
@@ -186,17 +210,19 @@ export class ServiceManager {
         if (!Platform.isDesktop) return;
 
         if (this.process && this.process.pid) {
+            const targetPid = this.process.pid;
             this.reportStatus("正在停止服务并回收资源...");
             
             if (Platform.isWin) {
                 // Windows 下必须使用 taskkill /T (Tree) 才能杀死通过 shell 启动的子进程
+                // 使用 execSync 确保在插件 onunload 完成前同步结束进程
                 try {
-                    exec(`taskkill /F /T /PID ${this.process.pid}`);
+                    execSync(`taskkill /F /T /PID ${targetPid}`);
                 } catch (e) {
-                    console.error("Semantix: 终止进程失败", e);
+                    // 忽略进程可能已经自行退出的报错
                 }
             } else {
-                this.process.kill();
+                this.process.kill('SIGTERM');
             }
             
             this.process = null;
