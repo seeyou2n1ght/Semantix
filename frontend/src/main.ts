@@ -32,6 +32,7 @@ export default class SemantixPlugin extends Plugin {
     private isFullIndexing: boolean = false;
     private fullIndexCancelRequested: boolean = false;
     private startupNotice: Notice | null = null;
+    private isStartupNoticeCompleted: boolean = false;
     private settingTab: SemantixSettingTab | null = null;
 
     async onload() {
@@ -49,6 +50,9 @@ export default class SemantixPlugin extends Plugin {
 
         // 2.1 注册状态播报消费者（实现右上角动态 Notice）
         this.serviceManager.setStatusConsumer((msg) => {
+            // 如果本轮启动已结束，则不再处理后续杂散日志
+            if (this.isStartupNoticeCompleted) return;
+
             if (!this.startupNotice) {
                 // 创建一个持久化的 Notice (timeout 为 0 表示手动关闭或后续代码关闭)
                 this.startupNotice = new Notice(`Semantix: ${msg}`, 0);
@@ -59,9 +63,12 @@ export default class SemantixPlugin extends Plugin {
             // 如果是结束态，则设置一个较短的延迟后关闭
             const isClosingMsg = msg.includes("✅") || msg.includes("🚀") || msg.includes("❌");
             if (isClosingMsg) {
+                this.isStartupNoticeCompleted = true; // 锁定状态，禁止后续日志复现浮窗
                 const noticeToClose = this.startupNotice;
-                this.startupNotice = null; // 立即置空，防止后续消息再次刷新已标记关闭的 Notice
-                setTimeout(() => noticeToClose.hide(), 4000);
+                this.startupNotice = null; 
+                setTimeout(() => {
+                    noticeToClose.hide();
+                }, 4000);
             }
         });
 
@@ -230,6 +237,15 @@ export default class SemantixPlugin extends Plugin {
             
             // eslint-disable-next-line no-console
             console.log("Semantix: Backend connection successful.");
+            
+            // 联动：如果此时启动浮窗还在，说明日志解析可能滞后，强制清理它
+            if (this.startupNotice) {
+                this.isStartupNoticeCompleted = true;
+                const noticeToClose = this.startupNotice;
+                this.startupNotice = null;
+                noticeToClose.hide();
+            }
+
             const status = await this.apiClient.getIndexStatus();
             if (status) {
                 this.updateAllViewIndexStatus(status.total_notes, status.last_updated);

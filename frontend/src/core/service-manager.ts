@@ -89,14 +89,24 @@ export class ServiceManager {
                     this.reportStatus("模型加载完成 🧠");
                 } else if (line.includes("Uvicorn running on")) {
                     this.reportStatus("服务已就绪 🚀");
+                } else if (line.includes("Downloading:")) {
+                    // 尝试提取下载进度
+                    const match = line.match(/Downloading[:\s]+(\d+%)|(\d+\.?\d*[kM]B\/s)/);
+                    if (match) {
+                        this.reportStatus(`模型下载中: ${match[0]}...`);
+                    } else {
+                        this.reportStatus("正在下载语义模型 (首次运行耗时较长)...");
+                    }
                 }
             });
 
             this.process.stderr?.on('data', (data) => {
                 const line = data.toString();
                 // 识别一些常见的加载提示或错误
-                if (line.includes("Loading model")) {
+                if (line.includes("Loading model") || line.includes("Loading embedding model")) {
                     this.reportStatus("正在加载语义引擎 (约需 10-30s)...");
+                } else if (line.includes("Downloading")) {
+                    this.reportStatus("正在从 HuggingFace/ModelScope 下载模型数据...");
                 } else if (line.includes("ERROR")) {
                     this.reportStatus(`出错了: ${line.split('\n')[0].substring(0, 50)}...`);
                 }
@@ -239,6 +249,12 @@ export class ServiceManager {
             const syncProc = spawn('uv', ['sync'], {
                 cwd: this.plugin.settings.backendPath,
                 shell: Platform.isWin
+            });
+
+            syncProc.stderr?.on('data', (data) => {
+                const line = data.toString();
+                if (line.includes("Resolved")) this.reportStatus("正在解析依赖关系...");
+                if (line.includes("Prepared") || line.includes("Installed")) this.reportStatus("正在同步环境依赖...");
             });
 
             syncProc.on('close', () => {
