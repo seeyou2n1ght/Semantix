@@ -58,12 +58,49 @@ FastAPI Backend (backend)
 
 ### 2. 搜索链路
 
-1. `Whisperer` 在 `file-open`、`editor-change`、`cursor-activity` 时触发
-2. 前端抽取当前段落或全文，并排除当前文件与可选的已链接文件
-3. 后端为查询文本补上 BGE 检索指令前缀后编码
-4. LanceDB 执行向量检索
-5. 后端把 chunk 结果聚合为文档结果，返回分数、路径、snippet
-6. 前端渲染侧边栏、关键词高亮与分数颜色标签
+```text
+触发 → 文本抽取 → 查询编码 → 检索策略选择 → 候选召回 → 文档级聚合 → 结果返回 → 前端渲染
+```
+
+**Step 1 — 触发与文本抽取**
+
+`Whisperer` 在 `file-open`、`editor-change`、`cursor-activity` 时触发。根据 Scope 设置：
+
+- `paragraph` 模式：抽取光标所在段落
+- `document` 模式：抽取全文并注入文件名与标签作为上下文
+
+前端同时收集需要排除的路径（当前文件 + 可选的已链接文件）。
+
+**Step 2 — 查询编码**
+
+后端为查询文本补上 BGE 检索指令前缀后，用 `BAAI/bge-small-zh-v1.5` 编码为向量。
+
+**Step 3 — 检索策略选择**
+
+根据查询文本长度自动选择检索模式：
+
+| 查询长度 | 检索模式 | 原因 |
+|----------|----------|------|
+| ≤ 128 字符 | **Hybrid**（向量 + FTS 关键词） | 短查询的关键词信号有效，两路互补 |
+| > 128 字符 | **纯向量** | 过长文本的 FTS 匹配噪声大、延迟高 |
+
+Hybrid 模式下使用 `LinearCombinationReranker`（向量权重 0.7）做结果融合。如果 FTS 索引不可用，自动 fallback 到纯向量检索。
+
+**Step 4 — 候选召回**
+
+以 `max(top_k × 5, 30)` 为候选池上限召回 chunk 级结果，确保后续去重聚合后仍有足够候选。
+
+**Step 5 — 文档级聚合**
+
+将 chunk 结果按文档路径聚合：
+
+- 每篇文档取最高分 chunk 的分数作为 base score
+- 取最高分 chunk 对应的 parent text 生成 snippet
+- 多 chunk 命中 bonus：`min(hit_count - 1, 3) × 0.02`（上限 +0.06），多个段落都相关的文档获得排序优势
+
+**Step 6 — 结果返回与渲染**
+
+后端返回 `path`、`score`、`snippet`、`matched_chunk_index`。前端渲染侧边栏，高亮关键词，并按分数阈值显示颜色标签（绿/蓝/默认）。
 
 ### 3. 孤岛扫描链路
 
@@ -89,7 +126,7 @@ FastAPI Backend (backend)
 说明：
 
 - 当前没有独立的 `/index/full` 接口。全量索引由前端分批调用 `/index/batch` 实现。
-- 当前没有 BM25、混合检索、cross-encoder rerank。
+- 搜索已支持基于 LanceDB FTS 的混合检索（短查询自动启用）。暂无 cross-encoder rerank。
 
 ## 快速开始
 

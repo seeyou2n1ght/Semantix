@@ -42,9 +42,16 @@
 - 索引统计与基础指标接口
 - 双步确认清空索引
 - 移动端默认休眠
+- [x] Phase 2: 消灭重复 Embedding + FTS 索引重建节流 (P0)
+- [x] Phase 3: 根据查询长度自动切换 Hybrid/Vector 模式 (P1)
+- [x] Phase 4: 扩大 Candidate Pool + 文档级聚合 Hit-boost (P1)
+- [x] Phase 5a: 修复 Markdown 代码块解析丢失问题，保留代码语义 (P0)
+- [x] Phase 5b: 后端架构重构，提取聚合逻辑并添加大文本保护 (P1)
+- [x] Phase 5c: 实现后端优雅停机 (Graceful Shutdown) 保护数据库 (P1)
 
-### Not Implemented
-
+## Not Implemented (Pending)
+- [ ] Phase 5d: 建立固定查询样本集，记录各环节延迟日志 (P1)
+- [ ] 结构化排序特征：为 `title` / `tags` / `headers` 提供额外 Boost (P1)
 - cross-encoder rerank
 - 面向孤岛笔记的独立排序算法
 - 知识图谱可视化

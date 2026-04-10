@@ -2,6 +2,8 @@ import logging
 import lancedb
 import os
 import pyarrow as pa
+import threading
+import time
 from typing import List, Dict, Any
 
 from utils.chunker import split_into_chunks
@@ -16,7 +18,23 @@ class DatabaseService:
         logger.info("Initializing LanceDB at %s...", db_path)
         self.db = lancedb.connect(db_path)
         self.dim = dim
+        self._fts_rebuild_lock = threading.Lock()
+        self._fts_rebuild_in_progress = False
+        self._fts_dirty = False
+        self._last_fts_rebuild_at = 0.0
         self._init_collection()
+
+    def close(self):
+        """Close the database connection and cleanup."""
+        try:
+            if hasattr(self, 'db') and self.db:
+                # LanceDB handles closing via garbage collection/reference count usually,
+                # but we can ensure resources are released if specific logic is needed.
+                logger.info("LanceDB connection closing...")
+                self.db = None
+                self.table = None
+        except Exception as e:
+            logger.error("Error during DatabaseService shutdown: %s", e)
 
     def _init_collection(self):
         schema = pa.schema(
@@ -144,6 +162,11 @@ class DatabaseService:
                 path = item.get("path")
                 text = item.get("text", "")
 
+                # 保护逻辑：如果单篇文档超过 50,000 字符，进行截断，防止正则切块导致 CPU 挂起
+                if len(text) > 50000:
+                    logger.warning("Document at %s is too large (%d chars), truncating to 50,000.", path, len(text))
+                    text = text[:50000]
+
                 if not text or not text.strip():
                     continue
 
@@ -202,6 +225,34 @@ class DatabaseService:
         except Exception as e:
             logger.error("Failed to rebuild FTS index: %s", e)
 
+    def mark_fts_dirty(self):
+        with self._fts_rebuild_lock:
+            self._fts_dirty = True
+
+    def maybe_rebuild_fts_index(self, min_interval_seconds: float = 30.0):
+        with self._fts_rebuild_lock:
+            if not self._fts_dirty:
+                return
+            if self._fts_rebuild_in_progress:
+                return
+            if (time.time() - self._last_fts_rebuild_at) < min_interval_seconds:
+                return
+
+            self._fts_rebuild_in_progress = True
+            self._fts_dirty = False
+
+        try:
+            self.rebuild_fts_index()
+            with self._fts_rebuild_lock:
+                self._last_fts_rebuild_at = time.time()
+        except Exception:
+            with self._fts_rebuild_lock:
+                self._fts_dirty = True
+            raise
+        finally:
+            with self._fts_rebuild_lock:
+                self._fts_rebuild_in_progress = False
+
     def search(
         self,
         vault_id: str,
@@ -216,18 +267,25 @@ class DatabaseService:
         Returns document-level results with the best matching chunk as snippet.
         """
         try:
+            # 放大候选池，确保去重后仍有足够候选
+            candidate_limit = max(top_k * 5, 30)
+
             is_hybrid = False
-            if query_text:
+            # 只对短查询启用 hybrid；长查询（如 document 模式）走纯向量，
+            # 避免过长 FTS query 拉高延迟且污染 lexical 信号
+            use_hybrid = query_text and len(query_text.strip()) <= 128
+
+            if use_hybrid:
                 try:
                     from lancedb.rerankers import LinearCombinationReranker
                     reranker = LinearCombinationReranker(weight=0.7)
-                    query = self.table.search(query_type="hybrid").vector(query_vector).text(query_text).rerank(reranker=reranker).limit(top_k * 3)
+                    query = self.table.search(query_type="hybrid").vector(query_vector).text(query_text).rerank(reranker=reranker).limit(candidate_limit)
                     is_hybrid = True
                 except Exception as e:
                     logger.warning("Hybrid search/rerank failed (%s), falling back to vector search.", e)
-                    query = self.table.search(query_vector).metric("cosine").limit(top_k * 3)
+                    query = self.table.search(query_vector).metric("cosine").limit(candidate_limit)
             else:
-                query = self.table.search(query_vector).metric("cosine").limit(top_k * 3)
+                query = self.table.search(query_vector).metric("cosine").limit(candidate_limit)
 
             if min_similarity > 0 and not is_hybrid:
                 max_distance = 1.0 - min_similarity
@@ -243,45 +301,7 @@ class DatabaseService:
                 query = query.where(" AND ".join(where_clauses))
 
             res_list = query.to_list()
-
-            path_results: Dict[str, Dict[str, Any]] = {}
-
-            for row in res_list:
-                path = row["path"]
-                
-                if "_relevance_score" in row:
-                    similarity = row["_relevance_score"]
-                elif "_score" in row:
-                    similarity = row["_score"]
-                else:
-                    distance = row.get("_distance", 1.0)
-                    similarity = 1.0 - distance
-
-                parent_text = row.get("text", "")
-                child_text = row.get("child_text", "")
-                chunk_index = row.get("chunk_index", 0)
-
-                if not is_hybrid and min_similarity > 0 and similarity < min_similarity:
-                    continue
-
-                # Path去重: 每篇文章只取最高分的一个上下文块展示
-                if path not in path_results or similarity > path_results[path]["score"]:
-                    if child_text and child_text in parent_text:
-                        start_idx = parent_text.find(child_text)
-                        snip_start = max(0, start_idx - 30)
-                        snip_end = min(len(parent_text), start_idx + len(child_text) + 50)
-                        snippet = parent_text[snip_start:snip_end].strip()
-                        if snip_start > 0: snippet = "..." + snippet
-                        if snip_end < len(parent_text): snippet = snippet + "..."
-                    else:
-                        snippet = self._truncate_snippet(parent_text)
-
-                    path_results[path] = {
-                        "path": path,
-                        "score": similarity,
-                        "snippet": snippet,
-                        "matched_chunk_index": chunk_index,
-                    }
+            path_results = self._aggregate_results(res_list, is_hybrid, min_similarity)
 
             results = sorted(
                 path_results.values(), key=lambda x: x["score"], reverse=True
@@ -291,6 +311,67 @@ class DatabaseService:
         except Exception as e:
             logger.error("Error searching: %s", e)
             return []
+
+    def _create_snippet(self, parent_text: str, child_text: str) -> str:
+        """Helper to create a relevant snippet from matching chunk."""
+        if child_text and child_text in parent_text:
+            start_idx = parent_text.find(child_text)
+            snip_start = max(0, start_idx - 30)
+            snip_end = min(len(parent_text), start_idx + len(child_text) + 50)
+            snippet = parent_text[snip_start:snip_end].strip()
+            if snip_start > 0: snippet = "..." + snippet
+            if snip_end < len(parent_text): snippet = snippet + "..."
+            return snippet
+        return self._truncate_snippet(parent_text)
+
+    def _aggregate_results(self, res_list: List[Dict[str, Any]], is_hybrid: bool, min_similarity: float) -> Dict[str, Dict[str, Any]]:
+        """Aggregate chunk-level results into path-level results with boosting."""
+        path_results: Dict[str, Dict[str, Any]] = {}
+
+        for row in res_list:
+            path = row["path"]
+            
+            if "_relevance_score" in row:
+                similarity = row["_relevance_score"]
+            elif "_score" in row:
+                similarity = row["_score"]
+            else:
+                distance = row.get("_distance", 1.0)
+                similarity = 1.0 - distance
+
+            if not is_hybrid and min_similarity > 0 and similarity < min_similarity:
+                continue
+
+            parent_text = row.get("text", "")
+            child_text = row.get("child_text", "")
+            chunk_index = row.get("chunk_index", 0)
+
+            # 文档级聚合：取最高分 chunk 作为 snippet，同时累计命中 chunk 数
+            if path not in path_results:
+                path_results[path] = {
+                    "path": path,
+                    "score": similarity,
+                    "snippet": self._create_snippet(parent_text, child_text),
+                    "matched_chunk_index": chunk_index,
+                    "hit_count": 1,
+                }
+            elif similarity > path_results[path]["score"]:
+                # 发现更高分的 chunk，替换 snippet 内容
+                path_results[path]["score"] = similarity
+                path_results[path]["snippet"] = self._create_snippet(parent_text, child_text)
+                path_results[path]["matched_chunk_index"] = chunk_index
+                path_results[path]["hit_count"] += 1
+            else:
+                # 同一文档的其他较弱 chunk，仅累加命中计数
+                path_results[path]["hit_count"] += 1
+
+        # 最终排序：base score + 多 chunk 命中 bonus（上限 +0.06）
+        for item in path_results.values():
+            bonus = min(item["hit_count"] - 1, 3) * 0.02
+            item["score"] = item["score"] + bonus
+            del item["hit_count"]
+            
+        return path_results
 
     def search_with_context(
         self,

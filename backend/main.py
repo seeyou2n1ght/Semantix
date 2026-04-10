@@ -88,6 +88,13 @@ async def log_requests(request, call_next):
 db_path = os.getenv("SEMANTIX_DB_PATH", "./semantix.db")
 db_svc = DatabaseService(db_path=db_path)
 
+
+@app.on_event("shutdown")
+def shutdown_event():
+    logger.info("Semantix backend service is shutting down...")
+    db_svc.close()
+
+
 # --- Routes ---
 
 
@@ -128,35 +135,22 @@ def batch_index(request: BatchIndexRequest, background_tasks: BackgroundTasks):
         return {"status": "success", "indexed": 0}
 
     start = time.perf_counter()
-    paths = [doc.path for doc in request.documents]
-    texts = [doc.text for doc in request.documents]
-    vault_ids = [doc.vault_id for doc in request.documents]
 
-    # 1. Generate embeddings
-    logger.info("Generating embeddings for %s documents...", len(texts))
-    try:
-        embeddings = model_svc.encode(texts)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Embedding generation failed: {str(e)}"
-        )
+    # 准备文档数据（不在此处 encode，upsert_documents 内部按 chunk 粒度 encode）
+    data_to_insert = [
+        {
+            "vault_id": doc.vault_id,
+            "path": doc.path,
+            "text": doc.text,
+        }
+        for doc in request.documents
+    ]
 
-    # 2. Prepare data for LanceDB
-    data_to_insert = []
-    for i, _ in enumerate(paths):
-        data_to_insert.append(
-            {
-                "vault_id": vault_ids[i],
-                "vector": embeddings[i],
-                "path": paths[i],
-                "text": texts[i],
-            }
-        )
-
-    # 3. Upsert into database
     try:
         db_svc.upsert_documents(data_to_insert)
-        background_tasks.add_task(db_svc.rebuild_fts_index)
+        # 标记 FTS 脏位，由节流逻辑决定是否真正 rebuild
+        db_svc.mark_fts_dirty()
+        background_tasks.add_task(db_svc.maybe_rebuild_fts_index)
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Database insertion failed: {str(e)}"
@@ -179,7 +173,8 @@ def delete_index(request: DeleteIndexRequest, background_tasks: BackgroundTasks)
 
     try:
         db_svc.delete_by_paths(request.vault_id, request.paths)
-        background_tasks.add_task(db_svc.rebuild_fts_index)
+        db_svc.mark_fts_dirty()
+        background_tasks.add_task(db_svc.maybe_rebuild_fts_index)
         return {"status": "success", "deleted": len(request.paths)}
     except Exception as e:
         raise HTTPException(

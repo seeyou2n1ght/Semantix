@@ -11,9 +11,13 @@ export function cleanMarkdown(text: string): string {
     // 1. Remove YAML frontmatter
     cleaned = cleaned.replace(/^---\n[\s\S]*?\n---\n?/g, "");
 
-    // 2. Remove fenced code blocks and inline code
-    cleaned = cleaned.replace(/```[\s\S]*?```/g, "");
-    cleaned = cleaned.replace(/`[^`]+`/g, "");
+    // 2. Strip fenced code block markers but preserve content
+    cleaned = cleaned.replace(/```[\s\S]*?```/g, (match) => {
+        // Remove the prefix ```lang and suffix ```
+        return match.replace(/^```[a-zA-Z0-9-]*\n?/, "").replace(/```$/, "").trim();
+    });
+    // Strip inline code markers
+    cleaned = cleaned.replace(/`([^`]+)`/g, "$1");
 
     // 3. Remove image/embed syntax
     cleaned = cleaned.replace(/!\[\[.*?\]\]/g, "");
