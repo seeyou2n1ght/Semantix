@@ -28,6 +28,7 @@ export default class SemantixPlugin extends Plugin {
     isMobileHibernating: boolean = false;
     private healthTimer: number | null = null;
     private indexingState: IndexingState = { active: false, current: 0, total: 0 };
+    private lastConnectionStatus: 'connected' | 'disconnected' | 'syncing' | 'disabled' = 'disabled';
     private isFullIndexing: boolean = false;
     private fullIndexCancelRequested: boolean = false;
 
@@ -95,7 +96,8 @@ export default class SemantixPlugin extends Plugin {
                 if (this.settings.backendMode === 'local' && this.settings.autoStartServer) {
                     await this.serviceManager.start();
                 }
-                this.checkConnection();
+                // 初次自检设为静默，避免启动瞬间的竞态导致误报
+                this.checkConnection({ silent: true });
                 this.startHealthTimer();
             }
         });
@@ -170,13 +172,36 @@ export default class SemantixPlugin extends Plugin {
         }
     }
 
-    async checkConnection() {
-        const isConnected = await this.apiClient.checkHealth();
-        
-        // 更新两个视图的状态指示灯
-        this.updateAllViewStatus(isConnected ? 'connected' : 'disconnected');
+    async checkConnection(options: { silent?: boolean; manual?: boolean } = {}) {
+        const { silent = false, manual = false } = options;
 
+        // 1. 判断是否处于“未启用”或“休眠”状态
+        if (this.isMobileHibernating) {
+            this.updateAllViewStatus('disabled');
+            return;
+        }
+
+        if (this.settings.backendMode === 'local' && !this.serviceManager.isRunning()) {
+            // 如果本地模式且进程未运行，则标记为未启用（灰色）
+            this.updateAllViewStatus('disabled');
+            return;
+        }
+
+        // 2. 只有非 Disabled 状态才进行心跳检测
+        const isConnected = await this.apiClient.checkHealth();
+        const nextStatus = isConnected ? 'connected' : 'disconnected';
+        
+        // 3. 处理通知逻辑
         if (isConnected) {
+            // 情况 A: 连接恢复 (从断连状态转为连接成功)
+            if (this.lastConnectionStatus === 'disconnected') {
+                new Notice("Semantix: 后端连接已恢复 ✅");
+            }
+            // 情况 B: 手动测试成功
+            else if (manual) {
+                new Notice("Semantix: 连接成功 ✅");
+            }
+            
             // eslint-disable-next-line no-console
             console.log("Semantix: Backend connection successful.");
             const status = await this.apiClient.getIndexStatus();
@@ -184,16 +209,29 @@ export default class SemantixPlugin extends Plugin {
                 this.updateAllViewIndexStatus(status.total_notes, status.last_updated);
             }
         } else {
+            // 情况 C: 首次发生断连 (从正常转为异常)
+            if (this.lastConnectionStatus === 'connected' && !silent) {
+                new Notice("Semantix: 失去与后端的连接，请检查服务。");
+            }
+            // 情况 D: 手动测试失败 (且不是因为 Disabled)
+            else if (manual) {
+                new Notice("Semantix: 无法连接到后端，请检查配置或服务是否启动。");
+            }
+            // 情况 E: 心跳周期内的持续断连 -> 保持静默
+            
             // eslint-disable-next-line no-console
             console.log("Semantix: Backend connection failed.");
-            new Notice("Semantix: 无法连接到本地 AI 后端，请检查配置或服务是否启动。");
         }
+
+        // 4. 更新 UI 状态
+        this.updateAllViewStatus(nextStatus);
     }
 
     /**
      * 批量更新所有已打开视图的连接状态
      */
-    public updateAllViewStatus(status: 'connected' | 'disconnected' | 'syncing') {
+    public updateAllViewStatus(status: 'connected' | 'disconnected' | 'syncing' | 'disabled') {
+        this.lastConnectionStatus = status; // 同步内部状态标签
         for (const leaf of this.app.workspace.getLeavesOfType(WHISPERER_VIEW_TYPE)) {
             if (leaf.view instanceof WhispererView) {
                 (leaf.view as WhispererView).updateStatus(status);
@@ -396,10 +434,10 @@ export default class SemantixPlugin extends Plugin {
         }
     }
 
-private startHealthTimer() {
+    private startHealthTimer() {
         if (this.healthTimer !== null) return;
         this.healthTimer = window.setInterval(() => {
-            this.checkConnection();
+            this.checkConnection({ silent: true });
         }, 30000);
     }
 

@@ -227,20 +227,23 @@ export class RadarView extends ItemView {
     /**
      * 更新状态指示灯
      */
-    public updateStatus(status: 'connected' | 'disconnected' | 'syncing') {
+    public updateStatus(status: 'connected' | 'disconnected' | 'syncing' | 'disabled') {
         if (!this.indicatorEl || !this.statusTextEl) return;
 
-        this.indicatorEl.classList.remove('is-connected', 'is-disconnected', 'is-syncing');
+        this.indicatorEl.classList.remove('is-connected', 'is-disconnected', 'is-syncing', 'is-disabled');
 
         if (status === 'connected') {
             this.indicatorEl.classList.add('is-connected');
-            this.statusTextEl.innerText = "Connected";
+            this.statusTextEl.innerText = "已连接 (Connected)";
         } else if (status === 'disconnected') {
             this.indicatorEl.classList.add('is-disconnected');
-            this.statusTextEl.innerText = "Disconnected";
+            this.statusTextEl.innerText = "运行异常 (Disconnected)";
         } else if (status === 'syncing') {
             this.indicatorEl.classList.add('is-syncing');
-            this.statusTextEl.innerText = "Syncing...";
+            this.statusTextEl.innerText = "准备中 (Connecting...)";
+        } else if (status === 'disabled') {
+            this.indicatorEl.classList.add('is-disabled');
+            this.statusTextEl.innerText = "未启用 (Disabled)";
         }
     }
 

@@ -1,5 +1,8 @@
 import { App, PluginSettingTab, Setting, Notice } from "obsidian";
 import SemantixPlugin from "./main";
+import { exec } from "child_process";
+import * as fs from "fs";
+import * as path from "path";
 
 export interface SemantixSettings {
     backendMode: 'local' | 'remote';
@@ -45,10 +48,69 @@ export const DEFAULT_SETTINGS: SemantixSettings = {
 
 export class SemantixSettingTab extends PluginSettingTab {
     plugin: SemantixPlugin;
+    private pythonStatus: string = "";
+    private backendStatus: string = "";
+    private debounceTimer: number | null = null;
 
     constructor(app: App, plugin: SemantixPlugin) {
         super(app, plugin);
         this.plugin = plugin;
+    }
+
+    private updateStatus(type: 'python' | 'backend', status: string) {
+        if (type === 'python') this.pythonStatus = status;
+        else this.backendStatus = status;
+        this.display(); // 触发全量刷新以显示状态
+    }
+
+    private async validatePython(pythonPath: string) {
+        if (!pythonPath) {
+            this.updateStatus('python', "");
+            return;
+        }
+        this.pythonStatus = "⏳ 正在检测 Python 环境...";
+        // 简单触发一次刷新
+        this.display();
+
+        exec(`"${pythonPath}" --version`, (error, stdout, stderr) => {
+            if (error) {
+                this.updateStatus('python', `❌ 无效路径或程序不可执行 (${error.message.split('\n')[0]})`);
+            } else {
+                const version = stdout.trim() || stderr.trim();
+                this.updateStatus('python', `✅ 已识别: ${version}`);
+            }
+        });
+    }
+
+    private validateBackend(backendPath: string) {
+        if (!backendPath) {
+            this.updateStatus('backend', "");
+            return;
+        }
+
+        try {
+            if (!fs.existsSync(backendPath)) {
+                this.updateStatus('backend', "❌ 路径不存在");
+                return;
+            }
+            
+            const stats = fs.statSync(backendPath);
+            if (!stats.isDirectory()) {
+                this.updateStatus('backend', "❌ 提供的路径不是一个目录");
+                return;
+            }
+
+            const mainPy = path.join(backendPath, 'main.py');
+            if (!fs.existsSync(mainPy)) {
+                this.updateStatus('backend', "❌ 未找到 main.py (确认是否是后端根目录)");
+                return;
+            }
+
+            this.updateStatus('backend', "✅ 合法的后端项目路径");
+        } catch (e) {
+            const errorMsg = e instanceof Error ? e.message : String(e);
+            this.updateStatus('backend', `❌ 校验出错: ${errorMsg}`);
+        }
     }
 
     display(): void {
@@ -94,7 +156,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                         } else {
                             new Notice("Semantix: 连接失败 ❌ 请检查远程地址或网络环境。");
                         }
-                        this.plugin.checkConnection();
+                        this.plugin.checkConnection({ manual: true });
                         btn.setButtonText("测试连接");
                     }));
 
@@ -133,7 +195,14 @@ export class SemantixSettingTab extends PluginSettingTab {
                     .onChange(async (value) => {
                         this.plugin.settings.pythonPath = value;
                         await this.plugin.saveSettings();
+                        
+                        if (this.debounceTimer) window.clearTimeout(this.debounceTimer);
+                        this.debounceTimer = window.setTimeout(() => this.validatePython(value), 800);
                     }));
+            
+            if (this.pythonStatus) {
+                containerEl.createEl('div', { text: this.pythonStatus, cls: 'setting-item-description', attr: { style: 'color: var(--text-muted); margin-top: -10px; margin-bottom: 10px; font-size: 0.85em;' } });
+            }
 
             new Setting(containerEl)
                 .setName('Backend project path')
@@ -144,7 +213,14 @@ export class SemantixSettingTab extends PluginSettingTab {
                     .onChange(async (value) => {
                         this.plugin.settings.backendPath = value;
                         await this.plugin.saveSettings();
+
+                        if (this.debounceTimer) window.clearTimeout(this.debounceTimer);
+                        this.debounceTimer = window.setTimeout(() => this.validateBackend(value), 800);
                     }));
+
+            if (this.backendStatus) {
+                containerEl.createEl('div', { text: this.backendStatus, cls: 'setting-item-description', attr: { style: 'color: var(--text-muted); margin-top: -10px; margin-bottom: 20px; font-size: 0.85em;' } });
+            }
 
             new Setting(containerEl)
                 .setName('Sync dependencies on start')
@@ -169,7 +245,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                         } else {
                             new Notice("Semantix: 目前无法连接，请确认路径配置并点击自启尝试。");
                         }
-                        this.plugin.checkConnection();
+                        this.plugin.checkConnection({ manual: true });
                         btn.setButtonText("测试自启动");
                     }));
         }
@@ -380,7 +456,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                     if (success) {
                         new Notice("Semantix: 向量索引已清空 ✅ 请手动触发全量索引或重启插件。");
                         // 更新状态显示
-                        this.plugin.checkConnection();
+                        this.plugin.checkConnection({ silent: true });
                     } else {
                         new Notice("Semantix: 清空索引失败 ❌ 请检查后端服务。");
                     }
