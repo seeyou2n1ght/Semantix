@@ -181,10 +181,15 @@ export default class SemantixPlugin extends Plugin {
             return;
         }
 
-        if (this.settings.backendMode === 'local' && !this.serviceManager.isRunning()) {
-            // 如果本地模式且进程未运行，则标记为未启用（灰色）
-            this.updateAllViewStatus('disabled');
-            return;
+        if (this.settings.backendMode === 'local') {
+            if (this.serviceManager.isActivating()) {
+                // 如果正在启动中，且健康检查还没通过，我们保持 syncing 状态
+                this.updateAllViewStatus('syncing');
+            } else {
+                // 既没在运行也没在启动，才设为禁用
+                this.updateAllViewStatus('disabled');
+                return;
+            }
         }
 
         // 2. 只有非 Disabled 状态才进行心跳检测

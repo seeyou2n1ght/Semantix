@@ -127,4 +127,11 @@ export class ServiceManager {
     public isRunning(): boolean {
         return this.process !== null;
     }
+
+    /**
+     * 判断是否正在处理启动流程（包括环境同步或进程拉起）
+     */
+    public isActivating(): boolean {
+        return this.isStarting || this.isRunning();
+    }
 }
