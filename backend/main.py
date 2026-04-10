@@ -1,9 +1,7 @@
-import os
-import time
-import logging
 import secrets
 import threading
 import signal
+import ctypes
 from fastapi import FastAPI, HTTPException, Depends, Header, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta
@@ -55,6 +53,29 @@ PARENT_PID = int(os.getenv("SEMANTIX_PARENT_PID", "0"))
 WATCHDOG_INTERVAL = 20  # 检查频率 (秒)
 ACTIVITY_TIMEOUT = 120  # 无响应自杀阈值 (秒)
 
+def is_process_running(pid):
+    """跨平台检查进程是否仍在运行"""
+    if pid <= 0:
+        return False
+        
+    # Windows 平台实现
+    if os.name == 'nt':
+        # PROCESS_QUERY_LIMITED_INFORMATION (0x1000)
+        # 即使没有完全控制权，也能查询进程是否还在
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if handle:
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return True
+        return False
+    else:
+        # Unix 平台实现
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
 def watchdog():
     """后台监控线程：检查心跳超时或父进程消失"""
     global LAST_ACTIVITY
@@ -73,10 +94,7 @@ def watchdog():
             
         # 2. 检查父进程存活 (如果注入了 PID)
         if PARENT_PID > 0:
-            try:
-                # signal 0 仅用于探测进程存在，不会真正杀死进程
-                os.kill(PARENT_PID, 0)
-            except OSError:
+            if not is_process_running(PARENT_PID):
                 logger.warning("Parent process (PID %d) lost. Sidecar initiating self-shutdown...", PARENT_PID)
                 os.kill(os.getpid(), signal.SIGTERM)
                 break
