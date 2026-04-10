@@ -165,8 +165,8 @@ def maintenance_worker():
         except Exception as e:
             logger.error("Error in maintenance worker: %s", e)
         
-        # 每小时检查一次是否需要执行
-        time.sleep(3600)
+        # 每 30 分钟检查一次是否需要执行（避免长期占用 CPU）
+        time.sleep(1800)
 
 @app.on_event("startup")
 def startup_event():
@@ -192,10 +192,10 @@ def shutdown_event():
 
 @app.get("/health", tags=["System"])
 def health_check():
-    """Simple health check endpoint."""
+    """Simple health check endpoint. Checks if backend is alive and model is ready."""
     if not model_svc.is_ready:
         return {"status": "loading", "message": "Model is loading..."}
-    return {"status": "ok", "message": "Semantix backend is running."}
+    return {"status": "ok", "message": "Semantix backend is ready."}
 
 
 @app.get("/ping", tags=["System"])
@@ -208,10 +208,8 @@ def ping():
 
 @app.get("/ready", tags=["System"])
 def readiness_check():
-    """Kubernetes readiness probe endpoint."""
-    if not model_svc.is_ready:
-        raise HTTPException(status_code=503, detail="Model not ready")
-    return {"status": "ready"}
+    """Alias for health_check, kept for compatibility."""
+    return health_check()
 
 
 @app.get("/index/status", response_model=IndexStatusResponse, tags=["Index"])

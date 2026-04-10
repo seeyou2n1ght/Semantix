@@ -97,7 +97,8 @@ export class OrphanRadar {
             text: query,
             top_k: this.plugin.settings.topNResults,
             exclude_paths: excludes,
-            with_context: this.plugin.settings.enableExplainableResults
+            with_context: this.plugin.settings.enableExplainableResults,
+            rerank: this.plugin.settings.enableReranking
         });
         
         return response ? response.results : [];

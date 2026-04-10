@@ -26,6 +26,7 @@ export interface SemantixSettings {
     enableExplainableResults: boolean;
     enableOnMobile: boolean;
     dbRetentionDays: number;
+    enableReranking: boolean;
 }
 
 export const DEFAULT_SETTINGS: SemantixSettings = {
@@ -47,7 +48,8 @@ export const DEFAULT_SETTINGS: SemantixSettings = {
     colorThresholdMedium: 0.75,
     enableExplainableResults: true,
     enableOnMobile: false,
-    dbRetentionDays: 7
+    dbRetentionDays: 7,
+    enableReranking: true
 };
 
 export class SemantixSettingTab extends PluginSettingTab {
@@ -506,6 +508,16 @@ export class SemantixSettingTab extends PluginSettingTab {
                 .setValue(this.plugin.settings.whispererScope)
                 .onChange(async (value) => {
                     this.plugin.settings.whispererScope = value as 'paragraph' | 'document';
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName(t('RERANKING_NAME'))
+            .setDesc(t('RERANKING_DESC'))
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableReranking)
+                .onChange(async (value) => {
+                    this.plugin.settings.enableReranking = value;
                     await this.plugin.saveSettings();
                 }));
 

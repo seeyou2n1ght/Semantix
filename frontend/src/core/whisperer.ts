@@ -132,6 +132,7 @@ public getCursorActivityExtension(): Extension {
             exclude_paths: excludes,
             min_similarity: this.plugin.settings.minSimilarityThreshold,
             with_context: this.plugin.settings.enableExplainableResults,
+            rerank: this.plugin.settings.enableReranking,
             current_path: view.file.path,
             current_tags: context.tags,
             current_links: context.links

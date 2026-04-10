@@ -32,6 +32,7 @@ export interface SemanticSearchRequest {
     exclude_paths?: string[];
     min_similarity?: number;
     with_context?: boolean;
+    rerank?: boolean;
     current_path?: string;
     current_tags?: string[];
     current_links?: string[];

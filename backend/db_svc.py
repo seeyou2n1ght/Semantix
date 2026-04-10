@@ -106,8 +106,8 @@ class DatabaseService:
                 rows = query.to_list()
                 unique_paths = set(row.get("path") for row in rows if row.get("path"))
                 return len(unique_paths)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Fast count_notes via where() failed: %s", e)
 
             logger.warning(
                 "Using slow fallback for count_notes with vault_id=%s", vault_id
@@ -440,25 +440,6 @@ class DatabaseService:
             
         return path_results
 
-    def search_with_context(
-        self,
-        vault_id: str,
-        query_vector: List[float],
-        top_k: int = 5,
-        exclude_paths: List[str] = None,
-        min_similarity: float = 0.0,
-    ) -> List[Dict[str, Any]]:
-        """
-        Legacy method - now equivalent to search() since chunking is done at index time.
-        Kept for API compatibility.
-        """
-        return self.search(
-            vault_id=vault_id,
-            query_vector=query_vector,
-            top_k=top_k,
-            exclude_paths=exclude_paths,
-            min_similarity=min_similarity,
-        )
 
     def clear_vault(self, vault_id: str):
         try:

@@ -167,4 +167,6 @@ export default {
     SCORE_MED: "Related: Many commonalities",
     SCORE_LOW: "Maybe related: Some connection found",
     MOBILE_HIBERNATING: "Semantix is hibernating on mobile. Enable it in settings.",
+    RERANKING_NAME: "Enable Reranking (Cross-Encoder)",
+    RERANKING_DESC: "Use BGE-Reranker for higher accuracy. Turn off for 'Lightweight Mode' on older machines to save memory and CPU.",
 }

@@ -170,4 +170,6 @@ export default {
     SCORE_MED: "相关：内容有较多共同点",
     SCORE_LOW: "可能相关：内容有一定关联",
     MOBILE_HIBERNATING: "语义雷达在移动端处于休眠状态。如需开启请前往设置。",
+    RERANKING_NAME: "启用精排 (Cross-Encoder)",
+    RERANKING_DESC: "使用 BGE-Reranker 进一步提升搜索准确度。在旧机器上可关闭此项以进入“轻量模式”，节省内存和 CPU。",
 }
