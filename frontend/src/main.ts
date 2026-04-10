@@ -7,6 +7,7 @@ import { RadarView, RADAR_VIEW_TYPE } from './ui/radar-view';
 import { SyncManager } from './core/sync';
 import { Whisperer } from './core/whisperer';
 import { OrphanRadar } from './core/radar';
+import { ServiceManager } from './core/service-manager';
 import { cleanMarkdown } from './utils/markdown';
 
 export type IndexingState = {
@@ -22,6 +23,7 @@ export default class SemantixPlugin extends Plugin {
     syncManager: SyncManager;
     whisperer: Whisperer;
     orphanRadar: OrphanRadar;
+    serviceManager: ServiceManager;
     vaultId: string;
     isMobileHibernating: boolean = false;
     private healthTimer: number | null = null;
@@ -40,6 +42,7 @@ export default class SemantixPlugin extends Plugin {
         this.syncManager = new SyncManager(this);
         this.whisperer = new Whisperer(this);
         this.orphanRadar = new OrphanRadar(this);
+        this.serviceManager = new ServiceManager(this);
 
         // 2.1 注册 CodeMirror 扩展（光标活动监听）
         if (!this.isMobileHibernating) {
@@ -85,9 +88,13 @@ export default class SemantixPlugin extends Plugin {
         });
 
         // 7. 工作区就绪后打开视图并探活
-        this.app.workspace.onLayoutReady(() => {
+        this.app.workspace.onLayoutReady(async () => {
             this.activateWhispererView();
             if (!this.isMobileHibernating) {
+                // 如果开启了本地自建边车模式，则尝试启动
+                if (this.settings.backendMode === 'local' && this.settings.autoStartServer) {
+                    await this.serviceManager.start();
+                }
                 this.checkConnection();
                 this.startHealthTimer();
             }
@@ -186,7 +193,7 @@ export default class SemantixPlugin extends Plugin {
     /**
      * 批量更新所有已打开视图的连接状态
      */
-    private updateAllViewStatus(status: 'connected' | 'disconnected' | 'syncing') {
+    public updateAllViewStatus(status: 'connected' | 'disconnected' | 'syncing') {
         for (const leaf of this.app.workspace.getLeavesOfType(WHISPERER_VIEW_TYPE)) {
             if (leaf.view instanceof WhispererView) {
                 (leaf.view as WhispererView).updateStatus(status);
@@ -355,6 +362,7 @@ export default class SemantixPlugin extends Plugin {
     onunload() {
         this.syncManager.clearTimer();
         this.clearHealthTimer();
+        this.serviceManager.stop();
         console.log("Semantix Plugin unloaded.");
     }
 

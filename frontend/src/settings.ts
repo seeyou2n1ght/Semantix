@@ -2,8 +2,13 @@ import { App, PluginSettingTab, Setting, Notice } from "obsidian";
 import SemantixPlugin from "./main";
 
 export interface SemantixSettings {
+    backendMode: 'local' | 'remote';
     backendUrl: string;
     apiToken: string;
+    autoStartServer: boolean;
+    pythonPath: string;
+    backendPath: string;
+    uvSyncOnStart: boolean;
     whispererScope: 'paragraph' | 'document';
     debounceDelay: number;
     syncBatchInterval: number;
@@ -18,8 +23,13 @@ export interface SemantixSettings {
 }
 
 export const DEFAULT_SETTINGS: SemantixSettings = {
+    backendMode: 'local',
     backendUrl: 'http://localhost:8000',
     apiToken: '',
+    autoStartServer: false,
+    pythonPath: 'uv',
+    backendPath: '',
+    uvSyncOnStart: false,
     whispererScope: 'paragraph',
     debounceDelay: 2000,
     syncBatchInterval: 60,
@@ -46,47 +56,127 @@ export class SemantixSettingTab extends PluginSettingTab {
         containerEl.empty();
         new Setting(containerEl).setName('配置 (Settings)').setHeading();
 
-        new Setting(containerEl).setName('连接与身份 (Connection)').setHeading();
         new Setting(containerEl)
-            .setName('Backend API URL')
-            .setDesc('本地或远程后端服务的接口地址')
-            .addText(text => text
-                .setPlaceholder('http://localhost:8000')
-                .setValue(this.plugin.settings.backendUrl)
+            .setName('Backend mode')
+            .setDesc('选择后端运行位置。本地边车模式可随插件自动拉起后台进程。')
+            .addDropdown(dropdown => dropdown
+                .addOption('local', 'Local Sidecar (本地边车)')
+                .addOption('remote', 'Remote Service (远程服务)')
+                .setValue(this.plugin.settings.backendMode)
                 .onChange(async (value) => {
-                    this.plugin.settings.backendUrl = value;
-                    await this.plugin.saveSettings();
-                }))
-            .addButton(btn => btn
-                .setButtonText("测试连接")
-                .onClick(async () => {
-                    btn.setButtonText("测试中...");
-                    const isConnected = await this.plugin.apiClient.checkHealth();
-                    if (isConnected) {
-                        new Notice("Semantix: 连接成功 ✅");
-                    } else {
-                        new Notice("Semantix: 连接失败 ❌ 请检查后端服务是否启动。");
+                    this.plugin.settings.backendMode = value as 'local' | 'remote';
+                    if (value === 'local') {
+                        this.plugin.settings.backendUrl = 'http://localhost:8000';
                     }
-                    this.plugin.checkConnection(); // update sidebar indicator
-                    btn.setButtonText("测试连接");
-                 }));
-
-        new Setting(containerEl)
-            .setName('API token')
-            .setDesc('可选：后端开启 SEMANTIX_API_TOKEN 时需填写')
-            .addText(text => {
-                text.setPlaceholder('optional');
-                text.setValue(this.plugin.settings.apiToken);
-                text.inputEl.type = 'password';
-                text.onChange(async (value) => {
-                    this.plugin.settings.apiToken = value;
                     await this.plugin.saveSettings();
+                    this.display(); // 立即刷新 UI
+                }));
+
+        if (this.plugin.settings.backendMode === 'remote') {
+            new Setting(containerEl).setName('远程连接配置 (Remote Connection)').setHeading();
+            new Setting(containerEl)
+                .setName('Backend API URL')
+                .setDesc('远程后端服务的接口地址')
+                .addText(text => text
+                    .setPlaceholder('http://your-server:8000')
+                    .setValue(this.plugin.settings.backendUrl)
+                    .onChange(async (value) => {
+                        this.plugin.settings.backendUrl = value;
+                        await this.plugin.saveSettings();
+                    }))
+                .addButton(btn => btn
+                    .setButtonText("测试连接")
+                    .onClick(async () => {
+                        btn.setButtonText("测试中...");
+                        const isConnected = await this.plugin.apiClient.checkHealth();
+                        if (isConnected) {
+                            new Notice("Semantix: 连接成功 ✅");
+                        } else {
+                            new Notice("Semantix: 连接失败 ❌ 请检查远程地址或网络环境。");
+                        }
+                        this.plugin.checkConnection();
+                        btn.setButtonText("测试连接");
+                    }));
+
+            new Setting(containerEl)
+                .setName('API token')
+                .setDesc('可选：远程后端开启鉴权时需填写')
+                .addText(text => {
+                    text.setPlaceholder('optional');
+                    text.setValue(this.plugin.settings.apiToken);
+                    text.inputEl.type = 'password';
+                    text.onChange(async (value) => {
+                        this.plugin.settings.apiToken = value;
+                        await this.plugin.saveSettings();
+                    });
                 });
-            });
+        } else {
+            new Setting(containerEl).setName('本地服务管理 (Local Sidecar)').setHeading();
+            
+            new Setting(containerEl)
+                .setName('Auto-start server')
+                .setDesc('当 Obsidian 启动时，自动在后台拉起后端服务（约占用 400MB 内存）')
+                .addToggle(toggle => toggle
+                    .setValue(this.plugin.settings.autoStartServer)
+                    .onChange(async (value) => {
+                        this.plugin.settings.autoStartServer = value;
+                        await this.plugin.saveSettings();
+                        new Notice(value ? "已开启自启，重启插件或 Obsidian 生效。" : "已关闭自启。");
+                    }));
+
+            new Setting(containerEl)
+                .setName('Python / uv path')
+                .setDesc('后端运行环境的执行路径 (例如 uv, python, C:\\Python311\\python.exe)')
+                .addText(text => text
+                    .setPlaceholder('uv')
+                    .setValue(this.plugin.settings.pythonPath)
+                    .onChange(async (value) => {
+                        this.plugin.settings.pythonPath = value;
+                        await this.plugin.saveSettings();
+                    }));
+
+            new Setting(containerEl)
+                .setName('Backend project path')
+                .setDesc('后端代码所在的绝对路径（应指向包含 main.py 的文件夹）')
+                .addText(text => text
+                    .setPlaceholder('C:\\Projects\\Semantix\\backend')
+                    .setValue(this.plugin.settings.backendPath)
+                    .onChange(async (value) => {
+                        this.plugin.settings.backendPath = value;
+                        await this.plugin.saveSettings();
+                    }));
+
+            new Setting(containerEl)
+                .setName('Sync dependencies on start')
+                .setDesc('启动前自动执行一次 uv sync (推荐开启，确保后端依赖最新)')
+                .addToggle(toggle => toggle
+                    .setValue(this.plugin.settings.uvSyncOnStart)
+                    .onChange(async (value) => {
+                        this.plugin.settings.uvSyncOnStart = value;
+                        await this.plugin.saveSettings();
+                    }));
+
+            new Setting(containerEl)
+                .setName('本地后端测试')
+                .setDesc('手动尝试拉起或探测后端连接状态')
+                .addButton(btn => btn
+                    .setButtonText("测试自启动")
+                    .onClick(async () => {
+                        btn.setButtonText("测试中...");
+                        const isConnected = await this.plugin.apiClient.checkHealth();
+                        if (isConnected) {
+                            new Notice("Semantix: 后端已就绪 ✅");
+                        } else {
+                            new Notice("Semantix: 目前无法连接，请确认路径配置并点击自启尝试。");
+                        }
+                        this.plugin.checkConnection();
+                        btn.setButtonText("测试自启动");
+                    }));
+        }
 
         new Setting(containerEl)
             .setName('Vault ID')
-            .setDesc('自动生成的 Vault 标识（基于 vault path 哈希）')
+            .setDesc('自动生成的仓库标识（多库切换的关键）')
             .addText(text => text
                 .setValue(this.plugin.vaultId || '')
                 .setDisabled(true));
