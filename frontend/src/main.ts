@@ -57,10 +57,16 @@ export default class SemantixPlugin extends Plugin {
             // 状态消息映射转换
             let translatedMsg = msg;
             if (msg.includes("正在唤醒后端服务")) translatedMsg = t('STARTUP_WAKING');
-            if (msg.includes("同步依赖中")) translatedMsg = t('STARTUP_ENV_CHECK');
-            if (msg.includes("后端服务仍在启动中")) translatedMsg = t('STARTUP_STILL_WAKING');
-            if (msg.includes("后端就绪")) translatedMsg = t('STARTUP_READY');
-            if (msg.includes("后端启动失败")) translatedMsg = t('STARTUP_FAILED');
+            else if (msg.includes("正在同步后端依赖")) translatedMsg = t('STARTUP_ENV_CHECK');
+            else if (msg.includes("正在加载语义引擎")) translatedMsg = t('STARTUP_STILL_WAKING');
+            else if (msg.includes("服务已就绪")) translatedMsg = t('STARTUP_READY');
+            else if (msg.includes("启动失败")) translatedMsg = t('STARTUP_FAILED');
+            else if (msg.includes("模型下载中")) translatedMsg = msg; // 保持原始进度显示
+
+            // 联动：当检测到后端已成功拉起，立即触发一次非阻塞探活，消除 3s 盲等
+            if (msg.includes("Uvicorn running on") || msg.includes("服务已就绪")) {
+                this.checkConnection({ silent: true });
+            }
 
             if (!this.startupNotice) {
                 // 创建一个持久化的 Notice (timeout 为 0 表示手动关闭或后续代码关闭)
@@ -70,13 +76,13 @@ export default class SemantixPlugin extends Plugin {
             }
 
             // 如果是结束态，则设置一个较短的延迟后关闭
-            const isClosingMsg = msg.includes("✅") || msg.includes("🚀") || msg.includes("❌");
+            const isClosingMsg = msg.includes("✅") || msg.includes("🚀") || msg.includes("❌") || msg.includes("就绪");
             if (isClosingMsg) {
                 this.isStartupNoticeCompleted = true; // 锁定状态，禁止后续日志复现浮窗
                 const noticeToClose = this.startupNotice;
                 this.startupNotice = null; 
                 setTimeout(() => {
-                    noticeToClose.hide();
+                    noticeToClose?.hide();
                 }, 4000);
             }
         });
@@ -518,6 +524,17 @@ export default class SemantixPlugin extends Plugin {
         if (this.healthTimer !== null) {
             window.clearInterval(this.healthTimer);
             this.healthTimer = null;
+        }
+    }
+
+    /**
+     * 重置启动通知状态，允许在手动重启时重新显示启动浮窗
+     */
+    public resetStartupNotice() {
+        this.isStartupNoticeCompleted = false;
+        if (this.startupNotice) {
+            this.startupNotice.hide();
+            this.startupNotice = null;
         }
     }
 

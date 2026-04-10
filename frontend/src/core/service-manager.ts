@@ -39,6 +39,9 @@ export class ServiceManager {
         if (this.process && !force) return;
         if (this.isStarting) return;
 
+        // 在真正启动前，重置 UI 层的通知锁定状态
+        this.plugin.resetStartupNotice();
+
         const { settings } = this.plugin;
         if (settings.backendMode !== 'local') return;
         
@@ -160,65 +163,63 @@ export class ServiceManager {
      */
     private async killPortConflict(): Promise<void> {
         return new Promise((resolve) => {
-            if (!Platform.isWin) {
-                // 非 Windows 系统暂不支持自动清理，仅提示
-                resolve();
-                return;
-            }
+            const port = 8000;
+            
+            if (Platform.isWin) {
+                // Windows 实现
+                exec('netstat -ano | findstr :8000', (error, stdout) => {
+                    if (error || !stdout) { resolve(); return; }
+                    const lines = stdout.split('\n');
+                    const pids = new Set<string>();
+                    lines.forEach(line => {
+                        const parts = line.trim().split(/\s+/);
+                        const pid = parts[parts.length - 1];
+                        if (pid && !isNaN(parseInt(pid)) && pid !== '0') pids.add(pid);
+                    });
+                    if (pids.size === 0) { resolve(); return; }
 
-            // 获取占用 8000 端口的 PID
-            exec('netstat -ano | findstr :8000', (error, stdout) => {
-                if (error || !stdout) {
-                    resolve();
-                    return;
-                }
-
-                const lines = stdout.split('\n');
-                const pids = new Set<string>();
-                lines.forEach(line => {
-                    const parts = line.trim().split(/\s+/);
-                    const pid = parts[parts.length - 1];
-                    if (pid && !isNaN(parseInt(pid)) && pid !== '0') {
-                        pids.add(pid);
-                    }
-                });
-
-                if (pids.size === 0) {
-                    resolve();
-                    return;
-                }
-
-                // 特征校验逻辑 (基于命令行内容)
-                // 我们只清理那些命令行中同时包含 'main:app' 和当前设置的 backendPath 关键字的进程
-                const targetPids: string[] = [];
-                const backendPathKey = this.plugin.settings.backendPath.split(/[\\/]/).pop() || "";
-                
-                try {
-                    for (const pid of pids) {
-                        // 使用 wmic 获取命令行信息 (Windows 通用)
-                        // 引号保护 PID 以防万一
-                        const cmdInfo = execSync(`wmic process where processid=${pid} get commandline`).toString();
-                        if (cmdInfo.includes("main:app") && (cmdInfo.includes(backendPathKey) || cmdInfo.includes("uv"))) {
-                            targetPids.push(pid);
+                    const targetPids: string[] = [];
+                    const backendPathKey = this.plugin.settings.backendPath.split(/[\\/]/).pop() || "";
+                    
+                    try {
+                        for (const pid of pids) {
+                            const cmdInfo = execSync(`wmic process where processid=${pid} get commandline`).toString();
+                            if (cmdInfo.includes("main:app") && (cmdInfo.includes(backendPathKey) || cmdInfo.includes("uv"))) {
+                                targetPids.push(pid);
+                            }
                         }
-                    }
-                } catch (e) {
-                    // 如果 wmic 报错，作为降级方案，我们信任端口监听者（如果用户已经 confirm 过）
-                    // 暂不做静默强杀
-                }
+                    } catch (e) { /* ignore */ }
 
-                if (targetPids.length === 0) {
-                    console.log("[Semantix]: 发现 8000 端口占用，但非本插件进程，跳过自动清理。");
-                    resolve();
-                    return;
-                }
-
-                // 强制结束这些特征匹配的 PID
-                const pidStr = targetPids.join(' /PID ');
-                exec(`taskkill /F /PID ${pidStr}`, () => {
-                    resolve();
+                    if (targetPids.length === 0) { resolve(); return; }
+                    const pidStr = targetPids.join(' /PID ');
+                    exec(`taskkill /F /PID ${pidStr}`, () => resolve());
                 });
-            });
+            } else {
+                // Unix (macOS/Linux) 实现
+                exec(`lsof -t -i :${port}`, (error, stdout) => {
+                    if (error || !stdout) { resolve(); return; }
+                    
+                    const pids = stdout.trim().split('\n');
+                    const targetPids: string[] = [];
+                    const backendPathKey = this.plugin.settings.backendPath.split(/[\\/]/).pop() || "";
+
+                    pids.forEach(pid => {
+                        try {
+                            const cmdLine = execSync(`ps -p ${pid} -o args=`).toString();
+                            if (cmdLine.includes("main:app") && (cmdLine.includes(backendPathKey) || cmdLine.includes("uv"))) {
+                                targetPids.push(pid);
+                            }
+                        } catch (e) { /* ignore */ }
+                    });
+
+                    if (targetPids.length === 0) { resolve(); return; }
+
+                    exec(`kill -9 ${targetPids.join(' ')}`, () => {
+                        this.reportStatus("已清理旧的后端进程");
+                        resolve();
+                    });
+                });
+            }
         });
     }
 
