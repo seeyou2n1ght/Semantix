@@ -149,6 +149,7 @@ export class SemantixSettingTab extends PluginSettingTab {
 
     display(): void {
         const { containerEl } = this;
+        const savedScrollTop = containerEl.scrollTop; // 关键：记录当前滚动位置
         containerEl.empty();
 
         // 状态页眉
@@ -585,5 +586,8 @@ export class SemantixSettingTab extends PluginSettingTab {
                     btn.setButtonText("重建索引");
                     btn.setDisabled(false);
                 }));
+
+        // 关键：在重绘完成后恢复滚动位置
+        containerEl.scrollTop = savedScrollTop;
     }
 }
