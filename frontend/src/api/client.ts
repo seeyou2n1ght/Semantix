@@ -282,4 +282,26 @@ export class ApiClient {
             return false;
         }
     }
+
+    /**
+     * 触发启发式噪音词计算 (方案二)
+     */
+    async computeStopwords(): Promise<{status: string, count: number, words: string[]} | null> {
+        try {
+            const res = await requestUrl({
+                url: `${this.baseUrl}/index/compute-stopwords`,
+                method: 'POST',
+                contentType: 'application/json',
+                headers: this.getAuthHeaders(),
+                body: JSON.stringify({ vault_id: this.vaultId })
+            });
+            if (res.status === 200 && res.json) {
+                return res.json;
+            }
+            return null;
+        } catch (e) {
+            console.error("Semantix: Compute stopwords failed.", e);
+            return null;
+        }
+    }
 }

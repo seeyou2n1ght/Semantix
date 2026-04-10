@@ -4,7 +4,10 @@ import os
 import pyarrow as pa
 import threading
 import time
-from typing import List, Dict, Any
+import re
+import json
+from collections import Counter
+from typing import List, Dict, Any, Set
 
 from utils.chunker import split_into_chunks
 
@@ -23,6 +26,8 @@ class DatabaseService:
         self._fts_rebuild_in_progress = False
         self._fts_dirty = False
         self._last_fts_rebuild_at = 0.0
+        self.stopword_file = os.path.join(db_path, "custom_stopwords.json")
+        self.vault_stopwords: Set[str] = self._load_custom_stopwords()
         self._init_collection()
 
     def close(self):
@@ -121,6 +126,68 @@ class DatabaseService:
         except Exception as e:
             logger.error("Error counting notes: %s", e)
             return 0
+
+    def _load_custom_stopwords(self) -> Set[str]:
+        if os.path.exists(self.stopword_file):
+            try:
+                with open(self.stopword_file, 'r', encoding='utf-8') as f:
+                    return set(json.load(f))
+            except:
+                return set()
+        return set()
+
+    def _save_custom_stopwords(self, stopwords: List[str]):
+        try:
+            with open(self.stopword_file, 'w', encoding='utf-8') as f:
+                json.dump(stopwords, f, ensure_ascii=False)
+            self.vault_stopwords = set(stopwords)
+        except Exception as e:
+            logger.error("Error saving custom stopwords: %s", e)
+
+    def compute_vault_stopwords(self, vault_id: str, threshold: float = 0.8) -> List[str]:
+        """
+        根据文档频率 (DF) 识别高频噪音词。
+        如果一个词在超过 threshold 比例的文档中出现，则视为噪音。
+        """
+        if not self.table: return []
+        
+        try:
+            # 1. 拉取该仓库的所有文本
+            where_clause = f"vault_id = '{self._escape_sql_string(vault_id)}'"
+            rows = self.table.search(None).where(where_clause).select(["text", "path"]).to_list()
+            
+            # 2. 按文档聚合，统计词频
+            doc_words: Dict[str, Set[str]] = {}
+            for row in rows:
+                path = row["path"]
+                text = row["text"]
+                if not text: continue
+                if path not in doc_words: doc_words[path] = set()
+                
+                # 简单分词逻辑：中文单字/双字，英文单词
+                words = re.findall(r'[\u4e00-\u9fa5]{2,}|[a-zA-Z]{3,}', text)
+                doc_words[path].update([w.lower() for w in words])
+            
+            total_docs = len(doc_words)
+            if total_docs < 5: return [] # 样本太少不分析
+            
+            # 3. 计算文档频率 (DF)
+            df_counter = Counter()
+            for words in doc_words.values():
+                df_counter.update(words)
+            
+            # 4. 筛选超过阈值的词
+            noise_words = [
+                word for word, count in df_counter.items() 
+                if (count / total_docs) >= threshold
+            ]
+            
+            logger.info("Computed %d adaptive stopwords for vault %s", len(noise_words), vault_id)
+            self._save_custom_stopwords(noise_words)
+            return noise_words
+        except Exception as e:
+            logger.error("Error computing vault stopwords: %s", e)
+            return []
 
     def delete_by_paths(self, vault_id: str, paths: List[str]):
         if not paths:

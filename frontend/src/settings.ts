@@ -27,6 +27,7 @@ export interface SemantixSettings {
     enableOnMobile: boolean;
     dbRetentionDays: number;
     enableReranking: boolean;
+    enableAdaptiveFiltering: boolean;
 }
 
 export const DEFAULT_SETTINGS: SemantixSettings = {
@@ -49,7 +50,8 @@ export const DEFAULT_SETTINGS: SemantixSettings = {
     enableExplainableResults: true,
     enableOnMobile: false,
     dbRetentionDays: 7,
-    enableReranking: true
+    enableReranking: true,
+    enableAdaptiveFiltering: true
 };
 
 export class SemantixSettingTab extends PluginSettingTab {
@@ -519,6 +521,32 @@ export class SemantixSettingTab extends PluginSettingTab {
                 .onChange(async (value) => {
                     this.plugin.settings.enableReranking = value;
                     await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName(t('ADAPTIVE_FILTER_NAME') || "Enable Adaptive Filtering")
+            .setDesc(t('ADAPTIVE_FILTER_DESC') || "Dynamically hide frequent 'noise' words based on your vault content.")
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableAdaptiveFiltering)
+                .onChange(async (value) => {
+                    this.plugin.settings.enableAdaptiveFiltering = value;
+                    await this.plugin.saveSettings();
+                    
+                    if (value && this.plugin.apiClient) {
+                        this.plugin.checkConnection({ silent: true });
+                    }
+                }))
+            .addButton(btn => btn
+                .setButtonText(t('RUN_ADAPTIVE_ANALYSIS_BTN') || "Analyze Noise")
+                .setTooltip(t('RUN_ADAPTIVE_ANALYSIS_DESC') || "Re-scan your vault to identify common words.")
+                .onClick(async () => {
+                    btn.setDisabled(true);
+                    const res = await this.plugin.apiClient.computeStopwords();
+                    if (res) {
+                        new Notice(t('ADAPTIVE_SUCCESS', { count: res.count }) || `Analysis complete. Found ${res.count} noise words.`);
+                        await this.plugin.checkConnection({ silent: true });
+                    }
+                    btn.setDisabled(false);
                 }));
 
         new Setting(containerEl)

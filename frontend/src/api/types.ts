@@ -55,6 +55,7 @@ export interface IndexStatusResponse {
     total_notes: number;
     last_updated?: string;
     vault_id?: string;
+    vault_stopwords?: string[];
 }
 
 export interface ClearIndexRequestResponse {

@@ -299,62 +299,73 @@ export class WhispererView extends ItemView {
     }
 
     private extractKeywords(text: string): string[] {
-        const keywords: Set<string> = new Set();
+        if (!text) return [];
         
-        const stopChars = new Set([
-            '的', '是', '在', '了', '和', '与', '或', '也', '都', '就', '不', '有', '这', '那',
+        // 1. 扩充后的权威停用词列表 (涵盖常见虚词、代词、副词、连词等)
+        const stopWords = new Set([
+            // 基础虚词
+            '的', '了', '在', '是', '和', '与', '或', '也', '都', '就', '不', '有', '这', '那',
             '我', '你', '他', '她', '它', '们', '个', '上', '下', '中', '来', '去', '到', '说',
             '要', '会', '能', '对', '着', '过', '从', '把', '给', '向', '而', '但', '如', '所',
-            '以', '以', '为', '于', '之', '其', '者', '等', '时', '地', '得', '啊', '吗', '呢',
-            '吧', '呀', '哦', '哈', '嗯', '哎', '唉'
+            '以', '为', '于', '之', '其', '者', '等', '时', '地', '得', '啊', '吗', '呢', '吧', 
+            '呀', '哦', '哈', '嗯', '哎', '唉', '且', '并', '若', '况', '非', '莫', '既', '且',
+            // 常见功能词
+            '怎么', '如何', '什么', '为什么', '哪里', '什么时候', '这样', '那样', '哪个', '哪些',
+            '觉得', '认为', '就是', '其实', '大概', '可能', '虽然', '但是', '如果', '由于', '因此',
+            '所以', '因为', '既然', '以此', '不仅', '而且', '此外', '或者', '否则', '还是', '甚至',
+            '以及', '至于', '关于', '对于', '所谓', '比如', '例如', '总之', '最后', '首先', '其次',
+            '已经', '曾经', '正在', '即将', '刚刚', '一直', '总是', '经常', '偶尔', '非常', '相当',
+            '及其', '更加', '比较', '稍微', '几乎', '所有', '整个', '一切', '各种', '各个', '部分',
+            '一些', '一点', '有些', '好多', '若干', '很多', '只有', '只有', '只要', '只要', '无论',
+            '不管', '即使', '即便', '哪怕', '既然', '反正', '总之', '甚至', '还有', '并且', '而且',
         ]);
-        
-        const chinese = text.match(/[\u4e00-\u9fa5]+/g) || [];
-        for (const word of chinese) {
-            if (word.length < 2) continue;
-            
-            // 3-gram: 必须不含停用字
-            if (word.length >= 3) {
-                for (let i = 0; i < word.length - 2; i++) {
-                    const gram3 = word.slice(i, i + 3);
-                    const hasStopChar = gram3.split('').some(c => stopChars.has(c));
-                    if (!hasStopChar) {
-                        keywords.add(gram3);
-                    }
-                }
-            }
-            
-            // 2-gram: 必须不含停用字
-            for (let i = 0; i < word.length - 1; i++) {
-                const gram2 = word.slice(i, i + 2);
-                const hasStopChar = gram2.split('').some(c => stopChars.has(c));
-                if (!hasStopChar) {
-                    keywords.add(gram2);
-                }
+
+        // 1.1 合并来自后端的仓库自适应停用词 (如果开启了该功能)
+        if (this.plugin.settings.enableAdaptiveFiltering && this.plugin.vaultStopwords.length > 0) {
+            for (const word of this.plugin.vaultStopwords) {
+                stopWords.add(word.toLowerCase());
             }
         }
+
+        const keywords: Set<string> = new Set();
         
-        const english = text.match(/[a-zA-Z]{3,}/g) || [];
-        const englishStopWords = new Set([
-            'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had',
-            'her', 'was', 'one', 'our', 'out', 'has', 'his', 'how', 'its', 'may',
-            'new', 'now', 'old', 'see', 'way', 'who', 'did', 'get', 'let', 'put'
-        ]);
-        for (const word of english) {
-            const lower = word.toLowerCase();
-            if (!englishStopWords.has(lower)) {
+        // 2. 利用原生 Intl.Segmenter 进行语言感知分词 (Obsidain/Electron 内置)
+        try {
+            const segmenter = new (Intl as any).Segmenter('zh', { granularity: 'word' });
+            const segments = segmenter.segment(text);
+            
+            for (const { segment, isWordLike } of segments) {
+                if (!isWordLike) continue; // 忽略标点符号和空格
+                
+                const lower = segment.toLowerCase().trim();
+                
+                // 3. 过滤逻辑
+                // - 必须在停用词表外
+                // - 长度 >= 2 (除非是纯英文单词/缩写)
+                // - 不是纯数字
+                if (stopWords.has(lower)) continue;
+                if (/^\d+$/.test(lower)) continue;
+                
+                const isAlpha = /^[a-zA-Z]+$/.test(lower);
+                if (!isAlpha && lower.length < 2) continue;
+                if (isAlpha && lower.length < 3 && !['ai', 'ml', 'ds', 'py', 'go'].includes(lower)) continue;
+                
                 keywords.add(lower);
+            }
+        } catch (e) {
+            // 降级方案：正则粗略切分 (主要防备极旧版本或不支持该 API 的环境)
+            const words = text.match(/[\u4e00-\u9fa5]{2,}|[a-zA-Z]{3,}/g) || [];
+            for (const word of words) {
+                const lower = word.toLowerCase();
+                if (!stopWords.has(lower)) keywords.add(lower);
             }
         }
         
         const result = Array.from(keywords);
-        result.sort((a, b) => {
-            const aScore = a.length === 3 ? 3 : (a.length >= 4 ? 4 : 2);
-            const bScore = b.length === 3 ? 3 : (b.length >= 4 ? 4 : 2);
-            return bScore - aScore;
-        });
+        // 按长度降序排列，优先匹配长词进行高亮
+        result.sort((a, b) => b.length - a.length);
         
-        return result.slice(0, 8);
+        return result.slice(0, 10);
     }
 
     private escapeRegex(str: string): string {

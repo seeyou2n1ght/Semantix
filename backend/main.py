@@ -218,7 +218,10 @@ def get_index_status(vault_id: str = "default"):
     """Get statistics about the current index."""
     count = db_svc.count_notes(vault_id=vault_id)
     return IndexStatusResponse(
-        total_notes=count, last_updated=METRICS["last_index_at"], vault_id=vault_id
+        total_notes=count, 
+        last_updated=METRICS["last_index_at"], 
+        vault_id=vault_id,
+        vault_stopwords=list(db_svc.vault_stopwords)
     )
 
 
@@ -422,6 +425,16 @@ def semantic_search(request: SemanticSearchRequest):
     return SemanticSearchResponse(
         results=[SearchResultItem(**res) for res in final_results]
     )
+
+
+@app.post("/index/compute-stopwords", tags=["Index"])
+async def compute_stopwords_api(request: MaintenanceRequest, authorization: str = Header(None)):
+    verify_token(authorization)
+    try:
+        noise_words = db_svc.compute_vault_stopwords(request.vault_id)
+        return {"status": "success", "count": len(noise_words), "words": noise_words}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # To run: uvicorn main:app --reload --host 0.0.0.0 --port 8000

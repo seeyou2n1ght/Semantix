@@ -70,6 +70,7 @@ class IndexStatusResponse(BaseModel):
     total_notes: int
     last_updated: Optional[str]
     vault_id: Optional[str] = None
+    vault_stopwords: List[str] = Field(default_factory=list)
 
 
 class MetricsResponse(BaseModel):

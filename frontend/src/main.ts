@@ -35,6 +35,7 @@ export default class SemantixPlugin extends Plugin {
     private startupNotice: Notice | null = null;
     private isStartupNoticeCompleted: boolean = false;
     private settingTab: SemantixSettingTab | null = null;
+    public vaultStopwords: string[] = [];
 
     async onload() {
         // 1. 加载配置
@@ -267,6 +268,7 @@ export default class SemantixPlugin extends Plugin {
             const status = await this.apiClient.getIndexStatus();
             if (status) {
                 this.updateAllViewIndexStatus(status.total_notes, status.last_updated);
+                this.vaultStopwords = status.vault_stopwords || [];
             }
         } else {
             // 情况 C: 首次发生断连 (从正常转为异常)
