@@ -8,6 +8,8 @@ class IndexDocument(BaseModel):
     vault_id: str = Field(..., description="Obsidian vault id")
     path: str = Field(..., description="Obsidian vault relative path of the note")
     text: str = Field(..., description="Cleaned text content of the note")
+    tags: Optional[List[str]] = []
+    links: Optional[List[str]] = []
 
 
 class BatchIndexRequest(BaseModel):
@@ -41,6 +43,8 @@ class SemanticSearchRequest(BaseModel):
     rerank: Optional[bool] = Field(
         True, description="Enable cross-encoder reranking for higher accuracy"
     )
+    current_tags: Optional[List[str]] = []
+    current_links: Optional[List[str]] = []
 
 class MaintenanceRequest(BaseModel):
     retention_days: int = Field(7, ge=0, description="Number of days to keep old versions")

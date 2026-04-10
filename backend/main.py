@@ -261,6 +261,8 @@ def batch_index(request: BatchIndexRequest, background_tasks: BackgroundTasks):
             "vault_id": doc.vault_id,
             "path": doc.path,
             "text": doc.text,
+            "tags": doc.tags or [],
+            "links": doc.links or [],
         }
         for doc in request.documents
     ]
@@ -397,6 +399,8 @@ def semantic_search(request: SemanticSearchRequest):
             min_similarity=request.min_similarity or 0.0,
             query_text=request.text,
             current_path=request.current_path,
+            current_tags=request.current_tags,
+            current_links=request.current_links,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database search failed: {str(e)}")

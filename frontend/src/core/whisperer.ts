@@ -123,13 +123,18 @@ public getCursorActivityExtension(): Extension {
             queryText = `标题: ${view.file.basename}\n${tagStr}${cleaned}`;
         }
 
+        const context = this.plugin.getFileContext(view.file);
+
         const response = await this.plugin.apiClient.semanticSearch({
             vault_id: this.plugin.vaultId,
             text: queryText,
             top_k: this.plugin.settings.topNResults,
             exclude_paths: excludes,
             min_similarity: this.plugin.settings.minSimilarityThreshold,
-            with_context: this.plugin.settings.enableExplainableResults
+            with_context: this.plugin.settings.enableExplainableResults,
+            current_path: view.file.path,
+            current_tags: context.tags,
+            current_links: context.links
         });
 
         // 如果搜索 ID 已过时，丢弃结果

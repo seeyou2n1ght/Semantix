@@ -2,6 +2,8 @@ export interface IndexDocument {
     vault_id: string;
     path: string;
     text: string;
+    tags?: string[];
+    links?: string[];
 }
 
 export interface BatchIndexRequest {
@@ -30,6 +32,9 @@ export interface SemanticSearchRequest {
     exclude_paths?: string[];
     min_similarity?: number;
     with_context?: boolean;
+    current_path?: string;
+    current_tags?: string[];
+    current_links?: string[];
 }
 
 export interface SearchResultItem {

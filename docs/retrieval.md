@@ -25,6 +25,7 @@ Semantix 采用深度的三阶段检索策略（Hybrid + Path Boost + Cross-rera
 | **Stage 1: Hybrid** | Vector + FTS (0.7:0.3) | 同时捕捉语义意图与精确关键词（如 ID、专有名词）。 |
 | **Stage 2: Path Boost** | 目录亲和度加权 | 若命中文件与当前活动笔记处于**同一目录**，得分获得 `+0.05` 的奖励分。 |
 | **Stage 3: Rerank** | Cross-encoder 精排 | 利用 `bge-reranker-base` 对 Top 15 候选进行二次打分，纠正向量检索的偏差。 |
+| **Stage 4: Context**| 标签与链接感知 | **Tags**: 共有标签加分 (`+0.05`/个)；**Links**: 若目标已在当前笔记的出链中，给予显著加分 (`+0.2`)。 |
 
 ## 4. 文档级聚合评分 (Aggregation)
 

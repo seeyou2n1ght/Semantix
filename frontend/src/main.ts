@@ -1,4 +1,4 @@
-import { Plugin, Notice, WorkspaceLeaf, TAbstractFile, MarkdownView, Platform } from 'obsidian';
+import { Plugin, Notice, WorkspaceLeaf, TAbstractFile, TFile, MarkdownView, Platform } from 'obsidian';
 import { SemantixSettings, DEFAULT_SETTINGS, SemantixSettingTab } from "./settings";
 import { ApiClient } from './api/client';
 import { IndexDocument } from './api/types';
@@ -430,7 +430,14 @@ export default class SemantixPlugin extends Plugin {
                         processed += 1;
                         continue;
                     }
-                    documents.push({ vault_id: this.vaultId, path: file.path, text: cleaned });
+                    const context = this.getFileContext(file);
+                    documents.push({ 
+                        vault_id: this.vaultId, 
+                        path: file.path, 
+                        text: cleaned,
+                        tags: context.tags,
+                        links: context.links
+                    });
                     processed += 1;
                 }
 
@@ -530,5 +537,45 @@ export default class SemantixPlugin extends Plugin {
             hash = Math.imul(hash, 16777619);
         }
         return (hash >>> 0).toString(16);
+    }
+
+    /**
+     * 核心：提取笔记的元数据上下文 (Tags & Links)
+     */
+    public getFileContext(file: TAbstractFile): { tags: string[], links: string[] } {
+        const tags: string[] = [];
+        const links: string[] = [];
+        
+        if (file instanceof TFile) {
+            const cache = this.app.metadataCache.getFileCache(file);
+            if (cache) {
+                // 1. 提取标签 (Frontmatter + Inline)
+                if (cache.tags) {
+                    cache.tags.forEach(t => tags.push(t.tag.replace(/^#/, '')));
+                }
+                if (cache.frontmatter?.tags) {
+                    const fTags = cache.frontmatter.tags;
+                    if (Array.isArray(fTags)) {
+                        fTags.forEach(t => tags.push(String(t).replace(/^#/, '')));
+                    } else if (typeof fTags === 'string') {
+                        fTags.split(',').forEach(t => tags.push(t.trim().replace(/^#/, '')));
+                    }
+                }
+                
+                // 2. 提取出链 (Outlinks)
+                if (cache.links) {
+                    cache.links.forEach(l => {
+                        // 只需要路径，不需要锚点
+                        const linkPath = l.link.split('#')[0];
+                        if (linkPath) links.push(linkPath);
+                    });
+                }
+            }
+        }
+        
+        return { 
+            tags: [...new Set(tags)], // 去重
+            links: [...new Set(links)] 
+        };
     }
 }

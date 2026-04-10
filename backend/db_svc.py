@@ -47,6 +47,8 @@ class DatabaseService:
                 pa.field("text", pa.string()),          # 子块内容 (被向量化的核心)
                 pa.field("parent_text", pa.string()),   # 父块或上下文内容 (用于展示)
                 pa.field("full_path", pa.string()),     # 语义路径
+                pa.field("tags", pa.list_(pa.string())),# 标签数组
+                pa.field("links", pa.list_(pa.string())),# 出链数组
             ]
         )
 
@@ -54,9 +56,9 @@ class DatabaseService:
             self.table = self.db.open_table(COLLECTION_NAME)
             existing_fields = {field.name for field in self.table.schema}
             # 如果缺少新字段，则触发重建
-            if "parent_text" not in existing_fields or "full_path" not in existing_fields:
+            if any(f not in existing_fields for f in ["parent_text", "full_path", "tags", "links"]):
                 logger.warning(
-                    "Schema mismatch (missing parent_text/full_path), recreating table for RAG optimization..."
+                    "Schema mismatch (missing parent_text/full_path/tags/links), recreating table for context awareness..."
                 )
                 self.db.drop_table(COLLECTION_NAME)
                 self.table = self.db.create_table(COLLECTION_NAME, schema=schema)
@@ -163,6 +165,8 @@ class DatabaseService:
                 vault_id = item.get("vault_id")
                 path = item.get("path")
                 text = item.get("text", "")
+                tags = item.get("tags", [])
+                links = item.get("links", [])
 
                 # 保护逻辑：如果单篇文档超过 50,000 字符，进行截断，防止正则切块导致 CPU 挂起
                 if len(text) > 50000:
@@ -211,6 +215,8 @@ class DatabaseService:
                             "text": child_text,           # 子块 (用于召回打分)
                             "parent_text": parent_text,    # 父块 (用于上下文展示)
                             "full_path": full_semantic_path,
+                            "tags": tags,
+                            "links": links,
                         }
                     )
 
@@ -272,6 +278,8 @@ class DatabaseService:
         min_similarity: float = 0.0,
         query_text: str = None,
         current_path: str = None,
+        current_tags: List[str] = None,
+        current_links: List[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Search for similar chunks and aggregate by document path.
@@ -312,7 +320,14 @@ class DatabaseService:
                 query = query.where(" AND ".join(where_clauses))
 
             res_list = query.to_list()
-            path_results = self._aggregate_results(res_list, is_hybrid, min_similarity, current_path)
+            path_results = self._aggregate_results(
+                res_list, 
+                is_hybrid, 
+                min_similarity, 
+                current_path,
+                current_tags,
+                current_links
+            )
 
             results = sorted(
                 path_results.values(), key=lambda x: x["score"], reverse=True
@@ -341,6 +356,8 @@ class DatabaseService:
         is_hybrid: bool,
         min_similarity: float,
         current_path: str = None,
+        current_tags: List[str] = None,
+        current_links: List[str] = None,
     ) -> Dict[str, Dict[str, Any]]:
         """Aggregate chunk-level results into path-level results with boosting and path preference."""
         path_results: Dict[str, Dict[str, Any]] = {}
@@ -366,6 +383,8 @@ class DatabaseService:
             chunk_text = row.get("text", "") # 当前命中的子块
             chunk_index = row.get("chunk_index", 0)
             full_path = row.get("full_path", "")
+            tags = row.get("tags", [])
+            links = row.get("links", [])
 
             # 文档级聚合：取最高分 chunk 作为 snippet，同时各维度累加权重
             if path not in path_results:
@@ -375,7 +394,9 @@ class DatabaseService:
                     "snippet": self._create_snippet(full_text, chunk_text), # 聚焦子块的父上下文
                     "matched_chunk_index": chunk_index,
                     "hit_count": 1,
-                    "full_path": full_path
+                    "full_path": full_path,
+                    "tags": tags,
+                    "links": links
                 }
             elif similarity > path_results[path]["score"]:
                 path_results[path]["score"] = similarity
@@ -400,8 +421,22 @@ class DatabaseService:
                 elif current_dir in item_dir or item_dir in current_dir:
                     path_boost = 0.02  # 父子目录加分
             
-            item["score"] = item["score"] + bonus + path_boost
+            # 3. 标签亲和度奖励 (Tag Affinity)
+            tag_boost = 0.0
+            if current_tags and item.get("tags"):
+                shared_tags = set(current_tags) & set(item["tags"])
+                # 每个共享标签加 0.05，最高 0.15
+                tag_boost = min(len(shared_tags) * 0.05, 0.15)
+                
+            # 4. 链接关联奖励 (Link Affinity)
+            link_boost = 0.0
+            if current_links and item["path"] in current_links:
+                link_boost = 0.2  # 极其显著的加分，因为是主动引用的
+            
+            item["score"] = item["score"] + bonus + path_boost + tag_boost + link_boost
             del item["hit_count"]
+            if "tags" in item: del item["tags"]
+            if "links" in item: del item["links"]
             
         return path_results
 

@@ -191,7 +191,14 @@ const intervalMs = this.plugin.settings.syncBatchInterval * 1000;
                         const cleaned = cleanMarkdown(rawText);
                         if (cleaned.length === 0) continue;
                         
-                        documents.push({ vault_id: this.plugin.vaultId, path: path, text: cleaned });
+                        const context = this.plugin.getFileContext(file);
+                        documents.push({ 
+                            vault_id: this.plugin.vaultId, 
+                            path: path, 
+                            text: cleaned,
+                            tags: context.tags,
+                            links: context.links
+                        });
                     }
                     processed += 1;
                     if (canReportProgress()) {
