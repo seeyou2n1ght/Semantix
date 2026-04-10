@@ -21,7 +21,8 @@ Obsidian (UI/Event) <--- REST API (CORS) ---> FastAPI (Computation)
 ### 后端服务 (Backend)
 - **FASTAPI**: 处理高并发请求。
 - **Model Service**: 封装了 Sentence-Transformers，负责将文本转化为 512 维向量。
-- **Database Service**: 封装 LanceDB，处理向量搜索与 FTS 倒排索引的高性能混合查询。
+- **Reranker Service**: [新] 封装 Cross-encoder 模型，对初步召回结果进行精排。
+- **Database Service**: 封装 LanceDB，处理向量搜索、FTS 以及支持父子块索引的复杂聚合。
 
 ---
 
@@ -39,9 +40,10 @@ Obsidian (UI/Event) <--- REST API (CORS) ---> FastAPI (Computation)
 - `frontend/src/core/`: 存放无状态的业务逻辑算法。
 - `frontend/src/ui/`: 存放视图渲染逻辑。
 - `frontend/src/styles.css`: 样式源文件（由 esbuild 编译至根目录）。
-- `backend/db_svc.py`: 检索算法与数据库交互。
-- `backend/model_svc.py`: 模型生命周期管理。
-- `backend/utils/chunker.py`: 文本切分策略。
+- `backend/db_svc.py`: 检索算法、RRF 融合与数据库交互。
+- `backend/model_svc.py`: 向量模型生命周期管理。
+- `backend/reranker_svc.py`: [新] 精排模型生命周期管理。
+- `backend/utils/chunker.py`: 基于 Markdown AST 的文本切分逻辑。
 
 ---
 
