@@ -107,9 +107,27 @@ export class SemantixSettingTab extends PluginSettingTab {
             }
 
             this.updateStatus('backend', "✅ 合法的后端项目路径");
+            
+            // 联动：自动探测虚拟环境
+            this.autoDetectPythonEnvironment(backendPath);
         } catch (e) {
             const errorMsg = e instanceof Error ? e.message : String(e);
             this.updateStatus('backend', `❌ 校验出错: ${errorMsg}`);
+        }
+    }
+
+    private autoDetectPythonEnvironment(backendPath: string) {
+        const isWindows = process.platform === "win32";
+        const venvPython = isWindows 
+            ? path.join(backendPath, '.venv', 'Scripts', 'python.exe')
+            : path.join(backendPath, '.venv', 'bin', 'python');
+
+        if (fs.existsSync(venvPython)) {
+            this.plugin.settings.pythonPath = venvPython;
+            this.plugin.saveSettings();
+            this.updateStatus('python', `✅ 已自动关联项目虚拟环境: ${venvPython}`);
+        } else {
+            this.updateStatus('python', `⚠️ 未发现项目虚拟环境，将使用默认配置或系统环境变量`);
         }
     }
 
@@ -201,7 +219,17 @@ export class SemantixSettingTab extends PluginSettingTab {
                     }));
             
             if (this.pythonStatus) {
-                containerEl.createEl('div', { text: this.pythonStatus, cls: 'setting-item-description', attr: { style: 'color: var(--text-muted); margin-top: -10px; margin-bottom: 10px; font-size: 0.85em;' } });
+                const isError = this.pythonStatus.includes('❌') || this.pythonStatus.includes('⚠️');
+                const isSuccess = this.pythonStatus.includes('✅');
+                let color = 'var(--text-muted)';
+                if (isError) color = 'var(--text-accent)'; // 橙色/红色提示
+                if (isSuccess) color = 'var(--color-green)';
+
+                containerEl.createEl('div', { 
+                    text: this.pythonStatus, 
+                    cls: 'setting-item-description', 
+                    attr: { style: `color: ${color}; margin-top: -10px; margin-bottom: 10px; font-size: 0.85em; font-weight: ${isSuccess ? 'bold' : 'normal'};` } 
+                });
             }
 
             new Setting(containerEl)

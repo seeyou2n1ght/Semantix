@@ -157,12 +157,12 @@ def batch_index(request: BatchIndexRequest, background_tasks: BackgroundTasks):
         )
 
     duration_ms = (time.perf_counter() - start) * 1000
-    METRICS["total_indexed_docs"] += len(paths)
+    METRICS["total_indexed_docs"] += len(request.documents)
     METRICS["last_index_at"] = datetime.now().isoformat()
     METRICS["last_index_ms"] = duration_ms
-    logger.info("Indexed %s docs in %.2fms", len(paths), duration_ms)
+    logger.info("Indexed %d documents in %.2fms", len(request.documents), duration_ms)
 
-    return {"status": "success", "indexed": len(paths)}
+    return {"status": "success", "indexed": len(request.documents)}
 
 
 @app.post("/index/delete", tags=["Index"])

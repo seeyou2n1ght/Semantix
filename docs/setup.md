@@ -42,10 +42,34 @@ Semantix 后端基于高性能的 FastAPI 与 LanceDB。
 > 样式的源文件位于 `src/styles.css`，构建过程会自动处理并输出到根目录。请勿直接修改根目录下的 `styles.css`。
 
 ### 插件配置
-在 Obsidian 内部启用插件后，进入设置面板：
-- **Backend API URL**: 填写后端地址（默认 `http://localhost:8000`）。
-- **API token**: 如果后端配置了鉴权 Token，请在此填写。
-- **初始化索引**：点击“初始化向量雷达”开始全量索引。
+在 Obsidian 内部启用插件后，进入设置面板开始配置：
+
+#### A. 本地边车模式 (推荐 - Local Sidecar)
+适用于在办公电脑上直接运行后端，体验最为简洁。
+1. **Backend mode**: 选择 `Local Sidecar`。
+2. **Backend project path**: 填入您克隆仓库后的 `backend/` 文件夹绝对路径。
+3. **Auto-detect**: 插件将自动探测并关联目录下的 `.venv` 虚拟环境，并显示 `✅ 已自动关联`。
+4. **Auto-start server**: 开启此项，后端将随插件自动启动和销毁。
+
+#### B. 远程服务模式 (Remote Service)
+适用于后端部署在 NAS、服务器或 Docker 中的场景。
+1. **Backend mode**: 选择 `Remote Service`。
+2. **Backend API URL**: 填写远程后端地址（默认 `http://localhost:8000`）。
+3. **API token**: 如果开启了鉴权，请在此填写。
+
+---
+
+### 指示灯状态说明
+侧边栏和设置面板中包含实时状态指示灯：
+- ⚪ **灰色 (Disabled)**: 插件未启用或本地服务未启动。
+- 🟡 **脉冲 (Connecting)**: 正在尝试建立握手或拉起进程。
+- 🟢 **绿色 (Connected)**: 服务就绪，可正常使用搜索与同步。
+- 🔴 **红色 (Disconnected)**: 连接失败，请检查配置或后端状态。
+
+---
+
+## 3. 初始化索引
+连接成功（绿灯）后，点击设置中的 **[开始索引]** 按钮。插件将扫描全库笔记并建立语义地图。进度将实时展示在侧边栏面板下方。
 
 ---
 
