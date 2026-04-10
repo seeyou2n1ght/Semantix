@@ -172,17 +172,55 @@ export class WhispererView extends ItemView {
                 cls: "semantix-score-badge"
             });
             scoreEl.style.color = this.getScoreColor(item.score, settings.colorThresholdHigh, settings.colorThresholdMedium);
-            scoreEl.title = this.getScoreTooltip(item.score, settings.colorThresholdHigh, settings.colorThresholdMedium);
+            
+            // 悬浮提示解耦：分数 Badge 显示打分明细和理由
+            scoreEl.title = this.getDetailedScoreTooltip(item);
         }
     }
 
-    private getScoreTooltip(score: number, thresholdHigh: number, thresholdMedium: number): string {
-        if (score >= thresholdHigh) {
-            return t('SCORE_HIGH');
+    /**
+     * 生成打分构成的详细悬浮提示
+     */
+    private getDetailedScoreTooltip(item: SearchResultItem): string {
+        const lines: string[] = [];
+        
+        // 1. 总体评价
+        lines.push(this.getScoreSummaryText(item.score));
+        lines.push("----------------");
+
+        // 2. 得分构成
+        lines.push(t('SCORE_BREAKDOWN_TITLE'));
+        
+        if (item.score_details) {
+            const details = item.score_details;
+            // 核心语义分
+            if (details.semantic !== undefined) {
+                lines.push(`${t('SCORE_SEMANTIC')}: ${details.semantic.toFixed(2)}`);
+            } else if (details.base_semantic !== undefined) {
+                lines.push(`${t('SCORE_SEMANTIC')}: ${details.base_semantic.toFixed(2)}`);
+            }
+
+            // 额外加分项
+            const bonuses: string[] = [];
+            if (details.path_bonus) bonuses.push(`${t('REASON_SAME_FOLDER') || t('REASON_RELATED_FOLDER')}: +${details.path_bonus.toFixed(2)}`);
+            if (details.tag_bonus) bonuses.push(`${t('REASON_SHARE_TAGS')}: +${details.tag_bonus.toFixed(2)}`);
+            if (details.link_bonus) bonuses.push(`${t('REASON_LINKED')}: +${details.link_bonus.toFixed(2)}`);
+            if (details.density_bonus) bonuses.push(`${t('REASON_HIGH_DENSITY')}: +${details.density_bonus.toFixed(2)}`);
+
+            if (bonuses.length > 0) {
+                // lines.push(""); // 间隔
+                bonuses.forEach(b => lines.push(b));
+            }
         }
-        if (score >= thresholdMedium) {
-            return t('SCORE_MED');
-        }
+
+        return lines.join("\n");
+    }
+
+    private getScoreSummaryText(score: number): string {
+        const h = this.plugin.settings.colorThresholdHigh || 0.85;
+        const m = this.plugin.settings.colorThresholdMedium || 0.75;
+        if (score >= h) return t('SCORE_HIGH');
+        if (score >= m) return t('SCORE_MED');
         return t('SCORE_LOW');
     }
 

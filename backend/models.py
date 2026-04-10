@@ -55,6 +55,8 @@ class SearchResultItem(BaseModel):
     score: float
     snippet: str
     matched_chunk_index: Optional[int] = None
+    reasons: List[str] = Field(default_factory=list)
+    score_details: Dict[str, float] = Field(default_factory=dict)
 
 
 class SemanticSearchResponse(BaseModel):

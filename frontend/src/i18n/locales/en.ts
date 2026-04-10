@@ -169,4 +169,12 @@ export default {
     MOBILE_HIBERNATING: "Semantix is hibernating on mobile. Enable it in settings.",
     RERANKING_NAME: "Enable Reranking (Cross-Encoder)",
     RERANKING_DESC: "Use BGE-Reranker for higher accuracy. Turn off for 'Lightweight Mode' on older machines to save memory and CPU.",
+    SCORE_BREAKDOWN_TITLE: "Score Breakdown:",
+    SCORE_SEMANTIC: "Semantic Similarity",
+    SCORE_BONUS: "Contextual Bonus",
+    REASON_SAME_FOLDER: "🏠 Same folder location",
+    REASON_RELATED_FOLDER: "📁 Related directory structure",
+    REASON_SHARE_TAGS: "🏷️ Multiple shared tags",
+    REASON_LINKED: "🔗 Active link found",
+    REASON_HIGH_DENSITY: "📊 High content match density",
 }

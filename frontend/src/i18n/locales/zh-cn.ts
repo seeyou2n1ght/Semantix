@@ -172,4 +172,12 @@ export default {
     MOBILE_HIBERNATING: "语义雷达在移动端处于休眠状态。如需开启请前往设置。",
     RERANKING_NAME: "启用精排 (Cross-Encoder)",
     RERANKING_DESC: "使用 BGE-Reranker 进一步提升搜索准确度。在旧机器上可关闭此项以进入“轻量模式”，节省内存和 CPU。",
+    SCORE_BREAKDOWN_TITLE: "得分明细：",
+    SCORE_SEMANTIC: "语义相似度",
+    SCORE_BONUS: "关联加成",
+    REASON_SAME_FOLDER: "🏠 位于相同文件夹",
+    REASON_RELATED_FOLDER: "📁 位于相关父子目录",
+    REASON_SHARE_TAGS: "🏷️ 共享多个相同标签",
+    REASON_LINKED: "🔗 已有主动引用记录",
+    REASON_HIGH_DENSITY: "📊 内容中存在多处匹配",
 }

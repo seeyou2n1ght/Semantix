@@ -43,13 +43,18 @@ class RerankerService:
     def is_ready(self) -> bool:
         return self._model is not None and not self._loading
 
-    def _sigmoid(self, x: float, offset: float = 1.1) -> float:
+    def _normalize_score(self, x: float, exponent: float = 0.7) -> float:
         """
-        将原始 Logit 映射到 0-1 概率空间，并加入偏移量以对齐 UI 体感。
-        Offset = 1.1 意味着 Logit=0 (模型认为中等相关) 时，输出约为 0.75 (对齐前端中位色)。
+        使用 Sigmoid + 幂函数映射 (Power Transform)。
+        幂函数在低分区斜率大，能有效拉升中等相关分数，同时在高分区保留分布梯度。
+        Logit=0 -> prob=0.5 -> score=0.5^0.7 ≈ 0.61
+        Logit=1 -> prob=0.73 -> score=0.73^0.7 ≈ 0.80
         """
         try:
-            return 1 / (1 + math.exp(-(x + offset)))
+            # 标准 Sigmoid 映射到 [0, 1] 概率空间
+            prob = 1 / (1 + math.exp(-x))
+            # 幂函数拉升体感分
+            return math.pow(prob, exponent)
         except OverflowError:
             return 0.0 if x < 0 else 1.0
 
@@ -77,8 +82,13 @@ class RerankerService:
             
             # 将新分数赋给候选，并重新排序
             for i, score in enumerate(scores):
-                # 应用 Sigmoid 归一化和体感偏移
-                normalized_score = self._sigmoid(float(score))
+                # 应用非线性归一化
+                normalized_score = self._normalize_score(float(score))
+                
+                # 记录得分明细 (用于可解释性增强)
+                if "score_details" not in candidates[i]:
+                    candidates[i]["score_details"] = {}
+                candidates[i]["score_details"]["semantic"] = normalized_score
                 
                 candidates[i]["rerank_score"] = normalized_score
                 # 保留原始分作为参考，但主序改为新分

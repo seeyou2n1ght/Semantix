@@ -408,32 +408,47 @@ class DatabaseService:
 
         # 最终排序权重调整
         for item in path_results.values():
+            item["reasons"] = []
+            item["score_details"] = {"base_semantic": item["score"]}
+            
             # 1. 命中数奖励 (Max +0.06)
             bonus = min(item["hit_count"] - 1, 3) * 0.02
+            if bonus > 0:
+                item["reasons"].append("HIGH_DENSITY")
+                item["score_details"]["density_bonus"] = bonus
             
             # 2. 路径亲和度奖励 (Path-based Boosting)
-            # 如果结果在同一个目录下，给予 10% 的得分加成
             path_boost = 0.0
             if current_dir:
                 item_dir = os.path.dirname(item["path"]).replace("\\", "/").strip("/")
                 if item_dir == current_dir:
-                    path_boost = 0.05  # 同目录加分
+                    path_boost = 0.05
+                    item["reasons"].append("SAME_FOLDER")
                 elif current_dir in item_dir or item_dir in current_dir:
-                    path_boost = 0.02  # 父子目录加分
+                    path_boost = 0.02
+                    item["reasons"].append("RELATED_FOLDER")
+            if path_boost > 0:
+                item["score_details"]["path_bonus"] = path_boost
             
             # 3. 标签亲和度奖励 (Tag Affinity)
             tag_boost = 0.0
             if current_tags and item.get("tags"):
                 shared_tags = set(current_tags) & set(item["tags"])
-                # 每个共享标签加 0.05，最高 0.15
                 tag_boost = min(len(shared_tags) * 0.05, 0.15)
+                if tag_boost > 0:
+                    item["reasons"].append("SHARE_TAGS")
+                    item["score_details"]["tag_bonus"] = tag_boost
                 
             # 4. 链接关联奖励 (Link Affinity)
             link_boost = 0.0
             if current_links and item["path"] in current_links:
-                link_boost = 0.2  # 极其显著的加分，因为是主动引用的
+                link_boost = 0.2
+                item["reasons"].append("LINKED")
+                item["score_details"]["link_bonus"] = link_boost
             
             item["score"] = item["score"] + bonus + path_boost + tag_boost + link_boost
+            
+            # 清理中间字段，避免拉低 API 性能
             del item["hit_count"]
             if "tags" in item: del item["tags"]
             if "links" in item: del item["links"]

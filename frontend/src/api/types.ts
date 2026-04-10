@@ -43,6 +43,8 @@ export interface SearchResultItem {
     score: number;
     snippet: string;
     matched_chunk_index?: number;
+    reasons?: string[];
+    score_details?: { [key: string]: number };
 }
 
 export interface SemanticSearchResponse {
