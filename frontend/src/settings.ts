@@ -50,6 +50,7 @@ export class SemantixSettingTab extends PluginSettingTab {
     plugin: SemantixPlugin;
     private pythonStatus: string = "";
     private backendStatus: string = "";
+    private showPythonInput: boolean = false;
     private debounceTimer: number | null = null;
 
     constructor(app: App, plugin: SemantixPlugin) {
@@ -204,19 +205,25 @@ export class SemantixSettingTab extends PluginSettingTab {
                         new Notice(value ? "已开启自启，重启插件或 Obsidian 生效。" : "已关闭自启。");
                     }));
 
-            new Setting(containerEl)
-                .setName('Python / uv path')
-                .setDesc('后端运行环境的执行路径 (例如 uv, python, C:\\Python311\\python.exe)')
-                .addText(text => text
-                    .setPlaceholder('uv')
-                    .setValue(this.plugin.settings.pythonPath)
-                    .onChange(async (value) => {
-                        this.plugin.settings.pythonPath = value;
-                        await this.plugin.saveSettings();
-                        
-                        if (this.debounceTimer) window.clearTimeout(this.debounceTimer);
-                        this.debounceTimer = window.setTimeout(() => this.validatePython(value), 800);
-                    }));
+            // 只有在未探测到(isError/Empty) 或者 用户点击了“修改”按钮时，才显示输入框
+            const isAutoDetected = this.pythonStatus.includes('✅');
+            const shouldShowInput = this.showPythonInput || !isAutoDetected;
+
+            if (shouldShowInput) {
+                new Setting(containerEl)
+                    .setName('Python / uv path')
+                    .setDesc('后端运行环境的执行路径 (例如 uv, python, C:\\Python311\\python.exe)')
+                    .addText(text => text
+                        .setPlaceholder('uv')
+                        .setValue(this.plugin.settings.pythonPath)
+                        .onChange(async (value) => {
+                            this.plugin.settings.pythonPath = value;
+                            await this.plugin.saveSettings();
+                            
+                            if (this.debounceTimer) window.clearTimeout(this.debounceTimer);
+                            this.debounceTimer = window.setTimeout(() => this.validatePython(value), 800);
+                        }));
+            }
             
             if (this.pythonStatus) {
                 const isError = this.pythonStatus.includes('❌') || this.pythonStatus.includes('⚠️');
@@ -225,11 +232,24 @@ export class SemantixSettingTab extends PluginSettingTab {
                 if (isError) color = 'var(--text-accent)'; // 橙色/红色提示
                 if (isSuccess) color = 'var(--color-green)';
 
-                containerEl.createEl('div', { 
-                    text: this.pythonStatus, 
+                const statusDiv = containerEl.createEl('div', { 
                     cls: 'setting-item-description', 
-                    attr: { style: `color: ${color}; margin-top: -10px; margin-bottom: 10px; font-size: 0.85em; font-weight: ${isSuccess ? 'bold' : 'normal'};` } 
+                    attr: { style: `color: ${color}; margin-top: -10px; margin-bottom: 10px; font-size: 0.85em; font-weight: ${isSuccess ? 'bold' : 'normal'}; display: flex; align-items: center; justify-content: space-between;` } 
                 });
+                
+                statusDiv.createEl('span', { text: this.pythonStatus });
+
+                // 如果已经自动检测成功，提供一个“修改”按钮允许用户手动覆盖
+                if (isSuccess && !this.showPythonInput) {
+                    const changeBtn = statusDiv.createEl('a', { 
+                        text: '修改', 
+                        attr: { style: 'color: var(--text-accent); cursor: pointer; margin-left: 10px; text-decoration: underline;' } 
+                    });
+                    changeBtn.onclick = () => {
+                        this.showPythonInput = true;
+                        this.display();
+                    };
+                }
             }
 
             new Setting(containerEl)
