@@ -134,8 +134,8 @@ export default class SemantixPlugin extends Plugin {
 
         // 7. 工作区就绪后打开视图并探活
         this.app.workspace.onLayoutReady(async () => {
-            this.activateWhispererView();
             if (!this.isMobileHibernating) {
+                this.activateWhispererView();
                 // 如果开启了本地自建边车模式，则尝试启动（非阻塞调用，提升冷启动体验）
                 if (this.settings.backendMode === 'local' && this.settings.autoStartServer) {
                     this.serviceManager.start();
