@@ -31,7 +31,7 @@ Semantix 后端通过 REST API 提供服务。所有涉及数据的请求均需�
 
 ### `GET /ping`
 - **用途**：活跃心跳。
-- **功能**：由前端插件定期调用，用于更新后端的“最后活跃时间”。配合后端的“看门狗”监控线程，若 120 秒内未收到 ping 信号且父进程 PID 失效，后端将自动执行优雅退出。
+- **功能**：由前端插件定期调用，用于更新后端的“最后活跃时间”。配合后端的“看门狗”监控线程，若超过 `SEMANTIX_WATCHDOG_TIMEOUT`（默认 600 秒）未收到 ping 信号且父进程 PID 失效，后端将自动执行优雅退出。
 
 ### `GET /metrics`
 - **用途**：获取当前运行指标，包括总索引文档数、最近搜索耗时等。
@@ -72,6 +72,14 @@ Semantix 后端通过 REST API 提供服务。所有涉及数据的请求均需�
   { "status": "success", "count": 42, "words": ["笔记", "内容", "工具", ...] }
   ```
 - **说明**：分析结果会持久化到后端 `custom_stopwords.json`，后续通过 `/index/status` 自动同步到前端。
+
+### `POST /index/rebuild-fts` (v0.8.0 新增)
+- **用途**：全量建库或清空重建完成后显式触发 FTS 倒排索引构建。
+- **说明**：绕过后台 30 秒节流窗口，立即同步生成 Tantivy 倒排索引，确保新建库立即具备 BM25 与向量混合检索能力。
+- **响应**：
+  ```json
+  { "status": "success", "message": "FTS inverted index rebuilt successfully." }
+  ```
 
 ---
 
@@ -116,6 +124,7 @@ Semantix 后端通过 REST API 提供服务。所有涉及数据的请求均需�
   | `top_k_discover` | int | Discover 流最大返回条数（默认 4） |
   | `exclude_paths` | list[str] | 排除路径列表（强制包含当前笔记路径） |
   | `ranking_mode` | string | 精排策略：`fast`（关闭精排）、`balanced`（Top 12 精排）、`high_quality`（Top 25 全量精排） |
+  | `mmr_lambda` | float | MMR 多样性权重（默认 0.65，0.2~0.9；值越小越发散、越具探索性） |
 
 - **Response Body**:
   ```json

@@ -61,8 +61,14 @@ export class ResultStabilizer {
             this.resetAll();
         }
 
-        // 2. Note Mode 扫描整篇，一次性直接展示
-        if (transitionType === 'NOTE_MODE' || transitionType === 'NEW_HEADING') {
+        // 2. 上下文明确跃迁（新文件、新标题、新段落、光标换行、Note Mode）：直接呈现当前位置的最新推荐结果
+        if (
+            transitionType === 'NOTE_MODE' ||
+            transitionType === 'NEW_HEADING' ||
+            transitionType === 'NEW_FILE' ||
+            transitionType === 'NEW_PARAGRAPH' ||
+            transitionType === 'LINE_CHANGE'
+        ) {
             this.relatedCards = this.createDisplayedCards(incomingRelated, now);
             this.discoverCards = this.createDisplayedCards(incomingDiscover, now);
             return {
@@ -71,13 +77,13 @@ export class ResultStabilizer {
             };
         }
 
-        // 3. 同段落或新段落输入：按 Policy 执行抗抖置换
+        // 3. 仅在同一上下文内持续打字输入（SAME_PARAGRAPH）时：按 Policy 执行抗抖置换
         this.relatedCards = this.stabilizeChannel(
             this.relatedCards,
             incomingRelated,
             RELATED_POLICY,
             now,
-            transitionType === 'NEW_PARAGRAPH'
+            false
         );
 
         this.discoverCards = this.stabilizeChannel(
@@ -85,7 +91,7 @@ export class ResultStabilizer {
             incomingDiscover,
             DISCOVER_POLICY,
             now,
-            transitionType === 'NEW_PARAGRAPH'
+            false
         );
 
         return {

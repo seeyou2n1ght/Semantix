@@ -77,6 +77,7 @@ class DatabaseService:
         top_k_related: int = 4,
         top_k_discover: int = 4,
         ranking_mode: str = "balanced",
+        mmr_lambda: float = 0.65,
     ) -> Dict[str, List[Dict[str, Any]]]:
         """执行新版双流精排搜索"""
         return self.radar_pipeline.execute(
@@ -89,6 +90,7 @@ class DatabaseService:
             top_k_related=top_k_related,
             top_k_discover=top_k_discover,
             ranking_mode=ranking_mode,
+            mmr_lambda=mmr_lambda,
         )
 
     def search(

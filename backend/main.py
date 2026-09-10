@@ -1,4 +1,5 @@
 import os
+import json
 import time
 import logging
 import secrets
@@ -30,8 +31,6 @@ from models import (
 from services.embedding_service import embedding_service
 from services.reranker_service import reranker_service
 from db_svc import db_svc, DatabaseService
-from model_svc import model_svc
-from reranker_svc import reranker_svc
 
 API_TOKEN = os.getenv("SEMANTIX_API_TOKEN", "").strip() or None
 ALLOWED_ORIGINS = [
@@ -64,28 +63,37 @@ _pending_clear_requests: Dict[str, Dict] = {}
 # --- Watchdog Configuration ---
 LAST_ACTIVITY = time.time()
 PARENT_PID = int(os.getenv("SEMANTIX_PARENT_PID", "0"))
-WATCHDOG_INTERVAL = 20  # 检查频率 (秒)
-ACTIVITY_TIMEOUT = 600  # 无响应自杀阈值 (秒)
+WATCHDOG_INTERVAL = 10  # 检查频率 (秒，更快响应 Obsidian 退出)
+ACTIVITY_TIMEOUT = int(os.getenv("SEMANTIX_WATCHDOG_TIMEOUT", "600"))  # 无响应自杀阈值 (秒, <=0 则禁用)
+PID_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".semantix.pid")
 
-def is_process_running(pid):
-    """跨平台检查进程是否仍在运行"""
+def is_process_running(pid: int) -> bool:
+    """跨平台检查进程是否仍在运行 (精准判定存活态)"""
     if pid <= 0:
         return False
         
     # Windows 平台实现
     if os.name == 'nt':
-        # PROCESS_QUERY_LIMITED_INFORMATION (0x1000)
-        # 即使没有完全控制权，也能查询进程是否还在
         PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
         handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
-        if handle:
+        if not handle:
+            return False
+        try:
+            # 必须检查退出代码：STILL_ACTIVE = 259 (0x103)
+            # 若父进程已被结束，句柄在完全销毁前可能仍然可开，但 exit_code 绝不是 STILL_ACTIVE
+            exit_code = ctypes.c_ulong()
+            if ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return exit_code.value == 259
+            return False
+        finally:
             ctypes.windll.kernel32.CloseHandle(handle)
-            return True
-        return False
     else:
         # Unix 平台实现
         try:
             os.kill(pid, 0)
+            return True
+        except PermissionError:
+            # 进程存在但无权限发送信号
             return True
         except OSError:
             return False
@@ -93,25 +101,46 @@ def is_process_running(pid):
 def watchdog():
     """后台监控线程：检查心跳超时或父进程消失"""
     global LAST_ACTIVITY
-    logger.info("Watchdog monitoring started (Interval: %ds, Timeout: %ds)", WATCHDOG_INTERVAL, ACTIVITY_TIMEOUT)
+    logger.info("Watchdog monitoring started (Interval: %ds, Timeout: %ds, Parent PID: %d)", WATCHDOG_INTERVAL, ACTIVITY_TIMEOUT, PARENT_PID)
     
     while True:
         time.sleep(WATCHDOG_INTERVAL)
         now = time.time()
         
-        # 1. 检查心跳超时
-        if now - LAST_ACTIVITY > ACTIVITY_TIMEOUT:
-            logger.warning("Heartbeat timeout (%ds). Sidecar initiating self-shutdown...", ACTIVITY_TIMEOUT)
-            # 触发优雅退出逻辑
-            os.kill(os.getpid(), signal.SIGTERM)
-            break
-            
-        # 2. 检查父进程存活 (如果注入了 PID)
+        # 1. 检查父进程存活 (优先判定 Obsidian 是否退出/崩溃)
         if PARENT_PID > 0:
             if not is_process_running(PARENT_PID):
-                logger.warning("Parent process (PID %d) lost. Sidecar initiating self-shutdown...", PARENT_PID)
+                logger.warning("Parent process (PID %d) terminated. Sidecar initiating graceful self-shutdown...", PARENT_PID)
+                cleanup_pid_file()
                 os.kill(os.getpid(), signal.SIGTERM)
                 break
+
+        # 2. 检查心跳超时 (若配置了有效正数超时)
+        if ACTIVITY_TIMEOUT > 0 and (now - LAST_ACTIVITY > ACTIVITY_TIMEOUT):
+            logger.warning("Heartbeat timeout (%ds). Sidecar initiating self-shutdown...", ACTIVITY_TIMEOUT)
+            cleanup_pid_file()
+            os.kill(os.getpid(), signal.SIGTERM)
+            break
+
+def write_pid_file():
+    """写入当前进程 PID 锁文件供前端精准识别与回收"""
+    try:
+        with open(PID_FILE_PATH, "w", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "pid": os.getpid(),
+                "parent_pid": PARENT_PID,
+                "started_at": datetime.now().isoformat()
+            }))
+    except Exception as e:
+        logger.warning("Failed to write PID file: %s", e)
+
+def cleanup_pid_file():
+    """清理 PID 锁文件"""
+    try:
+        if os.path.exists(PID_FILE_PATH):
+            os.remove(PID_FILE_PATH)
+    except Exception:
+        pass
 
 
 def verify_token(x_semantix_token: str | None = Header(default=None)):
@@ -160,9 +189,11 @@ async def lifespan(app_instance: FastAPI):
     mt_thread.start()
     # 预加载精排模型
     reranker_service.start_loading()
+    write_pid_file()
     logger.info("Semantix backend service started. Parent PID: %d", PARENT_PID)
     yield
     logger.info("Semantix backend service is shutting down...")
+    cleanup_pid_file()
     db_svc.close()
 
 
@@ -186,6 +217,8 @@ app.add_middleware(
 
 @app.middleware("http")
 async def log_requests(request, call_next):
+    global LAST_ACTIVITY
+    LAST_ACTIVITY = time.time()
     start = time.perf_counter()
     response = await call_next(request)
     duration_ms = (time.perf_counter() - start) * 1000
@@ -428,6 +461,7 @@ def radar_search(request: RadarSearchRequest):
             top_k_related=request.top_k_related or 4,
             top_k_discover=request.top_k_discover or 4,
             ranking_mode=request.ranking_mode or "balanced",
+            mmr_lambda=request.mmr_lambda if request.mmr_lambda is not None else 0.65,
         )
     except Exception as e:
         logger.error("Radar search failed: %s", e)
@@ -482,12 +516,17 @@ def semantic_search(request: SemanticSearchRequest):
     METRICS["last_search_ms"] = duration_ms
     logger.info("Search completed in %.2fms", duration_ms)
 
-    # 精排逻辑 (Phase 4)
+    # 精排逻辑 (Phase 4) — 直接使用 services 模块单例
     final_results = raw_results
-    if request.rerank:
+    if request.rerank and reranker_service.is_ready:
         try:
-            # 精排候选 Top 15 -> 结果 Top K
-            final_results = reranker_svc.rerank(request.text, raw_results, top_k=request.top_k)
+            texts = [c.get("snippet", "") for c in raw_results]
+            scores = reranker_service.predict_scores(request.text, texts)
+            for i, score in enumerate(scores):
+                normalized = reranker_service.normalize_score(score)
+                raw_results[i]["score"] = normalized
+            raw_results.sort(key=lambda x: x["score"], reverse=True)
+            final_results = raw_results[:request.top_k]
         except Exception as e:
             logger.error("Reranking stage failed: %s", e)
 
@@ -497,12 +536,22 @@ def semantic_search(request: SemanticSearchRequest):
 
 
 @app.post("/index/compute-stopwords", tags=["Index"])
-async def compute_stopwords_api(request: MaintenanceRequest, authorization: str = Header(None)):
-    verify_token(authorization)
+async def compute_stopwords_api(request: MaintenanceRequest):
     try:
         noise_words = db_svc.compute_vault_stopwords(request.vault_id)
         return {"status": "success", "count": len(noise_words), "words": noise_words}
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/index/rebuild-fts", tags=["Index"])
+def rebuild_fts_api():
+    """全量重建完成后显式触发 FTS 倒排索引构建，无需等待后台 30s 节流"""
+    try:
+        db_svc.rebuild_fts_index()
+        return {"status": "success", "message": "FTS inverted index rebuilt successfully."}
+    except Exception as e:
+        logger.error("Explicit rebuild FTS failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 

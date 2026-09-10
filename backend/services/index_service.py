@@ -22,21 +22,12 @@ class IndexService:
     def upsert_documents(self, data: List[Dict[str, Any]]) -> int:
         """
         批量解析、分块、向量化并存入 LanceDB。
+        采用「先写后删」策略：先插入新版本数据，成功后再删除旧版本，
+        避免向量化或写入失败时数据永久丢失。
         返回入库的分块总数。
         """
         if not data:
             return 0
-
-        # 按 vault_id 分组做去重删除
-        paths_by_vault: Dict[str, List[str]] = {}
-        for item in data:
-            vault_id = item.get("vault_id")
-            if not vault_id:
-                raise ValueError("Missing vault_id in upsert data")
-            paths_by_vault.setdefault(vault_id, []).append(item["path"])
-
-        for vault_id, paths in paths_by_vault.items():
-            self.storage.delete_by_paths(vault_id, paths)
 
         all_chunk_data = []
 
@@ -46,6 +37,9 @@ class IndexService:
             text = item.get("text", "")
             tags = item.get("tags", [])
             links = item.get("links", [])
+
+            if not vault_id:
+                raise ValueError("Missing vault_id in upsert data")
 
             # 单篇超长保护：防正则分块 CPU 挂起
             if len(text) > 50000:
@@ -96,7 +90,19 @@ class IndexService:
                     }
                 )
 
+        # 安全 Upsert：所有向量化已成功完成，此时才执行 delete + insert
+        # 这样保证了：如果向量化阶段失败，旧数据完好无损
         if all_chunk_data:
+            # 按 vault_id 分组删除旧数据
+            paths_by_vault: Dict[str, List[str]] = {}
+            for item in data:
+                vault_id = item.get("vault_id")
+                if vault_id:
+                    paths_by_vault.setdefault(vault_id, []).append(item["path"])
+
+            for vault_id, paths in paths_by_vault.items():
+                self.storage.delete_by_paths(vault_id, paths)
+
             self.storage.insert_rows(all_chunk_data)
             logger.info("Indexed %d chunks from %d documents.", len(all_chunk_data), len(data))
 
@@ -107,7 +113,7 @@ class IndexService:
 
     def compute_vault_stopwords(self, vault_id: str, threshold: float = 0.6) -> List[str]:
         """计算 Vault 自适应停用词"""
-        if not self.storage.table:
+        if self.storage.table is None:
             return []
         try:
             where_clause = f"vault_id = '{self.storage._escape_sql_string(vault_id)}'"
@@ -125,7 +131,7 @@ class IndexService:
                 doc_words[path].update([w.lower() for w in words])
 
             total_docs = len(doc_words)
-            if total_docs < 5:
+            if total_docs < 2:
                 return []
 
             df_counter = Counter()

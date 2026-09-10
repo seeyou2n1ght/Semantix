@@ -84,6 +84,9 @@ export class Whisperer {
         if (!snapshot) return;
 
         const isContextJump = isJump || snapshot.transitionType !== 'SAME_PARAGRAPH';
+        if (!isContextJump && this.plugin.settings.autoTrigger === false) {
+            return;
+        }
         const decision = this.queryGate.evaluate(snapshot.cleanedText, isContextJump);
         if (!decision.shouldTrigger) {
             return;
@@ -133,7 +136,8 @@ export class Whisperer {
                 top_k_related: this.plugin.settings.topNResults || 4,
                 top_k_discover: this.plugin.settings.topNResults || 4,
                 ranking_mode: this.plugin.settings.rankingMode || 'balanced',
-                exclude_paths: excludes
+                exclude_paths: excludes,
+                mmr_lambda: this.plugin.settings.mmrLambda ?? 0.65
             });
 
             // 丢弃陈旧请求结果，防止乱序覆盖
@@ -153,7 +157,8 @@ export class Whisperer {
                     stabilized.related,
                     stabilized.discover,
                     snapshot.context.path,
-                    snapshot.context.heading
+                    snapshot.context.heading,
+                    snapshot.cleanedText
                 );
             }
         } catch (e) {
@@ -170,7 +175,8 @@ export class Whisperer {
         related: RadarCardItem[],
         discover: RadarCardItem[],
         contextPath?: string,
-        contextHeading?: string
+        contextHeading?: string,
+        queryText?: string
     ) {
         const leaves = this.plugin.app.workspace.getLeavesOfType(WHISPERER_VIEW_TYPE);
         if (leaves.length === 0) return;
@@ -180,7 +186,8 @@ export class Whisperer {
                 related,
                 discover,
                 contextPath,
-                contextHeading
+                contextHeading,
+                queryText
             );
         }
     }

@@ -20,6 +20,13 @@ export class ServiceManager {
     private isStarting: boolean = false;
     private onStatusCallback?: (msg: string) => void;
 
+    // 自愈与熔断状态机 (Self-Healing & Circuit Breaker)
+    private healAttempts: number = 0;
+    private readonly maxHealAttempts: number = 3;
+    private lastHealTimestamp: number = 0;
+    private healTimer: number | null = null;
+    private userIntentStopped: boolean = false;
+
     constructor(plugin: SemantixPlugin) {
         this.plugin = plugin;
     }
@@ -33,20 +40,110 @@ export class ServiceManager {
 
     private reportStatus(msg: string) {
         if (this.onStatusCallback) this.onStatusCallback(msg);
+        // eslint-disable-next-line no-console
         console.log(`[Semantix Service]: ${msg}`);
+    }
+
+    /**
+     * 重置自愈计数器与用户主动停止标记
+     */
+    public resetHealing() {
+        this.healAttempts = 0;
+        this.userIntentStopped = false;
+        this.cancelSelfHealing();
+    }
+
+    /**
+     * 设置用户意图标记 (主动停止则禁止自愈)
+     */
+    public setUserIntentStopped(stopped: boolean) {
+        this.userIntentStopped = stopped;
+        if (stopped) {
+            this.cancelSelfHealing();
+        }
+    }
+
+    public isUserStopped(): boolean {
+        return this.userIntentStopped;
+    }
+
+    private cancelSelfHealing() {
+        if (this.healTimer !== null) {
+            window.clearTimeout(this.healTimer);
+            this.healTimer = null;
+        }
+    }
+
+    /**
+     * 触发自愈重启流程 (带指数退避与三振出局熔断保护)
+     */
+    public triggerSelfHealing(reason: string) {
+        if (!Platform.isDesktop) return;
+        if (this.userIntentStopped) return;
+        const { settings } = this.plugin;
+        if (settings.backendMode !== 'local' || !settings.autoStartServer) return;
+        if (this.isStarting || this.isRunning()) return;
+        if (this.healTimer !== null) return; // 已在等待退避调度中
+
+        // 窗口滑动：距离上次自愈超过 2 分钟，自动清零失败计数
+        if (Date.now() - this.lastHealTimestamp > 120_000) {
+            this.healAttempts = 0;
+        }
+
+        // 熔断保护：连续失败达到 3 次，停止自动拉起，避免 CPU 飙升与死循环
+        if (this.healAttempts >= this.maxHealAttempts) {
+            this.reportStatus("后台服务连续异常退出，自愈机制已熔断暂停 🛑");
+            new Notice("Semantix: 引擎连续多次异常退出，已暂停自动拉起。请检查环境或手动启动。");
+            return;
+        }
+
+        this.healAttempts++;
+        this.lastHealTimestamp = Date.now();
+
+        // 指数退避调度: 1次 3s, 2次 6s, 3次 15s
+        const backoffDelay = this.healAttempts === 1 ? 3000 : this.healAttempts === 2 ? 6000 : 15000;
+        this.reportStatus(`服务异常 (${reason})，${backoffDelay / 1000}s 后尝试自动自愈 (${this.healAttempts}/${this.maxHealAttempts})...`);
+
+        this.healTimer = window.setTimeout(async () => {
+            this.healTimer = null;
+            if (this.userIntentStopped || this.isRunning() || this.isStarting) return;
+
+            // 自愈前检查外部是否已恢复或手动拉起服务
+            const status = await this.plugin.apiClient.checkFullHealth();
+            if (status === HealthStatus.READY) {
+                this.onHealthyStable();
+                this.reportStatus("后端连接已恢复 ✅");
+                this.plugin.checkConnection({ silent: true });
+                return;
+            }
+
+            await this.forceKillAndStart({ isHeal: true });
+        }, backoffDelay);
+    }
+
+    /**
+     * 外部通知连接恢复稳定，重置熔断计数
+     */
+    public onHealthyStable() {
+        this.healAttempts = 0;
     }
 
     /**
      * 根据配置启动后端服务
      * @param options.force 是否忽略 autoStartServer 配置强制启动
      */
-    public async start(options: { force?: boolean } = {}) {
-        const { force = false } = options;
+    public async start(options: { force?: boolean; isHeal?: boolean } = {}) {
+        const { force = false, isHeal = false } = options;
         if (!Platform.isDesktop) return;
         
         // 如果进程已在运行，且不是为了修复重启，则直接跳过
         if (this.process && !force) return;
         if (this.isStarting) return;
+
+        // 如果用户主动启动，清除停止标记并重置自愈
+        if (!isHeal && force) {
+            this.resetHealing();
+        }
 
         // 在真正启动前，重置 UI 层的通知锁定状态
         this.plugin.resetStartupNotice();
@@ -66,15 +163,14 @@ export class ServiceManager {
         this.plugin.updateAllViewStatus('syncing');
 
         try {
-            // 在启动前执行一次最终冲突检查
-            if (force) {
-                const status = await this.plugin.apiClient.checkFullHealth();
-                if (status === HealthStatus.READY) {
-                    this.reportStatus("后端已在运行中 ✅");
-                    this.isStarting = false;
-                    this.plugin.checkConnection();
-                    return;
-                }
+            // 在真正尝试拉起进程前，无条件检查后端是否已经在外部正常运行（如用户手动启动）
+            const status = await this.plugin.apiClient.checkFullHealth();
+            if (status === HealthStatus.READY) {
+                this.reportStatus("后端已在运行中 ✅");
+                this.isStarting = false;
+                this.onHealthyStable();
+                this.plugin.checkConnection({ silent: !force });
+                return;
             }
 
             // 构造启动命令
@@ -95,10 +191,11 @@ export class ServiceManager {
             }
 
             this.reportStatus("正在唤醒后端服务...");
-            // 为路径包含空格的情况加固
-            const proc = cp.spawn(`"${settings.pythonPath}"`, args, {
+            // 安全：禁用 shell 模式防止 pythonPath 注入攻击
+            // spawn 在非 shell 模式下原生支持含空格路径
+            const proc = cp.spawn(settings.pythonPath, args, {
                 cwd: settings.backendPath,
-                shell: true, // 在 Windows 下 spawn 字符串命令需要 shell
+                shell: false,
                 detached: false,
                 env
             });
@@ -146,6 +243,7 @@ export class ServiceManager {
                 this.plugin.checkConnection();
                 if (code !== 0 && code !== null) {
                     this.reportStatus(`服务异常退出 (Code: ${code}) ❌`);
+                    this.triggerSelfHealing(`进程意外退出 (Code: ${code})`);
                 }
             });
 
@@ -154,37 +252,69 @@ export class ServiceManager {
                 this.reportStatus(`启动失败: ${err.message} ❌`);
                 this.process = null;
                 this.isStarting = false;
+                this.triggerSelfHealing(`启动错误: ${err.message}`);
             });
 
             // 给予一定时间再检查状态
             setTimeout(() => this.plugin.checkConnection(), 3000);
 
-        } catch (error) {
+        } catch {
             this.reportStatus("启动流程遭遇意外错误 ❌");
             this.isStarting = false;
+            this.triggerSelfHealing("启动流程抛出未捕获异常");
         }
     }
 
     /**
-     * 强力清理并重新启动
+     * 强力清理并重新启动 (支持自愈模式透传)
      */
-    public async forceKillAndStart() {
-        this.reportStatus("正在清理 8000 端口并重新尝试手动启动...");
+    public async forceKillAndStart(options: { isHeal?: boolean } = {}) {
+        this.reportStatus(options.isHeal ? "正在自愈重启引擎..." : "正在清理 8000 端口并重新尝试手动启动...");
         await this.killPortConflict();
         // 给系统一点释放资源的时间
         await new Promise(r => setTimeout(r, 1000));
-        await this.start({ force: true });
+        await this.start({ force: true, isHeal: options.isHeal });
     }
 
     /**
-     * 扫描并结束 8000 端口上的非本插件进程 (Windows 优先支持)
+     * 扫描并结束 8000 端口上的非本插件进程 (优先使用 PID 锁文件精准回收)
      */
     private async killPortConflict(): Promise<void> {
         return new Promise((resolve) => {
-            const port = 8000;
             const cp = getChildProcess();
             if (!cp) { resolve(); return; }
-            
+
+            // 1. 优先尝试读取并回收 .semantix.pid
+            try {
+                // 动态获取 Electron/Node fs 和 path 模块
+                const fs = getElectronNodeModule<{ existsSync: (p: string) => boolean; readFileSync: (p: string, enc: string) => string; unlinkSync: (p: string) => void }>('fs');
+                const pathMod = getElectronNodeModule<{ join: (...args: string[]) => string }>('path');
+                if (fs && pathMod && this.plugin.settings.backendPath) {
+                    const pidFile = pathMod.join(this.plugin.settings.backendPath, '.semantix.pid');
+                    if (fs.existsSync(pidFile)) {
+                        const content = JSON.parse(fs.readFileSync(pidFile, 'utf-8'));
+                        const orphanPid = String(content?.pid ?? '');
+                        // 安全校验：PID 必须为纯数字，防止命令注入
+                        if (orphanPid && /^\d+$/.test(orphanPid)) {
+                            if (Platform.isWin) {
+                                cp.execSync(`taskkill /F /T /PID "${orphanPid}"`);
+                            } else {
+                                cp.execSync(`kill -9 ${orphanPid}`);
+                            }
+                            this.reportStatus(`已基于 PID 锁文件精准回收孤儿进程 (${orphanPid})`);
+                        } else if (orphanPid) {
+                            // eslint-disable-next-line no-console
+                            console.warn('[Semantix] Invalid PID format in .semantix.pid, skipping kill:', orphanPid);
+                        }
+                        fs.unlinkSync(pidFile);
+                    }
+                }
+            } catch {
+                // 忽略锁文件回收中的异常，继续执行端口扫描降级兜底
+            }
+
+            // 2. 降级方案：端口占用探测与清理
+            const port = 8000;
             if (Platform.isWin) {
                 // Windows 实现
                 cp.exec('netstat -ano | findstr :8000', (error, stdout) => {
@@ -208,7 +338,7 @@ export class ServiceManager {
                                 targetPids.push(pid);
                             }
                         }
-                    } catch (e) { /* ignore */ }
+                    } catch { /* ignore */ }
 
                     if (targetPids.length === 0) { resolve(); return; }
                     const pidStr = targetPids.join(' /PID ');
@@ -229,7 +359,7 @@ export class ServiceManager {
                             if (cmdLine.includes("main:app") && (cmdLine.includes(backendPathKey) || cmdLine.includes("uv"))) {
                                 targetPids.push(pid);
                             }
-                        } catch (e) { /* ignore */ }
+                        } catch { /* ignore */ }
                     });
 
                     if (targetPids.length === 0) { resolve(); return; }
@@ -244,10 +374,13 @@ export class ServiceManager {
     }
 
     /**
-     * 停止后端服务
+     * 停止后端服务并回收资源 (Obsidian 退出或卸载插件时调用)
      */
     public stop() {
         if (!Platform.isDesktop) return;
+
+        // 停止任何正在排队的自愈定时器
+        this.cancelSelfHealing();
 
         if (this.process && this.process.pid) {
             const targetPid = this.process.pid;
@@ -260,7 +393,7 @@ export class ServiceManager {
                 try {
                     // 对 PID 使用引号包裹增加安全性
                     if (cp) cp.execSync(`taskkill /F /T /PID "${targetPid}"`);
-                } catch (e) {
+                } catch {
                     // 忽略进程可能已经自行退出的报错
                 }
             } else {
@@ -268,6 +401,20 @@ export class ServiceManager {
             }
             
             this.process = null;
+        }
+
+        // 清理 PID 锁文件
+        try {
+            const fs = getElectronNodeModule<{ existsSync: (p: string) => boolean; unlinkSync: (p: string) => void }>('fs');
+            const pathMod = getElectronNodeModule<{ join: (...args: string[]) => string }>('path');
+            if (fs && pathMod && this.plugin.settings.backendPath) {
+                const pidFile = pathMod.join(this.plugin.settings.backendPath, '.semantix.pid');
+                if (fs.existsSync(pidFile)) {
+                    fs.unlinkSync(pidFile);
+                }
+            }
+        } catch {
+            // 忽略文件移除异常
         }
     }
 

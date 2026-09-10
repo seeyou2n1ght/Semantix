@@ -104,7 +104,7 @@ export class SyncManager {
         for (const isMatch of this.cachedMatchers) {
             try {
                 if (isMatch(path)) return true;
-            } catch (_e) {
+            } catch {
                 // Ignore matching errors for invalid paths against a rule
             }
         }

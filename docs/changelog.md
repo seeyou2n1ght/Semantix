@@ -1,3 +1,25 @@
+## [0.8.0] - 2026-09-10
+
+### 🚀 新功能与体验增强 (Features & UI Redesign)
+- **设置页信息架构全量重构 (Settings Architecture Redesign)**:
+  - 弃用平铺大卡片布局，对齐 Obsidian 原生折叠与分组规范。
+  - 核心划分为：**状态概览 (Status Banner)**、**推荐体验 (Whisperer Flow)**、**索引范围 (Scope)** 与折叠式 **高级设置 (Advanced)**。
+  - 新增双流 Discover 打散系数（MMR $\lambda$）调节滑块，支持 0.1~0.9 动态平滑调整探索多样性。
+- **倒排索引即时构建 (Instant FTS Indexing)**:
+  - 新增 `POST /index/rebuild-fts` 接口并在初次全量索引完成后自动触发，消除前 30 秒混合检索由于倒排未就绪而降级的冷启动延迟。
+- **全量索引自适应流控 (Adaptive Indexing Flow Control)**:
+  - 引入双阈值自适应分片（≤25 篇且 ≤150k 字符），结合 `requestIdleCallback` 帧对齐主线程让渡，杜绝索引期间 Obsidian 界面掉帧卡顿。
+
+### 🛡️ 进程治理与自愈机制 (Process Governance & Self-Healing)
+- **Win32 精准宿主状态判定 (Win32 Host Suicide)**:
+  - 采用 Windows 原生 `GetExitCodeProcess` 探测 Obsidian 父进程退出码（退出码 ≠ 259 即判定销毁），彻底解决句柄假存活导致的僵尸进程滞留问题。
+- **孤儿进程树治理 (PID Lockfile Management)**:
+  - 写入 `.semantix.pid` 锁文件，启动前基于 PID 树深度回收历史残留孤儿进程。
+- **三振出局自愈状态机 (Self-Healing Circuit Breaker)**:
+  - 遇到异常退出采取 3s / 6s / 15s 指数退避重试；连续失败 3 次触发熔断阻断无限重试；支持用户主动停止压制与控制面板一键重置重启。
+
+---
+
 ## [0.7.0] - 2026-04-11
 
 ### 🚀 新功能 (Features)

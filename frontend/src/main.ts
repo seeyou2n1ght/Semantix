@@ -32,6 +32,7 @@ export default class SemantixPlugin extends Plugin {
     private startupNotice: Notice | null = null;
     private isStartupNoticeCompleted: boolean = false;
     private settingTab: SemantixSettingTab | null = null;
+    private statusBarItem: HTMLElement | null = null;
     public vaultStopwords: string[] = [];
 
     async onload() {
@@ -89,7 +90,10 @@ export default class SemantixPlugin extends Plugin {
             this.registerEditorExtension(this.whisperer.getCursorActivityExtension());
         }
 
-        // 3. 注册配置面板
+        // 3. 注册配置面板与底部状态栏
+        this.statusBarItem = this.addStatusBarItem();
+        this.statusBarItem.addClass('semantix-status-bar-item');
+
         this.settingTab = new SemantixSettingTab(this.app, this);
         this.addSettingTab(this.settingTab);
 
@@ -210,10 +214,17 @@ export default class SemantixPlugin extends Plugin {
 
         if (Platform.isDesktop && this.settings.backendMode === 'local') {
             if (this.serviceManager.isActivating()) {
-                // 如果正在启动中，且健康检查还没通过，我们保持 syncing 状态
+                // 如果正在启动中，保持 syncing 状态
                 this.updateAllViewStatus('syncing');
+            } else if (this.serviceManager.isUserStopped()) {
+                // 用户主动点击停止，保持禁用状态
+                this.updateAllViewStatus('disabled');
+                return;
             } else {
-                // 既没在运行也没在启动，才设为禁用
+                // 未运行且非主动停止：如果开启了自启，尝试触发自愈机制
+                if (this.settings.autoStartServer) {
+                    this.serviceManager.triggerSelfHealing("检测到服务未运行");
+                }
                 this.updateAllViewStatus('disabled');
                 return;
             }
@@ -223,6 +234,7 @@ export default class SemantixPlugin extends Plugin {
         const isConnected = await this.apiClient.checkHealth();
         if (isConnected) {
             this.apiClient.ping(); // 同时发送后端存活心跳（异步执行，不阻塞 UI）
+            this.serviceManager.onHealthyStable(); // 重置连续失败熔断计数
         }
         const nextStatus = isConnected ? 'connected' : 'disconnected';
         
@@ -254,6 +266,11 @@ export default class SemantixPlugin extends Plugin {
                 this.vaultStopwords = status.vault_stopwords || [];
             }
         } else {
+            // 连接中断时若符合自愈条件，触发自愈机制
+            if (Platform.isDesktop && this.settings.backendMode === 'local' && this.settings.autoStartServer && !this.serviceManager.isUserStopped()) {
+                this.serviceManager.triggerSelfHealing("心跳无响应");
+            }
+
             // 情况 C: 首次发生断连 (从正常转为异常)
             if (this.lastConnectionStatus === 'connected' && !silent) {
                 new Notice(t('NOTICE_DISCONNECTED'));
@@ -306,11 +323,23 @@ export default class SemantixPlugin extends Plugin {
     public updateIndexingProgress(current: number, total: number, active: boolean = true, label?: string) {
         this.indexingState = { active, current, total, label };
         this.updateAllViewIndexingProgress(this.indexingState);
+        if (this.statusBarItem) {
+            if (active && total > 0) {
+                const pct = Math.min(100, Math.max(0, Math.round((current / total) * 100)));
+                const prefix = label === 'sync' ? t('PROGRESS_LABEL_SYNC') : t('PROGRESS_LABEL_INDEX');
+                this.statusBarItem.setText(`Semantix: ${prefix} ${pct}% (${current}/${total})`);
+            } else {
+                this.statusBarItem.setText("");
+            }
+        }
     }
 
     public clearIndexingProgress() {
         this.indexingState = { active: false, current: 0, total: 0 };
         this.updateAllViewIndexingProgress(this.indexingState);
+        if (this.statusBarItem) {
+            this.statusBarItem.setText("");
+        }
     }
 
     public getIndexingState(): IndexingState {
@@ -345,7 +374,7 @@ export default class SemantixPlugin extends Plugin {
         new Notice("Semantix: 已请求取消全量索引，当前批次完成后停止。");
     }
 
-    public async startFullIndexing() {
+    public async startFullIndexing(options?: { skipConfirm?: boolean }) {
         if (this.isFullIndexing) {
             new Notice("Semantix: 全量索引正在进行中。");
             return;
@@ -368,15 +397,17 @@ export default class SemantixPlugin extends Plugin {
             return;
         }
 
-        const confirmMessage = [
-            `将索引约 ${files.length} 篇笔记，预计耗时数分钟。`,
-            "索引进度不会持久化，关闭窗口或重启将重置进度。",
-            "是否继续？"
-        ].join("\n");
+        if (!options?.skipConfirm) {
+            const confirmMessage = [
+                `将索引约 ${files.length} 篇笔记，预计耗时数分钟。`,
+                "索引进度不会持久化，关闭窗口或重启将重置进度。",
+                "是否继续？"
+            ].join("\n");
 
-        // eslint-disable-next-line no-alert
-        if (!confirm(confirmMessage)) {
-            return;
+            // eslint-disable-next-line no-alert
+            if (!confirm(confirmMessage)) {
+                return;
+            }
         }
 
         this.isFullIndexing = true;
@@ -384,62 +415,108 @@ export default class SemantixPlugin extends Plugin {
         this.updateAllViewStatus('syncing');
         this.updateIndexingProgress(0, files.length, true, "full");
 
-        const batchSize = 50;
+        let indexingNotice: Notice | null = new Notice(`Semantix: 开始全量索引 (共 ${files.length} 篇)...`, 0);
+
+        const maxBatchDocs = 25; // 限制单批最多 25 篇笔记
+        const maxBatchChars = 150_000; // 限制单批总字符数，防止超大请求包阻塞主线程
         let processed = 0;
         let canceled = false;
         let completed = false;
 
+        // 微任务与帧间空闲让渡函数，确保 UI 60fps 平滑不卡顿
+        const yieldToMain = (): Promise<void> => {
+            return new Promise((resolve) => {
+                if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+                    window.requestIdleCallback(() => resolve(), { timeout: 30 });
+                } else {
+                    setTimeout(resolve, 16);
+                }
+            });
+        };
+
         try {
-            for (let i = 0; i < files.length; i += batchSize) {
+            let currentBatchDocs: IndexDocument[] = [];
+            let currentBatchChars = 0;
+
+            const flushBatch = async (): Promise<boolean> => {
+                if (currentBatchDocs.length === 0) return true;
+                const result = await this.apiClient.indexBatch({ documents: currentBatchDocs });
+                if (!result || result.status !== 'success') {
+                    new Notice("Semantix: 索引失败，请检查后端日志。");
+                    return false;
+                }
+                currentBatchDocs = [];
+                currentBatchChars = 0;
+                await yieldToMain();
+                return true;
+            };
+
+            for (const file of files) {
                 if (this.fullIndexCancelRequested) {
                     canceled = true;
                     break;
                 }
 
-                const batch = files.slice(i, i + batchSize);
-                const documents: IndexDocument[] = [];
+                const rawText = await this.app.vault.cachedRead(file);
+                const cleaned = cleanMarkdown(rawText);
+                processed += 1;
 
-                for (const file of batch) {
-                    const rawText = await this.app.vault.cachedRead(file);
-                    const cleaned = cleanMarkdown(rawText);
-                    if (cleaned.length === 0) {
-                        processed += 1;
-                        continue;
-                    }
+                if (cleaned.length > 0) {
                     const context = this.getFileContext(file);
-                    documents.push({ 
+                    currentBatchDocs.push({ 
                         vault_id: this.vaultId, 
                         path: file.path, 
                         text: cleaned,
                         tags: context.tags,
                         links: context.links
                     });
-                    processed += 1;
-                }
+                    currentBatchChars += cleaned.length;
 
-                if (documents.length > 0) {
-                    const result = await this.apiClient.indexBatch({ documents });
-                    if (!result || result.status !== 'success') {
-                        new Notice("Semantix: 索引失败，请检查后端日志。");
-                        break;
+                    // 若达到单批篇数或字符上限，立即发射并让渡事件循环
+                    if (currentBatchDocs.length >= maxBatchDocs || currentBatchChars >= maxBatchChars) {
+                        const success = await flushBatch();
+                        if (!success) {
+                            canceled = true;
+                            break;
+                        }
                     }
                 }
 
                 this.updateIndexingProgress(processed, files.length, true, "full");
-                await new Promise(resolve => setTimeout(resolve, 0));
+                if (indexingNotice && (processed % 5 === 0 || processed === files.length)) {
+                    const pct = Math.min(100, Math.round((processed / files.length) * 100));
+                    indexingNotice.setMessage(`Semantix: 正在构建索引... ${pct}% (${processed}/${files.length})`);
+                }
             }
+
+            // 发射最后一批残留文档
+            if (!canceled && currentBatchDocs.length > 0) {
+                const success = await flushBatch();
+                if (!success) canceled = true;
+            }
+
             completed = !canceled && processed >= files.length;
         } catch (error) {
+            // eslint-disable-next-line no-console
             console.error("Semantix: Full index failed.", error);
             new Notice("Semantix: 全量索引失败，请检查后端日志。");
         } finally {
+            if (indexingNotice) {
+                indexingNotice.hide();
+                indexingNotice = null;
+            }
             this.isFullIndexing = false;
             this.fullIndexCancelRequested = false;
             this.clearIndexingProgress();
             await this.checkConnection();
 
             if (completed) {
-                new Notice("Semantix: 索引完成 ✅");
+                // 显式触发 FTS 倒排索引构建，实现即时全文检索支持
+                await this.apiClient.rebuildFtsIndex();
+                new Notice(`Semantix: 全量索引完成 ✅ (共 ${files.length} 篇笔记，全文索引已就绪)`);
+                if (this.whisperer) {
+                    this.whisperer.triggerNoteScan();
+                }
             } else if (canceled) {
                 new Notice("Semantix: 索引已取消。");
             }
@@ -450,6 +527,7 @@ export default class SemantixPlugin extends Plugin {
         this.syncManager.clearTimer();
         this.clearHealthTimer();
         this.serviceManager.stop();
+        // eslint-disable-next-line no-console
         console.log("Semantix Plugin unloaded.");
     }
 

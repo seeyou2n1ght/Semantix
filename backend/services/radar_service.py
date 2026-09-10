@@ -30,6 +30,7 @@ class RadarPipeline:
         top_k_related: int = 4,
         top_k_discover: int = 4,
         ranking_mode: str = "balanced",
+        mmr_lambda: float = 0.65,
     ) -> Dict[str, List[Dict[str, Any]]]:
         if not query_text or not query_text.strip():
             return {"related": [], "discover": []}
@@ -82,6 +83,7 @@ class RadarPipeline:
             related_selected=related_selected,
             current_path=current_path,
             top_k=top_k_discover,
+            mmr_lambda=mmr_lambda,
         )
 
         # 7. 打包为字典格式

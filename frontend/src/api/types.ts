@@ -91,6 +91,7 @@ export interface RadarSearchRequest {
     top_k_discover?: number;
     ranking_mode?: 'fast' | 'balanced' | 'high_quality';
     exclude_paths?: string[];
+    mmr_lambda?: number;
 }
 
 export interface RadarCardItem {

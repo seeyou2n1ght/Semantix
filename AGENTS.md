@@ -27,7 +27,7 @@ uv run pytest            # 运行测试
 ```bash
 cd frontend
 npm run version [patch|minor|major]   # 自动同步版本至 manifest.json, versions.json, README.md
-git add -A && git commit -m "Bump version"
+git add -A && git commit -m "chore(release): bump version"
 git tag v<x.y.z> && git push --tags
 ```
 
@@ -47,6 +47,13 @@ git tag v<x.y.z> && git push --tags
   - `backend/services/radar_service.py`: 统一双流编排管线
 - 搜索前缀: `为这个句子生成表示以用于检索相关文章：` (由 EmbeddingService 自动注入)
 - 全局版本号驱动的 SSOT: `frontend/package.json` 的 `version`
+- 进程治理与自愈:
+  - 伴生回收: Windows Win32 `GetExitCodeProcess` 探测宿主退出码（退出码 ≠ 259 立即自毁）与看门狗心跳超时自杀机制
+  - 孤儿防范: 基于 `.semantix.pid` 锁文件管理进程树，启动前精准强杀遗留进程
+  - 自愈状态机: 前端连续 3 次拉起失败熔断阻断无限重试，支持指数退避与手动重置
+- 索引流控与倒排即时构建:
+  - 前端全量索引采用自适应分片（≤25篇且≤150,000字符）与 `requestIdleCallback` 帧让渡，防止 UI 掉帧
+  - 全量索引完成后即时调用 `POST /index/rebuild-fts` 构建倒排索引，消除前 30 秒混合检索冷启动降级
 
 ## 环境变量 (可选)
 
@@ -55,6 +62,8 @@ git tag v<x.y.z> && git push --tags
 | SEMANTIX_API_TOKEN | - | 鉴权 Token |
 | SEMANTIX_DB_PATH | `./semantix_lance` | 索引存储路径 |
 | SEMANTIX_LOG_LEVEL | `INFO` | 日志级别 |
+| SEMANTIX_PARENT_PID | `0` | 宿主父进程 PID（Obsidian 退出后自动回收伴生后端） |
+| SEMANTIX_WATCHDOG_TIMEOUT | `600` | 空闲心跳超时秒数（0 表示禁用看门狗） |
 
 ## CI/CD
 

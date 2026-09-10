@@ -84,7 +84,24 @@ class LanceDBStorage:
             logger.info("Table %s created successfully.", COLLECTION_NAME)
 
     def _escape_sql_string(self, s: str) -> str:
-        return s.replace("'", "''")
+        """
+        转义 SQL 字符串字面量中的危险字符。
+        LanceDB 的 where/delete 仅接受字符串谓词，无法参数化，
+        因此需严格防御：剥离 null bytes、转义单引号与反斜杠。
+        """
+        s = s.replace("\x00", "")     # 剥离 null bytes
+        s = s.replace("\\", "\\\\")   # 转义反斜杠
+        s = s.replace("'", "''")      # 转义单引号
+        return s
+
+    def _validate_identifier(self, value: str, name: str = "value") -> str:
+        """校验标识符（vault_id / path）不含明显的注入载荷"""
+        if not value or not isinstance(value, str):
+            raise ValueError(f"Invalid {name}: must be a non-empty string")
+        # 拒绝包含 SQL 关键字与危险字符的输入
+        if any(ch in value for ch in [";", "--", "/*", "*/"]):
+            raise ValueError(f"Invalid {name}: contains disallowed characters")
+        return value
 
     def _load_custom_stopwords(self) -> Set[str]:
         if os.path.exists(self.stopword_file):
@@ -106,28 +123,29 @@ class LanceDBStorage:
 
     def count_notes(self, vault_id: Optional[str] = None) -> int:
         try:
-            if not self.table:
+            if self.table is None or self.table.count_rows() == 0:
+                logger.info("count_notes: table empty or None (vault_id=%s)", vault_id)
                 return 0
+            import pyarrow.compute as pc
+
+            arrow_tbl = self.table.to_arrow()
+            logger.info("count_notes: arrow_tbl rows=%d, vault_id=%s", len(arrow_tbl), vault_id)
             if not vault_id:
-                rows = self.table.to_list(columns=["path"])
-                return len({row.get("path") for row in rows if row.get("path")})
+                return len(pc.unique(arrow_tbl.column("path")))
 
-            try:
-                where_clause = f"vault_id = '{self._escape_sql_string(vault_id)}'"
-                rows = self.table.search(None).where(where_clause).select(["path"]).to_list()
-                return len({row.get("path") for row in rows if row.get("path")})
-            except Exception as e:
-                logger.warning("Optimized count_notes failed (%s), falling back...", e)
-
-            rows = self.table.to_list(columns=["path", "vault_id"])
-            return len({row.get("path") for row in rows if row.get("vault_id") == vault_id and row.get("path")})
+            mask = pc.equal(arrow_tbl.column("vault_id"), vault_id)
+            filtered_paths = pc.filter(arrow_tbl.column("path"), mask)
+            cnt = len(pc.unique(filtered_paths))
+            logger.info("count_notes: unique notes=%d for vault_id=%s", cnt, vault_id)
+            return cnt
         except Exception as e:
             logger.error("Error counting notes: %s", e)
             return 0
 
     def delete_by_paths(self, vault_id: str, paths: List[str]):
-        if not paths or not self.table:
+        if not paths or self.table is None:
             return
+        self._validate_identifier(vault_id, "vault_id")
         try:
             formatted_paths = ", ".join([f"'{self._escape_sql_string(p)}'" for p in paths])
             where_clause = f"vault_id = '{self._escape_sql_string(vault_id)}' AND path IN ({formatted_paths})"
@@ -138,8 +156,9 @@ class LanceDBStorage:
             raise
 
     def clear_vault(self, vault_id: str):
-        if not self.table:
+        if self.table is None:
             return
+        self._validate_identifier(vault_id, "vault_id")
         try:
             self.table.delete(f"vault_id = '{self._escape_sql_string(vault_id)}'")
             logger.info("Cleared all notes for vault_id=%s", vault_id)
@@ -157,17 +176,19 @@ class LanceDBStorage:
             raise
 
     def insert_rows(self, rows: List[Dict[str, Any]]):
-        if not rows or not self.table:
+        if not rows or self.table is None:
+            logger.warning("insert_rows skipped: rows=%s, table_is_none=%s", bool(rows), self.table is None)
             return
         try:
             self.table.add(rows)
+            logger.info("insert_rows: successfully added %d rows, current table rows=%d", len(rows), self.table.count_rows())
         except Exception as e:
             logger.error("Error inserting rows to table: %s", e)
             raise
 
     def rebuild_fts_index(self):
         try:
-            if self.table:
+            if self.table is not None:
                 self.table.create_fts_index("text", replace=True)
                 logger.info("FTS index on 'text' rebuilt successfully.")
         except Exception as e:
@@ -204,7 +225,7 @@ class LanceDBStorage:
     def optimize_database(self, retention_days: int = 7):
         from datetime import timedelta
         try:
-            if not self.table:
+            if self.table is None:
                 return
             logger.info("Starting database optimization (retention: %d days)...", retention_days)
             self.table.optimize()

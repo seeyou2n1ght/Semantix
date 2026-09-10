@@ -94,7 +94,7 @@ class RetrievalService:
         根据 query_vector 与 query_text 执行 Hybrid/Vector 召回，
         按文档路径聚合并去重，输出候选池。
         """
-        if not self.storage.table:
+        if self.storage.table is None:
             return []
 
         try:
@@ -106,10 +106,17 @@ class RetrievalService:
                 try:
                     from lancedb.rerankers import LinearCombinationReranker
                     reranker = LinearCombinationReranker(weight=0.7)
+                    clean_query_text = query_text
+                    if self.storage.vault_stopwords:
+                        # 剔除高频自适应停用词，提升 FTS/BM25 检索信噪比
+                        tokens = [t for t in query_text.split() if t.lower() not in self.storage.vault_stopwords]
+                        if tokens:
+                            clean_query_text = " ".join(tokens)
+
                     query = (
                         self.storage.table.search(query_type="hybrid")
                         .vector(query_vector)
-                        .text(query_text)
+                        .text(clean_query_text)
                         .rerank(reranker=reranker)
                         .limit(candidate_limit)
                     )
@@ -129,8 +136,21 @@ class RetrievalService:
                 formatted = ", ".join([f"'{self.storage._escape_sql_string(p)}'" for p in exclude_paths])
                 where_clauses.append(f"path NOT IN ({formatted})")
 
-            query = query.where(" AND ".join(where_clauses))
-            raw_rows = query.to_list()
+            filter_expr = " AND ".join(where_clauses)
+            raw_rows: List[Dict[str, Any]] = []
+
+            if is_hybrid:
+                try:
+                    raw_rows = query.where(filter_expr).to_list()
+                except Exception as e:
+                    logger.warning("Hybrid execution failed (%s), falling back to pure vector search.", e)
+                    is_hybrid = False
+                    fallback_query = self.storage.table.search(query_vector).metric("cosine").limit(candidate_limit)
+                    if min_similarity > 0:
+                        fallback_query = fallback_query.distance_range(upper_bound=1.0 - min_similarity)
+                    raw_rows = fallback_query.where(filter_expr).to_list()
+            else:
+                raw_rows = query.where(filter_expr).to_list()
 
             return self._aggregate_to_candidates(raw_rows, is_hybrid, min_similarity)
         except Exception as e:

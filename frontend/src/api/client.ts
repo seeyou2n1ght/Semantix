@@ -79,7 +79,7 @@ export class ApiClient {
                 }
                 this.lastHealthResponse = null;
                 return HealthStatus.CONFLICT;
-            } catch (_error) {
+            } catch {
                 this.lastHealthResponse = null;
                 return HealthStatus.NONE;
             }
@@ -286,8 +286,8 @@ export class ApiClient {
                 headers: this.getAuthHeaders(),
                 throw: false
             });
-        } catch (e) {
-            // 静默失败，心跳丢失一两次是正常的由后端缓冲区处理
+        } catch {
+            // 静默失败，心跳丢失一两次由后端缓冲区处理
         }
     }
 
@@ -306,7 +306,7 @@ export class ApiClient {
                 return res.json;
             }
             return null;
-        } catch (e) {
+        } catch {
             return null;
         }
     }
@@ -324,7 +324,7 @@ export class ApiClient {
                 body: JSON.stringify({ retention_days: retentionDays })
             });
             return res.status === 200;
-        } catch (e) {
+        } catch {
             return false;
         }
     }
@@ -345,9 +345,25 @@ export class ApiClient {
                 return res.json;
             }
             return null;
-        } catch (e) {
-            console.error("Semantix: Compute stopwords failed.", e);
+        } catch {
             return null;
+        }
+    }
+
+    /**
+     * 显式触发 FTS 倒排索引即时构建
+     */
+    async rebuildFtsIndex(): Promise<boolean> {
+        try {
+            const res = await requestUrl({
+                url: `${this.baseUrl}/index/rebuild-fts`,
+                method: 'POST',
+                contentType: 'application/json',
+                headers: this.getAuthHeaders()
+            });
+            return res.status === 200;
+        } catch {
+            return false;
         }
     }
 }

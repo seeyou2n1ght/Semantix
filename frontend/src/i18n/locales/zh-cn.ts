@@ -71,25 +71,104 @@ export default {
     WATCHDOG_TITLE: "🛡️ 后端生命周期保障：",
     WATCHDOG_DESC: "为确保系统资源不被浪费，后端集成了“存活看门狗”机制。一旦 Obsidian 意外关闭或心跳中断超过 120 秒，Python 进程会自动执行优雅退出并释放所有占用的内存。",
     
-    // 设置分组标题 (5 大高内聚核心模块)
-    SETTINGS_SECTION_CONNECTION: "1. 引擎连接与服务管理",
-    SETTINGS_SECTION_RECOMMENDATION: "2. 写作与灵感推荐",
-    SETTINGS_SECTION_INDEXING: "3. 知识库索引管理",
-    SETTINGS_SECTION_MOBILE: "4. 移动端与远程访问",
-    SETTINGS_SECTION_STORAGE: "5. 存储维护与高级操作",
+    // 设置页重构规范 (Settings v2)
+    STATUS_BANNER_READY: "已就绪",
+    STATUS_BANNER_INDEXING: "正在构建索引",
+    STATUS_BANNER_DISCONNECTED: "引擎未连接",
+    STATUS_BANNER_DISCONNECTED_DESC: "Semantix 无法执行语义检索。请确认本地服务已启动或配置远程服务地址。",
+    BTN_CHECK_CONNECTION: "检查连接",
 
-    // 搜索与精排 (Search & Ranking)
+    // 核心区块 1: 推荐体验 (Recommendation)
+    SEC_RECOMMENDATION: "推荐体验",
+    RANKING_QUALITY_NAME: "推荐质量策略",
+    RANKING_QUALITY_DESC: "平衡语义推荐的准确度与响应延迟。大多数设备推荐使用 Balanced。",
+    RANKING_FAST: "快速响应 (Fast)",
+    RANKING_BALANCED: "均衡推荐 (Balanced · 推荐)",
+    RANKING_ACCURATE: "深度精排 (Accurate)",
+    RESULTS_PER_SECTION_NAME: "单流呈现数量",
+    RESULTS_PER_SECTION_DESC: "Related 与 Discover 双流各自呈现的最大卡片数量 (2 - 8)。",
+    UPDATE_WHILE_WRITING_NAME: "写作实时联想",
+    UPDATE_WHILE_WRITING_DESC: "打字停顿后自动获取关联推荐；关闭后仅在切换笔记或点击侧栏扫描时更新。",
+    MMR_LAMBDA_NAME: "发现流探索度 (MMR λ)",
+    MMR_LAMBDA_DESC: "控制 Discover 意外关联流的多样性。数值越小 (如 0.3) 越具发散性与意外灵感；数值越大 (如 0.8) 越紧密聚焦当前主题。默认 0.65。",
+
+    // 核心区块 2: 仓库索引 (Vault Index)
+    SEC_INDEX: "仓库索引",
+    INDEX_STATUS_NAME: "索引状态",
+    INDEX_UP_TO_DATE: "最新",
+    INDEX_NOT_BUILT: "未建立索引",
+    EXCLUDED_PATHS_NAME: "排除路径规则",
+    EXCLUDED_PATHS_DESC: "语义索引时忽略的文件或文件夹（支持 Glob 通配符）。",
+    RULES_COUNT: "{{count}} 条规则",
+    BTN_EDIT_RULES: "编辑规则",
+    BTN_COLLAPSE_RULES: "收起规则",
+    EXCLUSION_PLACEHOLDER: "每行一条规则，支持通配符，例如：\nTemplates/**\nArchive/**\n**/*.canvas",
+    REBUILD_SEMANTIC_INDEX_NAME: "重建语义索引",
+    REBUILD_SEMANTIC_INDEX_DESC: "重新扫描当前仓库全部 Markdown 笔记并生成向量索引。若已有索引，将清空并重新向量化。",
+    CANCEL_INDEXING_BTN: "取消索引",
+
+    // 核心区块 3: 引擎连接 (Engine)
+    SEC_ENGINE: "本地引擎",
+    ENGINE_STATUS_NAME: "运行状态",
+    ENGINE_LOCAL_CONNECTED: "本地引擎已就绪",
+    ENGINE_REMOTE_CONNECTED: "远程引擎已连接",
+    AUTO_START_ENGINE_NAME: "随应用自动唤醒",
+    AUTO_START_ENGINE_DESC: "Obsidian 启动时自动拉起后台服务，并具备异常崩溃自愈与应用退出自动回收机制。",
+    ENGINE_MANAGE_NAME: "进程运维与自愈",
+    ENGINE_MANAGE_DESC_RUNNING: "引擎当前运行中。支持手动停止、重启或清理端口冲突；若意外崩溃将自动触发自愈。",
+    ENGINE_MANAGE_DESC_STOPPED: "引擎未在运行。可手动启动或重置自愈熔断状态。",
+    BTN_START_ENGINE: "启动服务",
+    BTN_STOP_ENGINE: "停止服务",
+    BTN_RESTART_PORT_CLEAN: "清理端口并重启",
+    NOTICE_ENGINE_STOPPED: "Semantix: 已停止本地引擎服务。",
+    NOTICE_ENGINE_STARTED: "Semantix: 正在手动唤醒本地引擎...",
+
+    // 折叠高级区 (Advanced Settings)
+    SEC_ADVANCED: "高级设置 (Advanced Settings)",
+    ADVANCED_TUNING_HEADER: "⏱️ 交互与同步微调",
+    ADVANCED_ALGO_HEADER: "🧠 算法与过滤调优",
+    ADVANCED_STORAGE_HEADER: "💾 存储维护与生命周期",
+    ADVANCED_REMOTE_HEADER: "📱 移动端与远程访问",
+    ADVANCED_DIAGNOSTICS_HEADER: "🔍 诊断信息",
+    ENGINE_DIAGNOSTICS_NAME: "引擎诊断信息",
+    ADVANCED_DANGER_HEADER: "⚠️ 危险操作",
+
+    DEBOUNCE_MS_NAME: "输入防抖延迟 (毫秒)",
+    DEBOUNCE_MS_DESC: "打字停止后延迟触发搜索的毫秒数 (200ms - 2000ms)。",
+    SYNC_INTERVAL_SEC_NAME: "增量保存同步缓冲 (秒)",
+    SYNC_INTERVAL_SEC_DESC: "笔记修改保存后，批量提交切片更新的缓冲秒数。",
+    DIVERSITY_NAME: "联想发散度 (MMR λ)",
+    DIVERSITY_DESC: "Discover 流的发散性权重：更聚焦 ↔ 更具探索性。",
+    ADAPTIVE_FILTERING_NAME: "自适应噪音词过滤",
+    ADAPTIVE_FILTERING_DESC: "基于仓库词频分布自动过滤高频模板噪音词。",
+    BTN_CALCULATE_STOPWORDS: "重新计算",
+    STORAGE_SIZE_NAME: "数据库体积与碎片",
+    STORAGE_RETENTION_NAME: "历史版本保留天数",
+    STORAGE_RETENTION_DESC: "数据库保留冗余历史版本的时长（用于时间旅行回滚）。设为 0 仅保留当前最新状态。",
+    BTN_OPTIMIZE_STORAGE: "立即整理碎片",
+    CLEAR_DATABASE_ONLY_NAME: "清空向量数据库",
+    CLEAR_DATABASE_ONLY_DESC: "强行清空向量数据库，且不自动触发全量重建。",
+    BTN_CLEAR_ONLY: "仅清空数据库",
+    BTN_COPY: "复制",
+    COPIED_TO_CLIPBOARD: "已复制到剪贴板 ✅",
+
+    // 历史兼容保留
+    SETTINGS_SECTION_CONNECTION: "引擎连接与服务管理",
+    SETTINGS_SECTION_RECOMMENDATION: "写作与灵感推荐",
+    SETTINGS_SECTION_INDEXING: "知识库索引管理",
+    SETTINGS_SECTION_MOBILE: "移动端与远程访问",
+    SETTINGS_SECTION_STORAGE: "存储维护与高级操作",
+
     RANKING_MODE_NAME: "语义精排策略",
-    RANKING_MODE_DESC: "选择检索精排深度：快速模式（纯向量极速）、平衡模式（Top 24 Cross-Encoder 精排，推荐）、高质量模式（Top 30 深度精排）。",
-    RANKING_MODE_FAST: "快速模式 (Fast - 纯向量极速)",
-    RANKING_MODE_BALANCED: "平衡模式 (Balanced - Top 24 精排 / 推荐)",
-    RANKING_MODE_HIGH: "高质量模式 (High Quality - Top 30 深度精排)",
+    RANKING_MODE_DESC: "选择检索精排深度：快速模式、平衡模式（推荐）、高质量模式。",
+    RANKING_MODE_FAST: "快速模式 (Fast)",
+    RANKING_MODE_BALANCED: "平衡模式 (Balanced · 推荐)",
+    RANKING_MODE_HIGH: "高质量模式 (High Quality)",
     TOP_N_NAME: "各栏推荐卡片数",
-    TOP_N_DESC: "Related 与 Discover 流各自呈现的最大卡片数量 (2 - 8)。当前: ",
+    TOP_N_DESC: "Related 与 Discover 流各自呈现的最大卡片数量 (2 - 8)。",
     DEBOUNCE_NAME: "实时触发防抖延迟 (毫秒)",
     DEBOUNCE_DESC: "打字暂停多长时间后自动触发隐式语义联想 (200ms - 2000ms)。",
 
-    // 索引 (Indexing)
     VAULT_ID_NAME: "仓库标识",
     VAULT_ID_DESC: "自动生成的仓库全局唯一标识。",
     START_INDEX_NAME: "全量建立索引",
@@ -104,7 +183,6 @@ export default {
     EXCLUSION_NAME: "路径排除规则",
     EXCLUSION_DESC: "每行输入一个排除路径。支持 Glob 通配符（如 Templates/**, **/*.canvas, Archive/**）。",
 
-    // 移动端 (Mobile)
     MOBILE_SECTION: "移动端与远程访问",
     ENABLE_MOBILE_NAME: "启用移动端支持 (远程模式)",
     ENABLE_MOBILE_DESC: "关闭此开关时（推荐默认），在手机或平板移动端打开 Obsidian 将默认休眠并不加载核心服务，节省电量与内存；开启后，移动端将启用插件并自动使用“远程服务模式”连接指定的后端 API 地址（移动设备无法运行本地 Python 边车，需配置可访问的远程服务地址）。",
@@ -112,14 +190,12 @@ export default {
     MOBILE_REMOTE_BANNER: "📱 移动端环境：移动设备无法运行本地 Python 边车，Semantix 正在以远程服务模式运行。请配置可访问的远程后端服务地址与 API 令牌。",
     MOBILE_CURRENT_NOTICE: "当前移动设备正在以远程服务模式运行。如需完全关闭移动端加载以节省电量，可在桌面端设置中关闭“启用移动端支持”。",
     
-    // 危险操作 (Danger)
     DANGER_SECTION: "危险操作",
     REBUILD_INDEX_NAME: "重建向量索引",
     REBUILD_INDEX_DESC: "清空向量数据库并重新触发全量索引。此操作不可逆。",
     REBUILD_BTN: "重建索引",
     REBUILDING: "清理中...",
 
-    // 数据库维护 (Maintenance)
     DB_MAINTENANCE_SECTION: "数据库健康与维护",
     DB_SIZE: "数据库大小: ",
     LAST_MAINTENANCE: "上次维护: ",
@@ -130,9 +206,14 @@ export default {
     MAINTENANCE_RUNNING: "正在优化...",
     MAINTENANCE_SUCCESS: "数据库优化完成，已释放冗余空间。",
 
-    CONFIRM_CLEAR_1: "⚠️ 确定要清空向量数据库吗？\n\n此操作将删除所有已建立的语义索引数据。",
+    CONFIRM_CLEAR_1: "⚠️ 确定要清空向量数据库并重建索引吗？\n\n此操作将删除所有已建立的语义索引数据，并自动重新扫描全库进行向量化。",
     CONFIRM_CLEAR_2: "⚠️ 再次确认：此操作不可逆！",
-    CLEAR_SUCCESS: "向量索引已清空 ✅ 请手动触发全量索引或重启插件。",
+    CONFIRM_CLEAR_ONLY_1: "⚠️ 确定要仅清空向量数据库吗？\n\n此操作将清空所有向量数据，且不会自动重新建立索引。",
+    CONFIRM_CLEAR_ONLY_2: "⚠️ 再次确认：清空后将无法进行语义搜索，直到您再次手动建立索引！",
+    CLEAR_SUCCESS: "向量索引已清空 ✅",
+    CLEAR_SUCCESS_REBUILDING: "向量索引已清空，正在自动开始全量重建...",
+    PROGRESS_LABEL_INDEX: "正在构建索引",
+    PROGRESS_LABEL_SYNC: "正在增量同步",
     CLEAR_FAILED: "清空索引失败 ❌ 请检查后端服务。",
     
     // 通知 (Notices)

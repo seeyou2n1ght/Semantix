@@ -1,5 +1,5 @@
 import { ItemView, WorkspaceLeaf, TFile, MarkdownView, Notice } from 'obsidian';
-import SemantixPlugin from '../main';
+import SemantixPlugin, { IndexingState } from '../main';
 import { RadarCardItem } from '../api/types';
 import { t } from '../i18n/helpers';
 import { PopoverPreview } from './popover-preview';
@@ -12,6 +12,10 @@ export class WhispererView extends ItemView {
     private statusTextEl!: HTMLElement;
     private contextBreadcrumbEl!: HTMLElement;
     private scanNoteBtnEl!: HTMLElement;
+    private progressContainerEl!: HTMLElement;
+    private progressTextEl!: HTMLElement;
+    private progressPercentEl!: HTMLElement;
+    private progressBarEl!: HTMLElement;
     private relatedContainerEl!: HTMLElement;
     private discoverContainerEl!: HTMLElement;
     private loadingEl: HTMLElement | null = null;
@@ -81,6 +85,22 @@ export class WhispererView extends ItemView {
             this.plugin.whisperer.triggerNoteScan();
         });
 
+        // --- 动态进度反馈条 (全量索引与增量同步) ---
+        this.progressContainerEl = wrapper.createEl("div", { 
+            cls: "semantix-indexing-progress-container is-hidden" 
+        });
+        const progressHeader = this.progressContainerEl.createEl("div", { cls: "semantix-progress-header" });
+        this.progressTextEl = progressHeader.createEl("span", { 
+            cls: "semantix-progress-text",
+            text: "" 
+        });
+        this.progressPercentEl = progressHeader.createEl("span", { 
+            cls: "semantix-progress-percent",
+            text: "0%" 
+        });
+        const progressTrack = this.progressContainerEl.createEl("div", { cls: "semantix-progress-track" });
+        this.progressBarEl = progressTrack.createEl("div", { cls: "semantix-progress-bar" });
+
         // --- 主双流卡片区 ---
         const contentArea = wrapper.createEl("div", { cls: "semantix-content-area" });
 
@@ -111,6 +131,11 @@ export class WhispererView extends ItemView {
         });
 
         this.updateStatus(this.plugin.getConnectionStatus());
+
+        const initialIndexingState = this.plugin.getIndexingState();
+        if (initialIndexingState && initialIndexingState.active) {
+            this.updateIndexingProgress(initialIndexingState);
+        }
     }
 
     async onClose() {
@@ -132,19 +157,96 @@ export class WhispererView extends ItemView {
         related: RadarCardItem[],
         discover: RadarCardItem[],
         contextPath?: string,
-        contextHeading?: string
+        contextHeading?: string,
+        queryText?: string
     ) {
         this.clearLoading();
         this.updateContextBreadcrumb(contextPath, contextHeading);
 
+        const keywords = queryText ? this.extractKeywords(queryText) : [];
+
         // 渲染 Related
-        this.renderCardList(this.relatedContainerEl, related, t('STREAM_RELATED_EMPTY'));
+        this.renderCardList(this.relatedContainerEl, related, t('STREAM_RELATED_EMPTY'), keywords);
 
         // 渲染 Discover
-        this.renderCardList(this.discoverContainerEl, discover, t('STREAM_DISCOVER_EMPTY'));
+        this.renderCardList(this.discoverContainerEl, discover, t('STREAM_DISCOVER_EMPTY'), keywords);
     }
 
-    private renderCardList(container: HTMLElement, items: RadarCardItem[], emptyText: string) {
+    /**
+     * 语言感知分词并提取关键词（结合权威停用词与自适应停用词）
+     */
+    public extractKeywords(text: string): string[] {
+        if (!text) return [];
+
+        const stopWords = new Set([
+            '的', '了', '在', '是', '和', '与', '或', '也', '都', '就', '不', '有', '这', '那',
+            '我', '你', '他', '她', '它', '们', '个', '上', '下', '中', '来', '去', '到', '说',
+            '要', '会', '能', '对', '着', '过', '从', '把', '给', '向', '而', '但', '如', '所',
+            '以', '为', '于', '之', '其', '者', '等', '时', '地', '得', '啊', '吗', '呢', '吧',
+            '呀', '哦', '哈', '嗯', '哎', '唉', '且', '并', '若', '况', '非', '莫', '既',
+            '怎么', '如何', '什么', '为什么', '哪里', '什么时候', '这样', '那样', '哪个', '哪些',
+            '觉得', '认为', '就是', '其实', '大概', '可能', '虽然', '但是', '如果', '由于', '因此',
+            '所以', '因为', '既然', '以此', '不仅', '而且', '此外', '或者', '否则', '还是', '甚至',
+            '以及', '至于', '关于', '对于', '所谓', '比如', '例如', '总之', '最后', '首先', '其次',
+            '已经', '曾经', '正在', '即将', '刚刚', '一直', '总是', '经常', '偶尔', '非常', '相当',
+            '及其', '更加', '比较', '稍微', '几乎', '所有', '整个', '一切', '各种', '各个', '部分',
+            '一些', '一点', '有些', '好多', '若干', '很多', '只有', '只要', '无论', '不管', '即使'
+        ]);
+
+        // 合并后端自适应停用词
+        if (this.plugin.settings.enableAdaptiveFiltering && this.plugin.vaultStopwords?.length > 0) {
+            for (const word of this.plugin.vaultStopwords) {
+                stopWords.add(word.toLowerCase());
+            }
+        }
+
+        const keywords: Set<string> = new Set();
+        try {
+            const SegmenterConstructor = (Intl as unknown as { Segmenter?: new (locales: string, options: { granularity: string }) => { segment: (text: string) => Iterable<{ segment: string; isWordLike: boolean }> } }).Segmenter;
+            if (SegmenterConstructor) {
+                const segmenter = new SegmenterConstructor('zh', { granularity: 'word' });
+                for (const { segment, isWordLike } of segmenter.segment(text)) {
+                    if (!isWordLike) continue;
+                    const lower = segment.toLowerCase().trim();
+                    if (stopWords.has(lower) || /^\d+$/.test(lower)) continue;
+                    if (lower.length >= 2) keywords.add(lower);
+                }
+            } else {
+                throw new Error("Intl.Segmenter unavailable");
+            }
+        } catch {
+            const words = text.match(/[\u4e00-\u9fa5]{2,}|[a-zA-Z]{3,}/g) || [];
+            for (const word of words) {
+                const lower = word.toLowerCase();
+                if (!stopWords.has(lower)) keywords.add(lower);
+            }
+        }
+
+        return Array.from(keywords).sort((a, b) => b.length - a.length).slice(0, 8);
+    }
+
+    private renderHighlightedSnippet(container: HTMLElement, snippet: string, keywords: string[]) {
+        const p = container.createEl("p", { cls: "semantix-card-snippet" });
+        if (!keywords || keywords.length === 0) {
+            p.setText(snippet);
+            return;
+        }
+
+        const escaped = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+        const regex = new RegExp(`(${escaped.join('|')})`, 'gi');
+        const parts = snippet.split(regex);
+
+        for (const part of parts) {
+            if (!part) continue;
+            if (regex.test(part)) {
+                p.createEl("mark", { cls: "semantix-highlight", text: part });
+            } else {
+                p.appendText(part);
+            }
+        }
+    }
+
+    private renderCardList(container: HTMLElement, items: RadarCardItem[], emptyText: string, keywords: string[] = []) {
         if (!container) return;
         container.empty();
 
@@ -156,6 +258,9 @@ export class WhispererView extends ItemView {
         for (const item of items) {
             const card = container.createEl("div", { cls: "semantix-radar-card" });
             card.setAttribute("title", t('CARD_CLICK_OPEN'));
+            // A11y: 支持键盘导航与屏幕阅读器
+            card.setAttribute("tabindex", "0");
+            card.setAttribute("role", "button");
 
             // 标题行与右侧动作区
             const titleRow = card.createEl("div", { cls: "semantix-card-title-row" });
@@ -184,8 +289,8 @@ export class WhispererView extends ItemView {
                 this.handleInsertLink(item);
             });
 
-            // 摘要行 (紧凑两行)
-            card.createEl("p", { cls: "semantix-card-snippet", text: item.snippet });
+            // 摘要行 (高亮关键词与自适应降噪)
+            this.renderHighlightedSnippet(card, item.snippet, keywords);
 
             // 标签徽标行
             if (item.labels && item.labels.length > 0) {
@@ -209,6 +314,13 @@ export class WhispererView extends ItemView {
             // 点击卡片直接打开笔记并定位段落
             card.addEventListener("click", () => {
                 this.handleJumpToNote(item);
+            });
+            // A11y: 键盘 Enter/Space 触发与点击等效行为
+            card.addEventListener("keydown", (e: KeyboardEvent) => {
+                if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    this.handleJumpToNote(item);
+                }
             });
         }
     }
@@ -287,8 +399,27 @@ export class WhispererView extends ItemView {
         this.statusTextEl.setText(text);
     }
 
-    public updateIndexingProgress(_state: unknown) {
-        // 保留接口兼容性
+    /**
+     * 更新索引与同步进度视觉指示器
+     */
+    public updateIndexingProgress(state: IndexingState) {
+        if (!this.progressContainerEl || !this.progressBarEl || !this.progressTextEl || !this.progressPercentEl) {
+            return;
+        }
+
+        if (state && state.active && state.total > 0) {
+            this.progressContainerEl.removeClass("is-hidden");
+            const pct = Math.min(100, Math.max(0, Math.round((state.current / state.total) * 100)));
+            this.progressBarEl.setCssStyles({ width: `${pct}%` });
+            this.progressPercentEl.setText(`${pct}%`);
+            const label = state.label === 'sync' ? t('PROGRESS_LABEL_SYNC') : t('PROGRESS_LABEL_INDEX');
+            this.progressTextEl.setText(`${label} (${state.current}/${state.total})`);
+            this.updateStatus('syncing');
+        } else {
+            this.progressContainerEl.addClass("is-hidden");
+            this.progressBarEl.setCssStyles({ width: '0%' });
+            this.updateStatus(this.plugin.getConnectionStatus());
+        }
     }
 
     public updateIndexStatus(_totalNotes: number, _lastUpdated?: string) {

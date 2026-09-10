@@ -28,8 +28,14 @@ semantix_chroma.db/
 *.db/
 *.db
 custom_stopwords.json
+*.pid
+.semantix.pid
 .coverage
 coverage/
+
+# Test residue
+test_lance_tmp*/
+test_version_check/
 
 # macOS
 .DS_Store

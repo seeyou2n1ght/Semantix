@@ -75,6 +75,65 @@
     background: var(--interactive-hover);
 }
 
+/* 索引/同步动态进度面板 */
+.semantix-indexing-progress-container {
+    margin-bottom: 12px;
+    padding: 8px 10px;
+    background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: opacity 0.2s ease;
+}
+
+.semantix-indexing-progress-container.is-hidden {
+    display: none;
+}
+
+.semantix-progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.75em;
+    color: var(--text-muted);
+}
+
+.semantix-progress-text {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.semantix-progress-percent {
+    font-weight: 600;
+    color: var(--text-accent);
+    font-variant-numeric: tabular-nums;
+}
+
+.semantix-progress-track {
+    width: 100%;
+    height: 4px;
+    background-color: var(--background-modifier-border);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.semantix-progress-bar {
+    height: 100%;
+    width: 0%;
+    background-color: var(--interactive-accent);
+    border-radius: 2px;
+    transition: width 0.15s ease-out;
+}
+
+.semantix-status-bar-item {
+    font-size: 0.85em;
+    color: var(--text-muted);
+}
+
 .semantix-content-area {
     flex: 1;
     overflow-y: auto;
@@ -113,8 +172,9 @@
     cursor: pointer;
     transition: background-color 0.15s ease, border-color 0.15s ease;
     box-sizing: border-box;
-    /* 原卡片保持紧凑，不随 hover 自增高度，消除布局 Jitter */
-    height: 78px;
+    /* 自适应高度：保持紧凑同时支持大字体/无障碍缩放 */
+    min-height: 78px;
+    max-height: 100px;
     overflow: hidden;
 }
 
@@ -189,6 +249,13 @@
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
+}
+
+.semantix-highlight {
+    background-color: var(--text-highlight-bg, rgba(255, 208, 0, 0.25));
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 1px;
 }
 
 .semantix-badge-row {
@@ -360,4 +427,128 @@
     0% { opacity: 0.6; }
     50% { opacity: 0.3; }
     100% { opacity: 0.6; }
+}
+
+/* ========================================================================= */
+/* Settings v2 Styles                                                        */
+/* ========================================================================= */
+
+.semantix-status-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    gap: 12px;
+}
+
+.semantix-status-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.semantix-status-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 0.95em;
+}
+
+.semantix-status-desc {
+    font-size: 0.8em;
+    color: var(--text-muted);
+}
+
+.semantix-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.semantix-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--text-faint);
+}
+
+.semantix-status-dot.dot-ready {
+    background-color: var(--color-green);
+}
+
+.semantix-status-dot.dot-indexing {
+    background-color: var(--color-yellow);
+    animation: semantix-pulse 1.2s infinite;
+}
+
+.semantix-status-dot.dot-disconnected {
+    background-color: var(--text-accent);
+}
+
+.semantix-exclusion-drawer {
+    margin: 6px 0 16px 0;
+    padding: 12px;
+    background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.semantix-exclusion-textarea {
+    width: 100%;
+    height: 90px;
+    font-family: var(--font-monospace);
+    font-size: 0.85em;
+    resize: vertical;
+}
+
+.semantix-settings-advanced {
+    margin-top: 24px;
+    margin-bottom: 20px;
+    border-top: 1px solid var(--background-modifier-border);
+    padding-top: 16px;
+}
+
+.semantix-advanced-summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.95em;
+    color: var(--text-muted);
+    padding: 6px 0;
+    user-select: none;
+    transition: color 0.15s ease;
+}
+
+.semantix-advanced-summary:hover {
+    color: var(--text-normal);
+}
+
+.semantix-advanced-content {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.semantix-sub-heading {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin: 16px 0 6px 0;
+    padding-bottom: 4px;
+    border-bottom: 1px dashed var(--background-modifier-border);
+    letter-spacing: 0.02em;
+}
+
+.semantix-sub-heading:first-child {
+    margin-top: 4px;
 }

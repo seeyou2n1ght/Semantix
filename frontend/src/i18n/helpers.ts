@@ -20,7 +20,9 @@ export function t(key: keyof typeof en, params?: { [key: string]: string | numbe
     
     if (params) {
         Object.keys(params).forEach((paramKey) => {
-            text = text.replace(`{{${paramKey}}}`, String(params[paramKey]));
+            const val = String(params[paramKey]);
+            text = text.split(`{{${paramKey}}}`).join(val);
+            text = text.split(`{${paramKey}}`).join(val);
         });
     }
     

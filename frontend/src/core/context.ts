@@ -6,6 +6,7 @@ export type ContextTransitionType =
     | 'NEW_FILE'
     | 'NEW_HEADING'
     | 'NEW_PARAGRAPH'
+    | 'LINE_CHANGE'
     | 'SAME_PARAGRAPH'
     | 'NOTE_MODE';
 
@@ -21,6 +22,7 @@ export class ContextEngine {
     private lastFilePath: string | null = null;
     private lastHeading: string | null = null;
     private lastParagraphLine: number | null = null;
+    private lastCursorLine: number | null = null;
 
     /**
      * 重置状态（例如关闭文件或失焦）
@@ -29,6 +31,7 @@ export class ContextEngine {
         this.lastFilePath = null;
         this.lastHeading = null;
         this.lastParagraphLine = null;
+        this.lastCursorLine = null;
     }
 
     /**
@@ -40,7 +43,12 @@ export class ContextEngine {
 
         const cursor = editor.getCursor();
         const paragraphInfo = this.extractParagraph(editor, cursor.line);
-        const cleanedText = cleanMarkdown(paragraphInfo.text).trim();
+        
+        // 优先以当前光标所在行作为核心语义 Focus，若当前行为空或过短则回退至整段
+        const currentLineRaw = editor.getLine(cursor.line);
+        const currentLineClean = cleanMarkdown(currentLineRaw).trim();
+        const paragraphClean = cleanMarkdown(paragraphInfo.text).trim();
+        const cleanedText = currentLineClean.length >= 4 ? currentLineClean : paragraphClean;
         if (cleanedText.length < 3) return null;
 
         const heading = this.findClosestHeading(editor, cursor.line);
@@ -54,6 +62,8 @@ export class ContextEngine {
             transitionType = 'NEW_HEADING';
         } else if (this.lastParagraphLine !== paragraphInfo.startLine) {
             transitionType = 'NEW_PARAGRAPH';
+        } else if (this.lastCursorLine !== cursor.line) {
+            transitionType = 'LINE_CHANGE';
         } else {
             transitionType = 'SAME_PARAGRAPH';
         }
@@ -61,10 +71,12 @@ export class ContextEngine {
         this.lastFilePath = filePath;
         this.lastHeading = heading;
         this.lastParagraphLine = paragraphInfo.startLine;
+        this.lastCursorLine = cursor.line;
 
-        // 生成稳定的前端 context_id
-        const safeHeading = (heading || 'root').replace(/[^\w\u4e00-\u9fa5]/g, '_');
-        const contextId = `${filePath}#${safeHeading}#L${paragraphInfo.startLine}`;
+        // 生成稳定的前端 context_id，细化至当前行
+        // 使用黑名单剔除 Obsidian 特殊字符，保留多语言 Unicode（日/韩/欧洲语言等）
+        const safeHeading = (heading || 'root').replace(/[#^[\]|{}\\/<>:;`]/g, '_');
+        const contextId = `${filePath}#${safeHeading}#L${cursor.line}`;
 
         const metadata = view.app.metadataCache.getFileCache(file);
         const tags = metadata?.tags?.map(t => t.tag) || [];
