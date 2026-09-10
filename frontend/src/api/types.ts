@@ -70,3 +70,41 @@ export interface ClearIndexConfirmResponse {
     message: string;
     cleared_at: string;
 }
+
+// --- Radar Dual Stream Types ---
+
+export interface RadarContext {
+    path?: string;
+    title?: string;
+    heading?: string;
+    text: string;
+    tags?: string[];
+    links?: string[];
+    scope?: 'focus' | 'note';
+}
+
+export interface RadarSearchRequest {
+    vault_id: string;
+    context_id: string;
+    context: RadarContext;
+    top_k_related?: number;
+    top_k_discover?: number;
+    ranking_mode?: 'fast' | 'balanced' | 'high_quality';
+    exclude_paths?: string[];
+}
+
+export interface RadarCardItem {
+    id: string;
+    path: string;
+    title: string;
+    snippet: string;
+    score: number;
+    labels: string[];
+    matched_chunk_index?: number;
+}
+
+export interface RadarSearchResponse {
+    context_id: string;
+    related: RadarCardItem[];
+    discover: RadarCardItem[];
+}

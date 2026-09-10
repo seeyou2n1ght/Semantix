@@ -2,34 +2,41 @@ import { Editor, MarkdownView, TFile, debounce } from 'obsidian';
 import { ViewPlugin, ViewUpdate } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import SemantixPlugin from '../main';
-import { cleanMarkdown } from '../utils/markdown';
-import { SearchResultItem } from '../api/types';
 import { WHISPERER_VIEW_TYPE, WhispererView } from '../ui/whisperer-view';
+import { ContextEngine, ContextSnapshot } from './context';
+import { QueryChangeGate } from './query-gate';
+import { ResultStabilizer } from './result-stabilizer';
+
+import { RadarCardItem } from '../api/types';
 
 export class Whisperer {
     plugin: SemantixPlugin;
-    
-    private lastSearchedText: string = "";
-    private lastParagraphText: string = "";
+    private contextEngine: ContextEngine;
+    private queryGate: QueryChangeGate;
+    private stabilizer: ResultStabilizer;
+
     private currentSearchId: number = 0;
-    
-    public debouncedSearch: () => void;
     private cursorActivityTimer: number | null = null;
+    public debouncedSearch: () => void;
 
     constructor(plugin: SemantixPlugin) {
         this.plugin = plugin;
+        this.contextEngine = new ContextEngine();
+        this.queryGate = new QueryChangeGate();
+        this.stabilizer = new ResultStabilizer();
         this.setupDebounce();
     }
 
     public setupDebounce() {
+        const delay = this.plugin.settings.debounceDelay || 400;
         this.debouncedSearch = debounce(
-            this.handleSearchTrigger.bind(this),
-            this.plugin.settings.debounceDelay,
+            this.handleFocusTrigger.bind(this),
+            delay,
             false
         );
     }
 
-public getCursorActivityExtension(): Extension {
+    public getCursorActivityExtension(): Extension {
         const onCursorActivity = () => this.onCursorActivity();
         return ViewPlugin.fromClass(class {
             update(update: ViewUpdate) {
@@ -42,10 +49,10 @@ public getCursorActivityExtension(): Extension {
 
     public async onFileOpen(file: TFile | null) {
         if (!file || file.extension !== 'md') return;
-        
-        this.lastSearchedText = "";
-        this.lastParagraphText = "";
-        await this.handleSearchTrigger();
+        this.queryGate.reset();
+        this.contextEngine.reset();
+        this.stabilizer.resetAll();
+        await this.handleFocusTrigger(true);
     }
 
     public onEditorChange(_editor: Editor, _view: MarkdownView): void {
@@ -53,148 +60,134 @@ public getCursorActivityExtension(): Extension {
     }
 
     public onCursorActivity(): void {
-        if (this.plugin.settings.whispererScope === 'document') return;
-        
         const view = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
         if (!view || !view.file) return;
-        
-        const editor = view.editor;
-        const cursor = editor.getCursor();
-        const paragraphText = this.extractParagraph(editor, cursor.line);
-        const cleaned = this.cleanText(paragraphText);
-        
-        if (cleaned === this.lastParagraphText) return;
-        this.lastParagraphText = cleaned;
-        
+
         if (this.cursorActivityTimer !== null) {
             window.clearTimeout(this.cursorActivityTimer);
         }
-        
+
+        // 光标位移轻量 300ms 防抖
         this.cursorActivityTimer = window.setTimeout(() => {
-            this.handleSearchTrigger();
+            this.handleFocusTrigger(false);
         }, 300);
     }
 
-    private cleanText(text: string): string {
-        return cleanMarkdown(text).trim().slice(0, 100);
-    }
-
-    private async handleSearchTrigger() {
+    /**
+     * 核心触发逻辑：Focus 模式
+     */
+    private async handleFocusTrigger(isJump: boolean = false) {
         const view = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
         if (!view || !view.file) return;
 
-        let extractText = "";
-        if (this.plugin.settings.whispererScope === 'document') {
-            extractText = view.editor.getValue();
-        } else {
-            const cursor = view.editor.getCursor();
-            extractText = this.extractParagraph(view.editor, cursor.line);
+        const snapshot = this.contextEngine.captureFocusSnapshot(view.editor, view);
+        if (!snapshot) return;
+
+        const isContextJump = isJump || snapshot.transitionType !== 'SAME_PARAGRAPH';
+        const decision = this.queryGate.evaluate(snapshot.cleanedText, isContextJump);
+        if (!decision.shouldTrigger) {
+            return;
         }
 
-        const cleaned = cleanMarkdown(extractText);
-        if (cleaned.length < 5) return;
+        await this.executeRadarSearch(snapshot);
+    }
 
-        if (cleaned === this.lastSearchedText) return;
-        this.lastSearchedText = cleaned;
+    /**
+     * 用户主动点击“扫描整篇” (Note Mode)
+     */
+    public async triggerNoteScan() {
+        const view = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!view || !view.file) return;
 
-        let excludes: string[] = [view.file.path];
+        const snapshot = this.contextEngine.captureNoteSnapshot(view);
+        if (!snapshot) return;
 
-        if (this.plugin.settings.filterLinkedNotes) {
-            const cache = this.plugin.app.metadataCache.resolvedLinks[view.file.path];
-            if (cache) {
-                const linkedPaths = Object.keys(cache);
-                excludes = excludes.concat(linkedPaths);
-            }
-        }
+        await this.executeRadarSearch(snapshot);
+    }
 
+    /**
+     * 发起 Radar 检索与稳定器渲染
+     */
+    private async executeRadarSearch(snapshot: ContextSnapshot) {
         if (this.plugin.getConnectionStatus() !== 'connected') {
             return;
         }
 
-        console.debug("Semantix Whisperer: Triggering semantic search...");
+        const searchId = ++this.currentSearchId;
         this.showLoading();
 
-        // 捕获当前搜索 ID 以处理竞态条件
-        const searchId = ++this.currentSearchId;
-
-        // P1: 为全篇搜索注入增强上下文
-        let queryText = cleaned;
-        if (this.plugin.settings.whispererScope === 'document') {
-            const cache = this.plugin.app.metadataCache.getFileCache(view.file);
-            const tags = cache?.tags?.map(t => t.tag) || [];
-            const uniqueTags = [...new Set(tags)];
-            const tagStr = uniqueTags.length > 0 ? `标签: ${uniqueTags.join(' ')}\n` : '';
-            queryText = `标题: ${view.file.basename}\n${tagStr}${cleaned}`;
+        let excludes: string[] = snapshot.context.path ? [snapshot.context.path] : [];
+        if (this.plugin.settings.exclusionRules) {
+            const extraExcludes = this.plugin.settings.exclusionRules
+                .split('\n')
+                .map(s => s.trim())
+                .filter(Boolean);
+            excludes = excludes.concat(extraExcludes);
         }
 
-        const context = this.plugin.getFileContext(view.file);
-
-        const response = await this.plugin.apiClient.semanticSearch({
-            vault_id: this.plugin.vaultId,
-            text: queryText,
-            top_k: this.plugin.settings.topNResults,
-            exclude_paths: excludes,
-            min_similarity: this.plugin.settings.minSimilarityThreshold,
-            with_context: this.plugin.settings.enableExplainableResults,
-            rerank: this.plugin.settings.enableReranking,
-            current_path: view.file.path,
-            current_tags: context.tags,
-            current_links: context.links
-        });
-
-        // 如果搜索 ID 已过时，丢弃结果
-        if (searchId !== this.currentSearchId) {
-            return;
-        }
-
-        if (response && response.results) {
-            this.renderResults(response.results, cleaned, {
-                colorThresholdHigh: this.plugin.settings.colorThresholdHigh,
-                colorThresholdMedium: this.plugin.settings.colorThresholdMedium
+        try {
+            const response = await this.plugin.apiClient.radarSearch({
+                vault_id: this.plugin.vaultId,
+                context_id: snapshot.contextId,
+                context: snapshot.context,
+                top_k_related: this.plugin.settings.topNResults || 4,
+                top_k_discover: this.plugin.settings.topNResults || 4,
+                ranking_mode: this.plugin.settings.rankingMode || 'balanced',
+                exclude_paths: excludes
             });
-        } else {
-            this.clearLoading();
+
+            // 丢弃陈旧请求结果，防止乱序覆盖
+            if (searchId !== this.currentSearchId) {
+                return;
+            }
+
+            if (response) {
+                // 通过 ResultStabilizer 实现双 Policy 平滑替换与标签锁定
+                const stabilized = this.stabilizer.stabilize(
+                    response.related || [],
+                    response.discover || [],
+                    snapshot.transitionType
+                );
+
+                this.renderResults(
+                    stabilized.related,
+                    stabilized.discover,
+                    snapshot.context.path,
+                    snapshot.context.heading
+                );
+            }
+        } catch (e) {
+            // eslint-disable-next-line no-console
+            console.error("Radar search execution error:", e);
+        } finally {
+            if (searchId === this.currentSearchId) {
+                this.clearLoading();
+            }
         }
     }
 
-    private extractParagraph(editor: Editor, startLineNo: number): string {
-        let text = editor.getLine(startLineNo);
-        if (text.trim() === '') return '';
-        
-        let currentLine = startLineNo - 1;
-        while (currentLine >= 0) {
-            const lineText = editor.getLine(currentLine);
-            if (lineText.trim() === '') break;
-            text = lineText + '\n' + text;
-            currentLine--;
-        }
-
-        currentLine = startLineNo + 1;
-        const totalLines = editor.lineCount();
-        while (currentLine < totalLines) {
-            const lineText = editor.getLine(currentLine);
-            if (lineText.trim() === '') break;
-            text = text + '\n' + lineText;
-            currentLine++;
-        }
-
-        return text;
-    }
-
-    private renderResults(results: SearchResultItem[], queryText: string, colorSettings?: { colorThresholdHigh: number; colorThresholdMedium: number }) {
+    private renderResults(
+        related: RadarCardItem[],
+        discover: RadarCardItem[],
+        contextPath?: string,
+        contextHeading?: string
+    ) {
         const leaves = this.plugin.app.workspace.getLeavesOfType(WHISPERER_VIEW_TYPE);
         if (leaves.length === 0) return;
-
         const leaf = leaves[0];
         if (leaf && leaf.view instanceof WhispererView) {
-            (leaf.view as WhispererView).renderWhispererResults(results, queryText, colorSettings);
+            (leaf.view as WhispererView).renderRadarResults(
+                related,
+                discover,
+                contextPath,
+                contextHeading
+            );
         }
     }
 
     private showLoading() {
         const leaves = this.plugin.app.workspace.getLeavesOfType(WHISPERER_VIEW_TYPE);
         if (leaves.length === 0) return;
-
         const leaf = leaves[0];
         if (leaf && leaf.view instanceof WhispererView) {
             (leaf.view as WhispererView).showLoading();
@@ -204,7 +197,6 @@ public getCursorActivityExtension(): Extension {
     private clearLoading() {
         const leaves = this.plugin.app.workspace.getLeavesOfType(WHISPERER_VIEW_TYPE);
         if (leaves.length === 0) return;
-
         const leaf = leaves[0];
         if (leaf && leaf.view instanceof WhispererView) {
             (leaf.view as WhispererView).clearLoading();

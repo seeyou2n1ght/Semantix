@@ -1,6 +1,16 @@
 import { requestUrl, RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { SemantixSettings } from '../settings';
-import { BatchIndexRequest, BatchIndexResponse, DeleteIndexRequest, DeleteIndexResponse, SemanticSearchRequest, SemanticSearchResponse, IndexStatusResponse } from './types';
+import {
+    BatchIndexRequest,
+    BatchIndexResponse,
+    DeleteIndexRequest,
+    DeleteIndexResponse,
+    SemanticSearchRequest,
+    SemanticSearchResponse,
+    IndexStatusResponse,
+    RadarSearchRequest,
+    RadarSearchResponse,
+} from './types';
 
 export enum HealthStatus {
     READY = "READY",       // 我们的后端已就绪
@@ -165,6 +175,37 @@ export class ApiClient {
         }
     }
 
+    /**
+     * Dual Stream Radar Search (/search/radar)
+     */
+    async radarSearch(request: RadarSearchRequest): Promise<RadarSearchResponse | null> {
+        if (!request.context.text || request.context.text.trim() === '') {
+            return { context_id: request.context_id, related: [], discover: [] };
+        }
+        try {
+            const payload: RadarSearchRequest = {
+                ...request,
+                vault_id: this.vaultId,
+            };
+            const res = await requestUrl({
+                url: `${this.baseUrl}/search/radar`,
+                method: 'POST',
+                contentType: 'application/json',
+                headers: this.getAuthHeaders(),
+                body: JSON.stringify(payload)
+            });
+            if (res.status === 200 && res.json) {
+                return res.json;
+            }
+            return null;
+        } catch (error) {
+            if (error instanceof Error && error.name === 'AbortError') return null;
+            // eslint-disable-next-line no-console
+            console.error("Semantix: Radar search failed.", error);
+            return null;
+        }
+    }
+
     async getIndexStatus(): Promise<IndexStatusResponse | null> {
         try {
             const url = `${this.baseUrl}/index/status?vault_id=${encodeURIComponent(this.vaultId)}`;
@@ -248,7 +289,7 @@ export class ApiClient {
     /**
      * 获取系统运行指标
      */
-    async getMetrics(): Promise<any | null> {
+    async getMetrics(): Promise<Record<string, unknown> | null> {
         try {
             const res = await requestUrl({
                 url: `${this.baseUrl}/metrics`,

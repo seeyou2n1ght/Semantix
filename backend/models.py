@@ -64,6 +64,45 @@ class SemanticSearchResponse(BaseModel):
     results: List[SearchResultItem]
 
 
+# --- Dual Stream Radar Models ---
+
+
+class RadarContext(BaseModel):
+    path: Optional[str] = Field(None, description="Current note path in vault")
+    title: Optional[str] = Field(None, description="Current note title")
+    heading: Optional[str] = Field(None, description="Current heading under cursor")
+    text: str = Field(..., description="Query focus text or note content")
+    tags: Optional[List[str]] = Field(default_factory=list, description="Tags associated with current note")
+    links: Optional[List[str]] = Field(default_factory=list, description="Outgoing links from current note")
+    scope: Optional[str] = Field("focus", description="Context scope: focus or note")
+
+
+class RadarSearchRequest(BaseModel):
+    vault_id: str = Field(..., description="Obsidian vault id")
+    context_id: str = Field(..., description="Frontend generated stable context id")
+    context: RadarContext = Field(..., description="Structured context")
+    top_k_related: Optional[int] = Field(4, description="Count of related items to return")
+    top_k_discover: Optional[int] = Field(4, description="Count of discover items to return")
+    ranking_mode: Optional[str] = Field("balanced", description="fast, balanced, or high_quality")
+    exclude_paths: Optional[List[str]] = Field(default_factory=list, description="Paths to exclude")
+
+
+class RadarCardItem(BaseModel):
+    id: str = Field(..., description="Unique card/note identifier for UI tracking")
+    path: str = Field(..., description="Vault relative path")
+    title: str = Field(..., description="Note title")
+    snippet: str = Field(..., description="Relevant context snippet")
+    score: float = Field(..., description="Normalized score [0, 1]")
+    labels: List[str] = Field(default_factory=list, description="Machine label codes (e.g. UNLINKED, CROSS_TOPIC)")
+    matched_chunk_index: Optional[int] = None
+
+
+class RadarSearchResponse(BaseModel):
+    context_id: str = Field(..., description="Echoed context id from frontend request")
+    related: List[RadarCardItem] = Field(default_factory=list)
+    discover: List[RadarCardItem] = Field(default_factory=list)
+
+
 # --- Status Models ---
 
 

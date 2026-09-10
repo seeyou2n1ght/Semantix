@@ -28,6 +28,7 @@ export interface SemantixSettings {
     dbRetentionDays: number;
     enableReranking: boolean;
     enableAdaptiveFiltering: boolean;
+    rankingMode: 'fast' | 'balanced' | 'high_quality';
 }
 
 export const DEFAULT_SETTINGS: SemantixSettings = {
@@ -39,11 +40,11 @@ export const DEFAULT_SETTINGS: SemantixSettings = {
     backendPath: '',
     uvSyncOnStart: false,
     whispererScope: 'paragraph',
-    debounceDelay: 2000,
+    debounceDelay: 400,
     syncBatchInterval: 60,
     exclusionRules: '',
     filterLinkedNotes: true,
-    topNResults: 5,
+    topNResults: 4,
     minSimilarityThreshold: 0.70,
     colorThresholdHigh: 0.85,
     colorThresholdMedium: 0.75,
@@ -51,7 +52,8 @@ export const DEFAULT_SETTINGS: SemantixSettings = {
     enableOnMobile: false,
     dbRetentionDays: 7,
     enableReranking: true,
-    enableAdaptiveFiltering: true
+    enableAdaptiveFiltering: true,
+    rankingMode: 'balanced'
 };
 
 export class SemantixSettingTab extends PluginSettingTab {
@@ -62,7 +64,7 @@ export class SemantixSettingTab extends PluginSettingTab {
     private debounceTimer: number | null = null;
     
     // DB Metrics
-    private dbMetrics: any = null;
+    private dbMetrics: { db_size_bytes?: number; last_maintenance_at?: string; [key: string]: unknown } | null = null;
 
     constructor(app: App, plugin: SemantixPlugin) {
         super(app, plugin);
@@ -510,6 +512,19 @@ export class SemantixSettingTab extends PluginSettingTab {
                 .setValue(this.plugin.settings.whispererScope)
                 .onChange(async (value) => {
                     this.plugin.settings.whispererScope = value as 'paragraph' | 'document';
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName("精排模式 (Ranking Mode)")
+            .setDesc("选择检索精排深度：快速（纯向量极速），平衡（Top 24 候选 Cross-Encoder 精排），高质量（Top 30 全候选精排）。")
+            .addDropdown(dropdown => dropdown
+                .addOption('fast', '快速 (Fast)')
+                .addOption('balanced', '平衡 (Balanced, 推荐)')
+                .addOption('high_quality', '高质量 (High Quality)')
+                .setValue(this.plugin.settings.rankingMode || 'balanced')
+                .onChange(async (value) => {
+                    this.plugin.settings.rankingMode = value as 'fast' | 'balanced' | 'high_quality';
                     await this.plugin.saveSettings();
                 }));
 

@@ -22,6 +22,9 @@ from models import (
     MetricsResponse,
     ClearIndexConfirmRequest,
     MaintenanceRequest,
+    RadarSearchRequest,
+    RadarSearchResponse,
+    RadarCardItem,
 )
 from model_svc import model_svc
 from db_svc import DatabaseService
@@ -375,9 +378,55 @@ def confirm_clear_index(request: ClearIndexConfirmRequest):
     }
 
 
-@app.post("/search/semantic", response_model=SemanticSearchResponse, tags=["Search"])
+@app.post("/search/radar", response_model=RadarSearchResponse, tags=["Search"])
+def radar_search(request: RadarSearchRequest):
+    """
+    Semantix Radar 核心双流端点：
+    同时计算 Related (强相关) 与 Discover (意外关联) 两路结果，
+    由前端生成 context_id 并原样 Echo，支持 fast / balanced / high_quality 精排。
+    """
+    start = time.perf_counter()
+    ctx = request.context
+    query_text = ctx.text.strip() if ctx.text else ""
+    if not query_text:
+        return RadarSearchResponse(
+            context_id=request.context_id,
+            related=[],
+            discover=[]
+        )
+
+    try:
+        radar_result = db_svc.radar_search(
+            vault_id=request.vault_id,
+            query_text=query_text,
+            current_path=ctx.path,
+            current_tags=ctx.tags,
+            current_links=ctx.links,
+            exclude_paths=request.exclude_paths,
+            top_k_related=request.top_k_related or 4,
+            top_k_discover=request.top_k_discover or 4,
+            ranking_mode=request.ranking_mode or "balanced",
+        )
+    except Exception as e:
+        logger.error("Radar search failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"Radar search failed: {str(e)}")
+
+    duration_ms = (time.perf_counter() - start) * 1000
+    METRICS["total_searches"] += 1
+    METRICS["last_search_at"] = datetime.now().isoformat()
+    METRICS["last_search_ms"] = duration_ms
+    logger.info("Radar search [%s] completed in %.2fms", request.context_id, duration_ms)
+
+    return RadarSearchResponse(
+        context_id=request.context_id,
+        related=[RadarCardItem(**item) for item in radar_result.get("related", [])],
+        discover=[RadarCardItem(**item) for item in radar_result.get("discover", [])],
+    )
+
+
+@app.post("/search/semantic", response_model=SemanticSearchResponse, tags=["Search"], deprecated=True)
 def semantic_search(request: SemanticSearchRequest):
-    """Search for similar notes based on semantic meaning."""
+    """Deprecated adapter: 保持对旧客户端的向后兼容，内部转为 Radar 检索的 Related 流"""
     if not request.text or len(request.text.strip()) == 0:
         return SemanticSearchResponse(results=[])
 

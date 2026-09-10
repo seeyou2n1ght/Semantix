@@ -2,7 +2,7 @@ import { moment } from "obsidian";
 import en from "./locales/en";
 import zhCn from "./locales/zh-cn";
 
-const localeMap: { [key: string]: any } = {
+const localeMap: Record<string, Record<string, string>> = {
     en,
     "zh-cn": zhCn,
 };
@@ -15,8 +15,7 @@ const localeMap: { [key: string]: any } = {
  */
 export function t(key: keyof typeof en, params?: { [key: string]: string | number }): string {
     const lang = moment.locale();
-    const currentLocale = localeMap[lang] || localeMap["en"];
-    
+    const currentLocale = localeMap[lang] || localeMap["en"] || en;
     let text = currentLocale[key] || en[key] || key;
     
     if (params) {

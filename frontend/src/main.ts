@@ -3,10 +3,8 @@ import { SemantixSettings, DEFAULT_SETTINGS, SemantixSettingTab } from "./settin
 import { ApiClient } from './api/client';
 import { IndexDocument } from './api/types';
 import { WhispererView, WHISPERER_VIEW_TYPE } from './ui/whisperer-view';
-import { RadarView, RADAR_VIEW_TYPE } from './ui/radar-view';
 import { SyncManager } from './core/sync';
 import { Whisperer } from './core/whisperer';
-import { OrphanRadar } from './core/radar';
 import { ServiceManager } from './core/service-manager';
 import { cleanMarkdown } from './utils/markdown';
 import { t } from './i18n/helpers';
@@ -23,7 +21,6 @@ export default class SemantixPlugin extends Plugin {
     apiClient: ApiClient;
     syncManager: SyncManager;
     whisperer: Whisperer;
-    orphanRadar: OrphanRadar;
     serviceManager: ServiceManager;
     vaultId: string;
     isMobileHibernating: boolean = false;
@@ -47,7 +44,6 @@ export default class SemantixPlugin extends Plugin {
         this.apiClient = new ApiClient(this.settings, this.vaultId);
         this.syncManager = new SyncManager(this);
         this.whisperer = new Whisperer(this);
-        this.orphanRadar = new OrphanRadar(this);
         this.serviceManager = new ServiceManager(this);
 
         // 2.1 注册状态播报消费者（实现右上角动态 Notice）
@@ -97,38 +93,31 @@ export default class SemantixPlugin extends Plugin {
         this.settingTab = new SemantixSettingTab(this.app, this);
         this.addSettingTab(this.settingTab);
 
-        // 4. 注册两个独立的 Sidebar View
+        // 4. 注册单一 Semantix Radar 侧栏视图
         this.registerView(
             WHISPERER_VIEW_TYPE,
             (leaf) => new WhispererView(leaf, this)
         );
-        this.registerView(
-            RADAR_VIEW_TYPE,
-            (leaf) => new RadarView(leaf, this)
-        );
 
-        // 5. Ribbon Icons —— 分别打开各自的视图
-        this.addRibbonIcon('message-circle', `${t('PLUGIN_NAME')}: Whisperer`, () => {
-            this.activateWhispererView();
-        });
+        // 5. Ribbon Icon —— 打开 Semantix Radar 视图
         this.addRibbonIcon('radar', `${t('PLUGIN_NAME')}: Radar`, () => {
-            this.activateRadarView();
+            this.activateWhispererView();
         });
 
         // 6. 全局命令
         this.addCommand({
-            id: 'semantix-open-whisperer',
-            name: `${t('PLUGIN_NAME')}: Open whisperer`,
+            id: 'semantix-open-radar',
+            name: `${t('PLUGIN_NAME')}: Open Radar`,
             callback: () => {
                 this.activateWhispererView();
             }
         });
         this.addCommand({
-            id: 'semantix-scan-orphans',
-            name: `${t('PLUGIN_NAME')}: Scan orphan notes`,
+            id: 'semantix-scan-note',
+            name: `${t('PLUGIN_NAME')}: Scan Whole Note`,
             callback: () => {
-                this.activateRadarView();
-                this.orphanRadar.scanAndRender();
+                this.activateWhispererView();
+                this.whisperer.triggerNoteScan();
             }
         });
 
@@ -186,12 +175,6 @@ export default class SemantixPlugin extends Plugin {
         await this.activateViewByType(WHISPERER_VIEW_TYPE);
     }
 
-    /**
-     * 打开或聚焦 Radar 视图
-     */
-    async activateRadarView() {
-        await this.activateViewByType(RADAR_VIEW_TYPE);
-    }
 
     /**
      * 通用视图激活逻辑：如已存在则聚焦，否则在右侧边栏创建
@@ -299,11 +282,6 @@ export default class SemantixPlugin extends Plugin {
                 (leaf.view as WhispererView).updateStatus(status);
             }
         }
-        for (const leaf of this.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE)) {
-            if (leaf.view instanceof RadarView) {
-                (leaf.view as RadarView).updateStatus(status);
-            }
-        }
 
         // 同步通知设置面板刷新（如果已打开）
         if (this.settingTab) {
@@ -318,11 +296,6 @@ export default class SemantixPlugin extends Plugin {
         for (const leaf of this.app.workspace.getLeavesOfType(WHISPERER_VIEW_TYPE)) {
             if (leaf.view instanceof WhispererView) {
                 (leaf.view as WhispererView).updateIndexStatus(totalNotes, lastUpdated);
-            }
-        }
-        for (const leaf of this.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE)) {
-            if (leaf.view instanceof RadarView) {
-                (leaf.view as RadarView).updateIndexStatus(totalNotes, lastUpdated);
             }
         }
     }
@@ -355,11 +328,6 @@ export default class SemantixPlugin extends Plugin {
         for (const leaf of this.app.workspace.getLeavesOfType(WHISPERER_VIEW_TYPE)) {
             if (leaf.view instanceof WhispererView) {
                 (leaf.view as WhispererView).updateIndexingProgress(state);
-            }
-        }
-        for (const leaf of this.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE)) {
-            if (leaf.view instanceof RadarView) {
-                (leaf.view as RadarView).updateIndexingProgress(state);
             }
         }
     }
