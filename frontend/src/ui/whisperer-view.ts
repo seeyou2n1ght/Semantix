@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf, TFile, MarkdownView } from 'obsidian';
+import { ItemView, WorkspaceLeaf, TFile, MarkdownView, Notice } from 'obsidian';
 import SemantixPlugin from '../main';
 import { RadarCardItem } from '../api/types';
 import { t } from '../i18n/helpers';
@@ -85,7 +85,11 @@ export class WhispererView extends ItemView {
 
         // 1. Related 区域
         const relatedSection = contentArea.createEl("div", { cls: "semantix-section" });
-        relatedSection.createEl("div", { cls: "semantix-section-header", text: "高度相关 · Related" });
+        relatedSection.createEl("div", { 
+            cls: "semantix-section-header", 
+            text: "RELATED",
+            attr: { "title": "与当前输入高度相关的笔记与段落" }
+        });
         this.relatedContainerEl = relatedSection.createEl("div", { cls: "semantix-card-list" });
         this.relatedContainerEl.createEl("p", {
             text: t('WAITING_INPUT'),
@@ -94,7 +98,11 @@ export class WhispererView extends ItemView {
 
         // 2. Discover 区域
         const discoverSection = contentArea.createEl("div", { cls: "semantix-section" });
-        discoverSection.createEl("div", { cls: "semantix-section-header", text: "发现 · Discover" });
+        discoverSection.createEl("div", { 
+            cls: "semantix-section-header", 
+            text: "DISCOVER",
+            attr: { "title": "相关但不重复、可能带来新联想的意外关联" }
+        });
         this.discoverContainerEl = discoverSection.createEl("div", { cls: "semantix-card-list" });
         this.discoverContainerEl.createEl("p", {
             text: "写作时将自动发掘跨主题关联与未链接笔记...",
@@ -146,10 +154,34 @@ export class WhispererView extends ItemView {
 
         for (const item of items) {
             const card = container.createEl("div", { cls: "semantix-radar-card" });
+            card.setAttribute("title", "点击直接打开笔记");
 
-            // 标题行与匹配分
+            // 标题行与右侧动作区
             const titleRow = card.createEl("div", { cls: "semantix-card-title-row" });
             titleRow.createEl("span", { cls: "semantix-card-title", text: item.title });
+
+            const metaRow = titleRow.createEl("div", { cls: "semantix-card-meta-actions" });
+
+            // 分值百分比
+            if (typeof item.score === 'number' && !isNaN(item.score)) {
+                const pct = Math.round(item.score * 100);
+                metaRow.createEl("span", { 
+                    cls: "semantix-card-score", 
+                    text: `${pct}%`,
+                    attr: { "title": `语义匹配度: ${pct}%` }
+                });
+            }
+
+            // 快捷引用按钮（插入到当前光标处，阻止冒泡）
+            const linkBtn = metaRow.createEl("button", {
+                cls: "semantix-card-btn-link",
+                text: "🔗",
+                attr: { "title": "插入 [[笔记]] 链接至当前光标处", "aria-label": "插入链接" }
+            });
+            linkBtn.addEventListener("click", (e: MouseEvent) => {
+                e.stopPropagation();
+                this.handleInsertLink(item);
+            });
 
             // 摘要行 (紧凑两行)
             card.createEl("p", { cls: "semantix-card-snippet", text: item.snippet });
@@ -165,7 +197,7 @@ export class WhispererView extends ItemView {
                 }
             }
 
-            // 悬浮 Popover 预览 (防自身高度形变导致布局抖动)
+            // 悬浮 Popover 预览 (展示更完整的关联元数据与段落)
             card.addEventListener("mouseenter", () => {
                 this.popoverPreview.show(card, item);
             });
@@ -173,7 +205,7 @@ export class WhispererView extends ItemView {
                 this.popoverPreview.scheduleHide();
             });
 
-            // 点击原位打开并定位段落
+            // 点击卡片直接打开笔记并定位段落
             card.addEventListener("click", () => {
                 this.handleJumpToNote(item);
             });
@@ -226,6 +258,7 @@ export class WhispererView extends ItemView {
         const link = `[[${item.title}]]`;
         editor.replaceRange(link, cursor);
         editor.setCursor({ line: cursor.line, ch: cursor.ch + link.length });
+        new Notice(`已插入链接: [[${item.title}]]`, 1500);
     }
 
     public showLoading() {
