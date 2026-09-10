@@ -1,55 +1,88 @@
-# 检索与召回逻辑详解
+# 检索与排序算法详解
 
-Semantix 采用深度的三阶段检索策略（Hybrid + Path Boost + Cross-rerank），旨在本地环境下提供媲美云端 RAG 的准确度。
+Semantix 采用基于 LanceDB 的四阶段混合召回与动态双流排序架构，兼顾当前编辑语义的高精度收敛（Related）与跨主题知识涌现（Discover）。
 
-## 1. 结构化文本预处理 (Structured Preprocessing)
+---
 
-不同于传统的正则清洗，Semantix 采用 Markdown AST (语法树) 解析器：
-- **保留结构**：精确识别标题层级、列表嵌套与代码块。
-- **语义身份注入 (Identity Injection)**：
-    - **全路径前缀**：为每个块注入 `[目录 > 文件名 > 标题路径]`。
-    - **示例**：`[Work/Archive > ProjectA > 设计文档 > 技术选型] ...文本内容`。
-    - **价值**：利用 Obsidian 的目录结构作为隐含语义标签，解决重名文件歧义。
+## 1. 结构化切分与父子块 (AST Chunking)
 
-## 2. 父子块与滑动窗口 (Parent-Child & Sliding Window)
+1. **AST 语义分段**：基于 Markdown 抽象语法树识别标题层级、代码块、引用与列表项，不破坏语法边界。
+2. **颗粒度解耦**：
+   - **子块 (Index Chunk, ~400 字符)**：作为稠密向量化的基准单元，嵌入任务前缀 `为这个句子生成表示以用于检索相关文章：` 进行高维语义匹配。
+   - **父块 (Context Chunk, 完整段落或列表容器)**：命中子块后回溯所属父块，提供完整的阅读与思考上下文。
+3. **路径前缀注入**：块级文本自动拼合目录名、文件名与所属 Heading，解决重名笔记歧义。
 
-后端执行“颗粒度解耦”切块：
-- **子块 (Index Chunk - ~400 字符)**：作为向量化的基准单元，用于高精度匹配。
-- **父块 (Context Chunk - 段落/完整列表)**：作为子块的容器，检索命中后向用户展示父块全貌。
-- **滑动窗口重叠 (10%-20% Overlap)**：确保长段落在物理切割处不丢失核心语义。
+---
 
-## 3. 增强召回策略 (Triple-layer Retrieval)
+## 2. 粗排混合召回 (Hybrid Retrieval)
 
-| 阶段 | 策略 | 作用 |
-| --- | --- | --- |
-| **Stage 1: Hybrid** | Vector + FTS (0.7:0.3) | 同时捕捉语义意图与精确关键词（如 ID、专有名词）。 |
-| **Stage 2: Path Boost** | 目录亲和度加权 | 若命中文件与当前活动笔记处于**同一目录**，得分获得 `+0.05` 的奖励分。 |
-| **Stage 3: Rerank** | Cross-encoder 精排 | 利用 `bge-reranker-base` 对 Top 15 候选进行二次打分，纠正向量检索的偏差。 |
-| **Stage 4: Context**| 标签与链接感知 | **Tags**: 共有标签加分 (`+0.05`/个)；**Links**: 若目标已在当前笔记的出链中，给予显著加分 (`+0.2`)。 |
+- **Vector 语义召回**：基于 `BAAI/bge-small-zh-v1.5` 生成 512 维向量，通过 LanceDB 检索余弦相似度 Top 45。
+- **FTS 关键词召回**：通过 LanceDB 内置 Tantivy 倒排索引检索精确词频 Top 45。
+- **块级去重聚合**：将 Top 45 子块按笔记文件路径聚合为 Top 25 篇候选。同一笔记命中多个块时保留最高分块作为匹配基点，并赋予命中频次奖励（Hit Bonus: 单次 +0.02，上限 +0.06）。
 
-## 4. 文档级聚合评分 (Aggregation)
+---
 
-1. **去重聚合**：同一文件的多个命中子块合并，取精排最高分作为 Base Score。
-2. **命中增益 (Hit-boost)**：每额外命中一个位置不同的块，得分增加 0.02 (上限 0.06)。
-3. **最终分计算**：`Final = Rerank_Score + Hit_boost + Path_boost`。
+## 3. 分数动态归一化 (Score Normalization)
 
-## 5. 结果解释与展示
+由于余弦相似度、Cross-Encoder Logits 与 FTS BM25 分数值域存在量纲差异，在进入双流前执行 Min-Max 动态线性标定：
 
-### 5.1 Snippet Focusing
-后端返回经过 **Snippet Focusing** 处理的文本：
-- 如果命中点在长段落结尾，Snippet 会自动前移，确保关键词在展示框中心。
-- 指示灯映射：🟢 >= 0.85 (强相关), 🔵 >= 0.75 (相关), 🟡 < 0.75 (潜在关联)。
+$$\widetilde{S}(x) = \frac{x - \min(X)}{\max(X) - \min(X) + \epsilon}$$
 
-### 5.2 智能关键词高亮 (v0.7.0)
-前端使用浏览器原生 `Intl.Segmenter` API 对查询文本进行语言感知分词，替代了之前的暴力 N-gram 切分。
-- **内置停用词库**：约 150+ 词的权威中文停用词典，自动过滤虚词、代词、连词等无意义高亮。
-- **自适应噪音过滤**：后端可选启用基于文档频率 (DF) 的仓库级噪音词自动识别。
-    - 若某词在超过 80% 的文档中出现，标记为噪音词并同步至前端。
-    - 前端在高亮时自动合并"内置停用词 + 仓库自适应噪音词"进行过滤。
-- **降级策略**：若 `Intl.Segmenter` 不可用，回退为正则匹配（中文 ≥2字、英文 ≥3字母）。
+当候选集离散度极小（$\max(X) - \min(X) < 10^{-6}$）时，回退为常数均值映射，杜绝浮点溢出与分值虚高。
 
-## 6. 自动化维护 (Auto-Maintenance)
-为防止 `_transactions` 与 `_versions` 目录无限增长，系统会在后台：
-1. **定时任务**：每 24 小时执行一次 `table.optimize()`。
-2. **版本清理**：自动移除超过用户设定天数（默认 7 天）的历史版本，释放磁盘空间。
+---
+
+## 4. 双流排序管线 (Dual-stream Ranking)
+
+```text
+               [Top 25 粗排候选池]
+                        │
+       ┌────────────────┴────────────────┐
+       ▼                                 ▼
+ [Related 强相关流]               [Discover 探索流]
+       │                                 │
+ Cross-Encoder 精排              Relevance Gate 门控 (≥ 0.35)
+       │                                 │
+ 结构亲和度提权 (Path/Tag/Link)    强排除 Related 结果
+       │                                 │
+ 最终截断 Top K_related           结构惩罚 (出链/同目录降权)
+                                         │
+                                   MMR 贪心多样性打散
+                                         │
+                                  最终截断 Top K_discover
+```
+
+### 4.1 Related (强相关流)
+1. **精排重打分**：调用 `BAAI/bge-reranker-base` 对 Top 12（balanced）或 Top 25（high_quality）候选进行 Cross-Attention 计算，经 Sigmoid 结合幂函数非线性校准映射至 $[0, 1]$。
+2. **结构加权 (Structure Boosting)**：
+   - **出链笔记 (Direct Link)**：$S_{\text{rel}} \leftarrow S_{\text{rel}} + 0.20$
+   - **同目录笔记 (Same Folder)**：$S_{\text{rel}} \leftarrow S_{\text{rel}} + 0.05$
+   - **共有标签 (Shared Tags)**：每个共有标签 $+0.05$，上限 $+0.15$
+3. **截断输出**：按复合分降序排列，取 Top $K_{\text{related}}$。
+
+### 4.2 Discover (意料之外流)
+1. **Relevance Gate**：过滤归一化相关分低于阈值（默认 0.35）的无关噪音。
+2. **Hard Mutual Exclusion**：强排除已入选 Related 的全部笔记。
+3. **结构惩罚 (Novelty Penalty)**：
+   - 已直接链接的笔记降权：$S_{\text{disc}} \leftarrow S_{\text{disc}} \times 0.6$
+   - 同目录笔记降权：$S_{\text{disc}} \leftarrow S_{\text{disc}} \times 0.8$
+4. **MMR (Maximal Marginal Relevance) 内部多样性打散**：
+   在剩余候选集 $R \setminus S$ 中贪心迭代选择使下式最大化的候选 $d_i$ 加入结果集 $S$：
+
+   $$\text{MMR}(d_i) = \lambda \cdot \operatorname{Sim}(d_i, q) - (1 - \lambda) \max_{d_j \in S} \operatorname{Sim}(d_i, d_j)$$
+
+   - $\lambda = 0.65$：平衡相关度与内部相异度，确保最终选出的 Discover 卡片覆盖不同的主题聚类。
+
+---
+
+## 5. 推荐理由标签 (Explainable Labels)
+
+系统为每张卡片动态生成 1~2 个指示标签：
+- `DIRECT_LINK`：当前笔记存在指向该文件的双向链接
+- `SHARE_TAGS`：共享核心标签
+- `SAME_FOLDER` / `RELATED_FOLDER`：物理目录共存或相邻
+- `HIGH_RELEVANCE`：语义相关度极高（前 10%）
+- `CROSS_TOPIC`：跨越目录但存在潜在语义桥梁
+- `SPARK`：Discover 流高新颖度灵感推荐
+
 

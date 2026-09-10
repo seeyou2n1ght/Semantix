@@ -26,8 +26,10 @@ from models import (
     RadarSearchResponse,
     RadarCardItem,
 )
+from services.embedding_service import embedding_service
+from services.reranker_service import reranker_service
+from db_svc import db_svc, DatabaseService
 from model_svc import model_svc
-from db_svc import DatabaseService
 from reranker_svc import reranker_svc
 
 API_TOKEN = os.getenv("SEMANTIX_API_TOKEN", "").strip() or None
@@ -181,7 +183,7 @@ def startup_event():
     mt_thread = threading.Thread(target=maintenance_worker, daemon=True)
     mt_thread.start()
     # 预加载精排模型
-    reranker_svc.start_loading()
+    reranker_service.start_loading()
     logger.info("Semantix backend service started. Parent PID: %d", PARENT_PID)
 
 
@@ -197,7 +199,7 @@ def shutdown_event():
 @app.get("/health", tags=["System"])
 def health_check():
     """Simple health check endpoint. Checks if backend is alive and model is ready."""
-    if not model_svc.is_ready:
+    if not embedding_service.is_ready:
         return {"status": "loading", "message": "Model is loading..."}
     return {"status": "ok", "message": "Semantix backend is ready."}
 
@@ -432,10 +434,8 @@ def semantic_search(request: SemanticSearchRequest):
 
     start = time.perf_counter()
     try:
-        # Encode the query text with BGE instruction prefix
-        # "为这个句子生成表示以用于检索相关文章：" is required for asymmetric retrieval with BAAI/bge-small-zh-v1.5
-        query_text = f"为这个句子生成表示以用于检索相关文章：{request.text}"
-        query_vector = model_svc.encode([query_text])[0]
+        # Encode the query text with BGE instruction prefix via embedding_service
+        query_vector = embedding_service.encode_query(request.text)
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Embedding generation failed: {str(e)}"

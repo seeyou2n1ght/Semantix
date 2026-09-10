@@ -132,3 +132,9 @@ class DatabaseService:
                 }
             )
         return results
+
+
+# 全局默认单例
+DB_PATH = os.getenv("SEMANTIX_DB_PATH", "./semantix_lance").strip()
+db_svc = DatabaseService(db_path=DB_PATH)
+

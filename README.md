@@ -1,85 +1,86 @@
-# 语义雷达 (SemantixRadar)
+# Semantix
 
-Semantix 是一个面向 Obsidian 的本地语义关联引擎。它通过神经网络理解笔记内容，为你发现笔记之间隐藏的语义脉络。
+面向 Obsidian 的本地语义检索与发现引擎。核心功能：在写作时自动发现已有笔记中的高相关内容（Related）与意外跨主题关联（Discover）。
 
-项目当前版本：`v0.7.0`
-
----
-
-## 🚀 核心功能
-
-- **建议灵感 (Whisperer)**：根据当前编辑内容推荐相关的笔记片段（支持 Cross-encoder 精排与 **轻量模式** 切换）。
-- **孤岛雷达 (Orphan Radar)**：识别未链接的笔记并提供高相关性关联建议。
-- **深度语义 RAG 2.0**:
-    - **标签与链接感知**：自动识别笔记 Tags 与出链，逻辑关联权重高于物理路径。
-    - **父子块检索**：子块精准匹配，父块完整展示。
-    - **标题感知切片**：基于 Markdown AST 的结构化智能分段。
-    - **路径语义加速**：自动识别笔记目录层级并作为语义背景注入评分。
-- **混合检索策略 (Hybrid Search)**: 深度融合向量语义与词频（FTS）信号。
-- **智能高亮与噪音过滤 (v0.7.0)**：基于 `Intl.Segmenter` 的语言感知分词 + 内置权威停用词库 + 可选的仓库自适应噪音过滤。
-- **自动化维护**：内置数据库碎片整理与过期版本自动清理机制。
+当前版本：`v0.7.0`
 
 ---
 
-## 🔒 隐私与安全说明
+## 核心能力
 
-作为一款注重隐私的工具，Semantix 遵循以下原则：
-1. **数据本地化**：所有笔记的向量转换和检索均在您的本地环境（Local Sidecar）或您自行托管的远程服务器（Remote Service）上完成。
-2. **严禁外流**：插件绝不会将您的笔记内容发送给任何第三方云服务或 Semantix 官方服务器。
-3. **透明可控**：您可以随时通过设置面板监控后端的活跃状态。
-
----
-
-## 📖 文档中心
-
-想要深入了解？请查阅以下专项手册：
-
-### 🏁 快速开始
-- **[部署与配置手册](./docs/setup.md)**：后端环境搭建、插件安装、常见问题排查。
-
-### ⚙️ 技术细节
-- **[架构设计图](./docs/architecture.md)**：系统拓扑、代码组织。
-- **[检索逻辑详解](./docs/retrieval.md)**：Markdown 清洗、切块算法。
-- **[API 参考](./docs/api.md)**：后端 REST 接口规范。
+1. **Related (强相关)**：检索与当前编辑光标或段落语义紧密相关的笔记片段，经由 Cross-Encoder 二次精排。
+2. **Discover (意料之外)**：通过 Relevance Gate 门控、Related 强去重与 MMR（最大边际相关）打散算法，召回相关但不重复的跨主题灵感。
+3. **沉浸式交互 (Anti-Jitter)**：
+   - **单侧边栏设计**：卡片固定高度（78px），消除内容跳动。
+   - **Popover 悬浮预览**：悬浮展示父块完整上下文与 Markdown 链接快捷复制。
+   - **原位段落定位**：点击卡片直接在主编辑区打开笔记并滚动高亮对应命中块。
+4. **纯本地与隐私优先**：向量化计算与 LanceDB 索引完全在本地完成，无外部网络请求。
 
 ---
 
-## 📦 快速安装
+## 技术架构
 
-1. **后端**：在 `backend/` 下使用 `uv` 环境（推荐）。
-2. **插件**：安装后在设置中指定 `后端项目路径`。
-3. **即刻使用**：插件将自动探测环境并拉起服务，点击 **开始索引** 即可起航。
+```text
+Obsidian (UI / Context) <--- REST API (CORS) ---> FastAPI Sidecar (Computation)
+         |                                                 |
+  [ContextEngine]                                 [Storage: LanceDB]
+  [QueryChangeGate]                               [Embedding: BGE-Small-zh-v1.5]
+  [ResultStabilizer]                              [Reranker: BGE-Reranker-Base]
+  [PopoverPreview]                                [Ranking Pipeline: Related + Discover MMR]
+```
 
----
-
----
-
-- **Frontend**: TypeScript, Obsidian API.
-- **Backend**: Python, FastAPI, Sentence-Transformers.
-- **Database**: LanceDB.
-
-### 🧠 依赖模型说明
-
-Semantix 默认使用以下 SOTA 模型以保障检索质量：
-- **向量模型 (Embedding)**: `BAAI/bge-small-zh-v1.5`
-  - 512 维，专门针对中文检索优化，性能与显存占用的黄金平衡点。
-- **精排模型 (Reranker)**: `BAAI/bge-reranker-base`
-  - Cross-encoder 架构，对初步召回结果进行二次精排，显著提升“建议灵感”的准确度。
-
-> [!TIP]
-> 首次启动时后端会自动从 HuggingFace 下载模型（约 1.2GB），国内用户将自动通过镜像站加速。
+### 依赖模型
+- **向量模型 (Embedding)**: `BAAI/bge-small-zh-v1.5`（512 维，首次启动自动拉取至本地缓存）
+- **精排模型 (Reranker)**: `BAAI/bge-reranker-base`（Cross-Encoder，支持 fast / balanced / high_quality 模式）
+- **向量存储**: LanceDB (物理表 `semantix_notes`, 混合向量 + FTS 全文索引)
 
 ---
 
-## 🏗️ 维护与发布 (开发者指南)
+## 快速开始
 
-项目采用 **单一事实来源 (SSOT)** 管理版本：
-- **同步机制**：版本号由 `frontend/package.json` 驱动。
-- **自动化操作**：在 `frontend` 目录下运行 `npm version [patch|minor|major]`，系统会自动同步更新 `manifest.json`、`versions.json` 以及 `README.md` 中的版本声明。
-- **构建注入**：构建时会自动将版本号注入为 `PLUGIN_VERSION` 常量。
+### 1. 后端伴生服务 (Python 3.11+)
+
+```bash
+cd backend
+uv sync
+uv run uvicorn main:app --host 127.0.0.1 --port 8000
+```
+
+### 2. 前端插件 (Node 22+)
+
+```bash
+cd frontend
+npm ci
+npm run build
+```
+
+编译产物为 `main.js`、`manifest.json` 与 `styles.css`。将它们放入 Obsidian 仓库的 `.obsidian/plugins/semantix/` 即可。
 
 ---
 
-## License
+## 文档索引
+
+- **[部署与配置手册](docs/setup.md)**：依赖安装、自动拉起与环境配置
+- **[架构与抗抖设计](docs/architecture.md)**：前端状态机、后端分层流水线与并发竞态控制
+- **[检索与算法详解](docs/retrieval.md)**：AST 切分、相关性归一化、MMR 多样性公式与理由标签生成
+- **[API 接口契约](docs/api.md)**：`POST /search/radar` 及全量 REST API 定义
+
+---
+
+## 开发者工作流与版本发布
+
+版本号以 `frontend/package.json` 为单一真实源 (SSOT)：
+
+```bash
+cd frontend
+npm run version [patch|minor|major]  # 自动同步版本至 manifest.json、versions.json 与 README.md
+git add -A && git commit -m "chore(release): bump version"
+git tag v<version> && git push --tags
+```
+
+---
+
+## 开源协议
 
 MIT
+

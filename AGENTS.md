@@ -38,9 +38,14 @@ git tag v<x.y.z> && git push --tags
 
 ## 技术细节
 
-- 模型首次启动自动下载 (BAAI/bge-small-zh-v1.5 + BAAI/bge-reranker-base)
-- 数据库: LanceDB，默认路径 `./semantix.db`
-- 搜索前缀: `为这个句子生成表示以用于检索相关文章：`
+- 模型首次启动自动下载至本地缓存 (BAAI/bge-small-zh-v1.5 + BAAI/bge-reranker-base)
+- 数据库: LanceDB，默认存储路径 `./semantix_lance`
+- 架构分层:
+  - `backend/storage/`: LanceDBStorage 物理存储与隔离
+  - `backend/services/`: EmbeddingService, RerankerService, RetrievalService, IndexService
+  - `backend/services/ranking/`: 归一化、Related 精排、Discover MMR 打散与标签生成
+  - `backend/services/radar_service.py`: 统一双流编排管线
+- 搜索前缀: `为这个句子生成表示以用于检索相关文章：` (由 EmbeddingService 自动注入)
 - 全局版本号驱动的 SSOT: `frontend/package.json` 的 `version`
 
 ## 环境变量 (可选)
@@ -48,15 +53,15 @@ git tag v<x.y.z> && git push --tags
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | SEMANTIX_API_TOKEN | - | 鉴权 Token |
-| SEMANTIX_DB_PATH | `./semantix.db` | 索引存储路径 |
+| SEMANTIX_DB_PATH | `./semantix_lance` | 索引存储路径 |
 | SEMANTIX_LOG_LEVEL | `INFO` | 日志级别 |
 
 ## CI/CD
 
-- `lint.yml`: 前端 lint (push/PR 触发)
-- `release.yml`: 构建并发布 Release (tag 触发)
+- `lint.yml`: 全量 CI 检查（前端 lint/build + 后端 pytest）
+- `release.yml`: 生产 Release（直接发布 main.js、manifest.json、styles.css，配置 attest-build-provenance，禁用 .zip）
 
 ## 注意事项
 
-- 后端搜索接口需带前缀 `"为这个句子生成表示以用于检索相关文章："` 才能正确调用 bge-small-zh-v1.5
 - 版本号必须通过 `npm run version` 更改，禁止直接编辑 package.json
+- 后端模块解耦后，禁止直接在业务逻辑中重新实例化 SentenceTransformer / CrossEncoder，必须通过统一单例服务调用

@@ -7,6 +7,8 @@ on:
 
 permissions:
     contents: write
+    id-token: write
+    attestations: write
 
 jobs:
     build:
@@ -29,19 +31,21 @@ jobs:
               working-directory: frontend
               run: npm run build
 
-            - name: Package frontend artifacts
-              working-directory: frontend
-              run: |
-                  mkdir -p release
-                  cp main.js manifest.json release/
-                  if [ -f styles.css ]; then cp styles.css release/; fi
-                  cd release
-                  zip -r "../semantix-${{ github.ref_name }}.zip" .
+            - name: Attest Build Provenance
+              uses: actions/attest-build-provenance@v2
+              with:
+                  subject-path: |
+                      frontend/main.js
+                      frontend/manifest.json
+                      frontend/styles.css
 
             - name: Create Release
               uses: softprops/action-gh-release@v2
               with:
-                  files: frontend/semantix-${{ github.ref_name }}.zip
+                  files: |
+                      frontend/main.js
+                      frontend/manifest.json
+                      frontend/styles.css
                   generate_release_notes: true
                   draft: false
                   prerelease: false

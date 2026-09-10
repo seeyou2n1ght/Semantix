@@ -60,32 +60,107 @@ Semantix 后端通过 REST API 提供服务。所有涉及数据的请求均需�
 
 ---
 
-## 3. 搜索接口 (Search)
+## 3. 语义雷达接口 (Radar Search)
 
-### `POST /search/semantic`
-- **用途**：最核心的检索接口。
-- **参数**：
-  - `text`: 查询文本。
-  - `vault_id`: 目标库哈希。
-  - `top_k`: 返回结果数量。
-  - `min_similarity`: 最低相似度阈值。
-  - `exclude_paths`: 需要排除的文件路径列表。
-  - `current_path`: 当前活动笔记路径，用于开启目录亲和度加权 (Path Boost)。
-  - `rerank`: 是否开启 Cross-encoder 精排重排 (默认开启)。
-  - `current_tags`: 当前笔记标签，用于 Tag 亲和度加权。
-  - `current_links`: 当前笔记出链列表，用于 Link 亲和度加权。
-- **响应**：包含 `path`, `score`, `snippet`, `reasons`, `score_details` 的结果列表。
+### `POST /search/radar` (核心双流接口)
+- **用途**：统一双流检索入口，无状态返回 Related（强相关）与 Discover（意外关联）双卡片集合。
+- **Header**:
+  - `X-Vault-Id`: `<vault-hash>`（必需）
+  - `X-Semantix-Token`: `<token>`（可选，启用鉴权时必需）
+- **Request Body**:
+  ```json
+  {
+    "query": "当前聚焦的句子或段落文本",
+    "vault_id": "8f3a12b4",
+    "context": {
+      "focus_text": "当前光标所在块内容",
+      "active_heading": "当前三级标题",
+      "note_title": "卡片盒笔记法实践",
+      "note_path": "Inbox/Zettelkasten.md",
+      "cursor_line": 42,
+      "cursor_col": 15,
+      "outgoing_links": ["写作方法", "卢曼"],
+      "tags": ["pkm", "workflow"],
+      "mode": "focus"
+    },
+    "context_id": "ctx-1725940000000-abcd",
+    "top_k_related": 4,
+    "top_k_discover": 4,
+    "exclude_paths": ["Inbox/Zettelkasten.md"],
+    "ranking_mode": "balanced"
+  }
+  ```
+- **参数说明**:
+  | 字段 | 类型 | 说明 |
+  | :--- | :--- | :--- |
+  | `query` | string | 查询主文本（自动拼接 BGE 检索前缀） |
+  | `vault_id` | string | 逻辑仓库隔离哈希标识 |
+  | `context` | object | 客户端采集的编辑器上下文（用于模式识别、结构加权与父子块回溯） |
+  | `context_id` | string | 前端生成的唯一请求会话 ID，后端原样 Echo |
+  | `top_k_related` | int | Related 流最大返回条数（默认 4） |
+  | `top_k_discover` | int | Discover 流最大返回条数（默认 4） |
+  | `exclude_paths` | list[str] | 排除路径列表（强制包含当前笔记路径） |
+  | `ranking_mode` | string | 精排策略：`fast`（关闭精排）、`balanced`（Top 12 精排）、`high_quality`（Top 25 全量精排） |
 
-### `POST /maintenance/run`
-- **用途**：手动触发数据库碎片整理与旧版本清理。
-- **参数**：
-    - `retention_days`: (int) 保留的历史版本天数。
-    - `vault_id`: (str, optional) 指定仓库。
-- **响应**：`{"status": "ok", "message": "..."}`
+- **Response Body**:
+  ```json
+  {
+    "related": [
+      {
+        "path": "Notes/Luhmann_Slipbox.md",
+        "title": "Luhmann_Slipbox",
+        "snippet": "...卡片盒系统的核心在于给思考以物理外包，通过双向链接形成意料之外的网络...",
+        "score": 0.88,
+        "stream": "related",
+        "labels": ["DIRECT_LINK", "HIGH_RELEVANCE"],
+        "matched_chunk_index": 2
+      }
+    ],
+    "discover": [
+      {
+        "path": "Philosophy/Emergence_Theory.md",
+        "title": "Emergence_Theory",
+        "snippet": "...简单规则在大量节点的局部互动下，自发涌现出全局层面的宏观有序结构...",
+        "score": 0.65,
+        "stream": "discover",
+        "labels": ["CROSS_TOPIC", "SPARK"],
+        "matched_chunk_index": 0
+      }
+    ],
+    "context_id": "ctx-1725940000000-abcd",
+    "meta": {
+      "total_candidates": 45,
+      "duration_ms": 32.5,
+      "ranking_mode": "balanced"
+    }
+  }
+  ```
 
 ---
 
-## 4. 鉴权
-如果后端环境变量设置了 `SEMANTIX_API_TOKEN`，所有非健康检查请求必须包含以下 Header：
-`X-Semantix-Token: <your-token>`
+## 4. 向后兼容接口 (Legacy Adapter)
 
+### `POST /search/semantic`
+- **用途**：单流检索兼容适配器，内部转发至 `RadarPipeline` 并映射为旧版结构。
+- **参数**：`text`, `vault_id`, `top_k`, `min_similarity`, `exclude_paths`, `current_path`, `current_tags`, `current_links`, `rerank`
+- **响应**：包含 `path`, `score`, `snippet`, `reasons`, `score_details`。
+
+---
+
+## 5. 运维与维护 (Maintenance)
+
+### `POST /maintenance/run`
+- **用途**：触发 LanceDB 碎片合并与多版本数据修剪。
+- **参数**：
+  ```json
+  { "retention_days": 7, "vault_id": "default" }
+  ```
+- **响应**：`{"status": "ok", "message": "Database optimization completed."}`
+
+---
+
+## 6. 鉴权机制 (Authentication)
+
+当设置环境变量 `SEMANTIX_API_TOKEN` 时，除 `/health`, `/ready`, `/ping` 外，所有接口强制要求携带 Header：
+`X-Semantix-Token: <your-token>`
+鉴权失败时返回 `401 Unauthorized`。

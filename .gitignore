@@ -20,10 +20,16 @@ node_modules/
 .idea/
 .vscode/
 
-# Vector Database
+# Vector Database & Storage
 semantix.db/
+semantix_lance/
 semantix_chroma.db/
+*.lance/
+*.db/
 *.db
+custom_stopwords.json
+.coverage
+coverage/
 
 # macOS
 .DS_Store

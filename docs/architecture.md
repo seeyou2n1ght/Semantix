@@ -1,60 +1,88 @@
 # 系统架构设计
 
-Semantix 采用经典的「边缘监听 + 本地计算」架构，将复杂的自然语言处理（NLP）工作从 Obsidian 核心进程解耦到独立的后端服务中。
+Semantix 采用「边缘监听 + 本地伴生计算 (Local Sidecar)」架构，将重量级自然语言处理 (NLP) 计算解耦至独立的 FastAPI 后端进程。
 
-## 1. 整体结构 (Architecture)
+---
+
+## 1. 系统拓扑 (System Topology)
 
 ```text
-Obsidian (UI/Event) <--- REST API (CORS) ---> FastAPI (Computation)
-        |                                       |
-  [Plugin Logic]                          [Vector Logic]
-        |                                       |
-  [Local Files]                           [LanceDB Storage]
++-----------------------------------------------------------------------+
+|                         Obsidian 前端 (TypeScript)                    |
+|                                                                       |
+|  [Active Editor]                                                      |
+|         │ (Cursor / Selection)                                        |
+|         ▼                                                             |
+|  [ContextEngine] ──────► [QueryChangeGate] ──(400ms/Punct/Len)───────┐|
+|  (Focus / Note Mode)                                                 │|
+|                                                                      ▼|
+|  [WhispererView] ◄────── [ResultStabilizer] ◄── [Versioning / Echo] ──┤|
+|  (Fixed 78px Card)       (IN_NOTE / CROSS_NOTE)                       │|
+|         │                                                             │|
+|  [PopoverPreview] (Hover Context / Link Copy)                         │|
++───────────────────────────────────┬───────────────────────────────────+
+                                    │ HTTP REST (X-Vault-Id, context_id)
+                                    ▼
++───────────────────────────────────────────────────────────────────────+
+|                         FastAPI 后端 (Python 3.11+)                   |
+|                                                                       |
+|  [main.py] ── POST /search/radar (Stateless Echo: context_id)         |
+|      │                                                                |
+|      ▼                                                                |
+|  [RadarPipeline] (services/radar_service.py)                          |
+|      │                                                                |
+|      ├──► [RetrievalService] (粗排: Vector + FTS Top 45 -> Top 25)    |
+|      │        └──► [LanceDBStorage] (物理引擎: LanceDB)                |
+|      │                                                                |
+|      ├──► [Ranking Pipeline] (services/ranking/)                      |
+|      │        ├── [ScoreNormalizer] (Min-Max 动态极值与量纲校准)       |
+|      │        ├── [RelatedRanker]   (Cross-Encoder 精排 + 结构提权)   |
+|      │        ├── [DiscoverRanker]  (Relevance Gate + 排除 Related)   |
+|      │        ├── [MMRSelector]     (贪心最大边际相关内部打散)         |
+|      │        └── [LabelGenerator]  (动态生成推荐依据标签)             |
+|      │                                                                |
+|      ├──► [EmbeddingService] (BGE-Small-zh-v1.5 单例服务)             |
+|      └──► [RerankerService]  (BGE-Reranker-Base 弹性精排单例)          |
++-----------------------------------------------------------------------+
 ```
 
-### 插件端 (Frontend)
-- **Settings**: 管理连接、同步频率与排除规则。
-- **SyncManager**: 维护增量同步队列，负责清洗并向后端推送数据。
-- **Engines (Whisperer / Radar)**: 业务逻辑核心，处理光标追踪与孤岛分析。
-- **Views**: 侧边栏 UI，基于 Vanilla JS/CSS 构建。
+---
 
-### 后端服务 (Backend)
-- **FASTAPI**: 处理高并发请求。
-- **Model Service**: 封装了 Sentence-Transformers，负责将文本转化为 512 维向量。
-- **Reranker Service**: [新] 封装 Cross-encoder 模型，对初步召回结果进行精排。
-- **Database Service**: 封装 LanceDB，处理向量搜索、FTS 以及支持父子块索引的复杂聚合。
+## 2. 核心模块分层
+
+### 前端分层 (`frontend/src/`)
+- `core/context.ts`: **ContextEngine**。提取 Focus 模式（光标当前块 + 标题）与 Note 模式（前 N 块代表向量），输出 `RadarContext` 与 `ContextTransitionType`。
+- `core/query-gate.ts`: **QueryChangeGate**。400ms 防抖门控，过滤空白与标点变动，保障 1500ms 最大等待时间（MaxWait）。
+- `core/result-stabilizer.ts`: **ResultStabilizer**。双策略抗抖：
+  - `IN_NOTE`: 保持旧卡片顺序，微调分数，锁定标题与元数据，禁止卡片乱跳。
+  - `CROSS_NOTE`: 立即清空并重置结果集。
+- `core/whisperer.ts`: 整合调度单调递增的 `currentSearchId` 与 `activeContextId`，拦截网络迟到响应。
+- `ui/whisperer-view.ts`: 单侧栏渲染双流卡片，固定高度 78px 避免布局位移，点击原位打开并定位高亮段落。
+- `ui/popover-preview.ts`: 悬浮卡片触发浮层上下文预览与链接复制。
+
+### 后端分层 (`backend/`)
+- `storage/lancedb_storage.py`: LanceDB 物理存储引擎，提供基于 `X-Vault-Id` 的多库隔离与 FTS 索引管理。
+- `services/embedding_service.py`: 文本向量化单例，自动注入检索前缀 `为这个句子生成表示以用于检索相关文章：`。
+- `services/reranker_service.py`: Cross-Encoder 精排模型单例，支持 fast/balanced/high_quality 运行时策略。
+- `services/retrieval_service.py`: 粗排混合召回服务（Vector + FTS Top 45 -> 聚合为 Top 25 候选）。
+- `services/index_service.py`: 笔记 Markdown AST 切分与批处理入库。
+- `services/ranking/`: 归一化、Related 精排、Discover MMR 打散与标签生成。
+- `db_svc.py`, `model_svc.py`, `reranker_svc.py`: 保持轻量 Facade，保证向后兼容。
 
 ---
 
-## 2. 库隔离机制 (Vault Isolation)
+## 3. 库隔离机制 (Vault Isolation)
 
-为了支持在多个 Obsidian 仓库（Vault）中无缝切换且不干扰索引，我们实现了哈希隔离：
-1. **标识生成**：前端根据 `Vault Name` + `Vault Base Path` 计算出稳定的 32 位 FNV-1a 哈希。
-2. **请求绑定**：所有 API 请求头中均携带 `X-Vault-Id`。
-3. **后端过滤**：LanceDB 在查询时会自动追加 `WHERE vault_id = '...'` 条件，实现逻辑层面的库隔离。
-
----
-
-## 3. 代码组织
-
-- `frontend/src/core/`: 存放无状态的业务逻辑算法。
-- `frontend/src/ui/`: 存放视图渲染逻辑。
-- `frontend/src/styles.css`: 样式源文件（由 esbuild 编译至根目录）。
-- `backend/db_svc.py`: 检索算法、RRF 融合与数据库交互。
-- `backend/model_svc.py`: 向量模型生命周期管理。
-- `backend/reranker_svc.py`: [新] 精排模型生命周期管理。
-- `backend/utils/chunker.py`: 基于 Markdown AST 的文本切分逻辑。
+1. **标识生成**：前端根据 `Vault Name` + `Vault Base Path` 计算 32 位 FNV-1a 稳定哈希。
+2. **请求绑定**：所有 API 请求头携带 `X-Vault-Id: <hash>`。
+3. **数据隔离**：后端 LanceDB 在全部写入与检索语句中强制拼接 `vault_id = '...'` 条件，实现物理表内的逻辑库隔离。
 
 ---
 
-## 4. 性能与稳定性
+## 4. 并发与竞态控制 (Concurrency Control)
 
-### 并发行控制 (Race Condition Prevention)
-在「Whisperer」实时检索场景下，为了防止用户快速输入或连跳光标导致的网络请求竞态冲突，我们实现了 **Search Versioning** 机制：
-1. **版本标记**：每次触发 API 请求前，逻辑层递增 `currentSearchId`。
-2. **闭包捕获**：异步请求通过闭包捕获发起时的 `searchId`。
-3. **合法性检查**：当 Promise 返回后，对比捕获的 ID 与全局最新 ID。只有一致时才进行 UI 渲染，过时的结果将被静默丢弃。
+1. **Search Versioning**: 每次发起检索时前端递增 `currentSearchId`，响应返回时必须与当前活跃 ID 强匹配，迟到响应直接废弃。
+2. **Stateless Echo**: 前端生成全局唯一 `context_id` 传递给后端，后端计算完成后原样 Echo，前端用于校验上下文归属。
+3. **Watchdog 伴生保活**: 后端内置看门狗线程，监控心跳（`GET /ping`）与 Obsidian 父进程 PID。心跳超时或宿主异常终止时，伴生进程执行优雅自毁。
 
-### UI 渲染策略
-- **样式解耦**：所有交互逻辑与视觉样式通过 CSS Class 解耦。状态切换（如 `is-connected`）由 CSS 动画驱动，避免了大量的 DOM 样板代码，提升了渲染性能。
 
