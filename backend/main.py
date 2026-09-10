@@ -193,15 +193,34 @@ def shutdown_event():
     db_svc.close()
 
 
+ENGINE_VERSION = "0.8.0"
+API_VERSION = "1"
+INDEX_VERSION = "1"
+
+
 # --- Routes ---
 
 
 @app.get("/health", tags=["System"])
 def health_check():
-    """Simple health check endpoint. Checks if backend is alive and model is ready."""
+    """Health check and capability negotiation endpoint."""
     if not embedding_service.is_ready:
-        return {"status": "loading", "message": "Model is loading..."}
-    return {"status": "ok", "message": "Semantix backend is ready."}
+        return {
+            "status": "loading",
+            "message": "Model is loading...",
+            "engine_version": ENGINE_VERSION,
+            "api_version": API_VERSION,
+            "embedding_model": embedding_service.model_name,
+            "index_version": INDEX_VERSION,
+        }
+    return {
+        "status": "ok",
+        "message": "Semantix backend is ready.",
+        "engine_version": ENGINE_VERSION,
+        "api_version": API_VERSION,
+        "embedding_model": embedding_service.model_name,
+        "index_version": INDEX_VERSION,
+    }
 
 
 @app.get("/ping", tags=["System"])

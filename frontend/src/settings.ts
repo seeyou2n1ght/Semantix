@@ -13,7 +13,6 @@ export interface SemantixSettings {
     autoStartServer: boolean;
     pythonPath: string;
     backendPath: string;
-    uvSyncOnStart: boolean;
     whispererScope: 'paragraph' | 'document';
     debounceDelay: number;
     syncBatchInterval: number;
@@ -38,7 +37,6 @@ export const DEFAULT_SETTINGS: SemantixSettings = {
     autoStartServer: false,
     pythonPath: 'uv',
     backendPath: '',
-    uvSyncOnStart: false,
     whispererScope: 'paragraph',
     debounceDelay: 400,
     syncBatchInterval: 60,
@@ -279,7 +277,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                 // 辅助逻辑 A: 如果成功，显示“修改”
                 if (isSuccess && !this.showPythonInput) {
                     const changeBtn = rightContainer.createEl('a', { 
-                        text: t('BACKEND_MODE_NAME'), // Reuse or use specific 'Modify' key
+                        text: t('BACKEND_MODE_NAME'),
                         attr: { style: 'color: var(--text-accent); cursor: pointer; text-decoration: underline;' } 
                     });
                     changeBtn.onclick = () => {
@@ -287,29 +285,16 @@ export class SemantixSettingTab extends PluginSettingTab {
                         this.display();
                     };
                 }
+            }
 
-                // 辅助逻辑 B: 如果缺失且是 UV 项目，显示“初始化环境”
-                if (this.pythonStatus.includes('⚠️') && this.pythonStatus.includes('uv')) {
-                    const repairBtn = rightContainer.createEl('button', { 
-                        text: t('INITIALIZE_ENV'), 
-                        cls: 'mod-cta',
-                        attr: { style: 'font-size: 10px; height: 20px; padding: 0 8px; line-height: 1;' } 
-                    });
-                    repairBtn.onclick = async () => {
-                        repairBtn.disabled = true;
-                        repairBtn.innerText = t('INITIALIZING');
-                        this.updateStatus('python', t('SYNCING_ENV'));
-                        try {
-                            await this.plugin.serviceManager.initializeEnvironment();
-                            new Notice(t('ENV_SUCCESS'));
-                            // 重新探测
-                            this.validateBackend(this.plugin.settings.backendPath);
-                        } catch (e) {
-                            new Notice(t('ENV_FAILED') + e);
-                            this.updateStatus('python', t('PYTHON_INVALID') + `: ${e}`);
-                        }
-                    };
-                }
+            // 展示当前连接的 Engine 协议与版本详情
+            if (this.plugin.apiClient.lastHealthResponse) {
+                const health = this.plugin.apiClient.lastHealthResponse;
+                const infoDiv = containerEl.createEl('div', { 
+                    cls: 'setting-item-description', 
+                    attr: { style: 'color: var(--color-green); margin-top: -10px; margin-bottom: 20px; font-size: 0.85em;' } 
+                });
+                infoDiv.setText(`● Semantix Engine 已就绪 (引擎版本: v${health.engine_version || '0.8.0'}, 协议版本: v${health.api_version || '1'}, 模型: ${health.embedding_model || 'bge-small-zh-v1.5'})`);
             }
 
             // 3. [高级配置] Python 路径（仅在需要时展开）
@@ -340,16 +325,6 @@ export class SemantixSettingTab extends PluginSettingTab {
                     .setValue(this.plugin.settings.autoStartServer)
                     .onChange(async (value) => {
                         this.plugin.settings.autoStartServer = value;
-                        await this.plugin.saveSettings();
-                    }));
-
-            new Setting(containerEl)
-                .setName(t('SYNC_ON_START_NAME'))
-                .setDesc(t('SYNC_ON_START_DESC'))
-                .addToggle(toggle => toggle
-                    .setValue(this.plugin.settings.uvSyncOnStart)
-                    .onChange(async (value) => {
-                        this.plugin.settings.uvSyncOnStart = value;
                         await this.plugin.saveSettings();
                     }));
 

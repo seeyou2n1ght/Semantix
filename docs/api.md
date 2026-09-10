@@ -1,3 +1,4 @@
+
 # API 接口参考
 
 Semantix 后端通过 REST API 提供服务。所有涉及数据的请求均需携带 `X-Vault-Id` 头部以支持多库隔离。
@@ -5,10 +6,24 @@ Semantix 后端通过 REST API 提供服务。所有涉及数据的请求均需�
 ## 1. 基础系统 (System)
 
 ### `GET /health`
-- **用途**：健康检查。
-- **响应**：
-  - `{"status": "ok"}`：系统完全正常。
-  - `{"status": "loading"}`：系统正在初始化（通常是在加载权重模型）。
+- **用途**：健康检查与引擎能力协商协议。
+- **响应示例**：
+  ```json
+  {
+    "status": "ok",
+    "message": "Semantix backend is ready.",
+    "engine_version": "0.8.0",
+    "api_version": "1",
+    "embedding_model": "BAAI/bge-small-zh-v1.5",
+    "index_version": "1"
+  }
+  ```
+- **字段说明**：
+  - `status`: `"ok"` (已就绪) 或 `"loading"` (权重模型异步加载中)
+  - `api_version`: API 协议主版本号（供前端插件进行兼容性握手，当前为 `"1"`）
+  - `engine_version`: Semantix Engine 语义引擎版本
+  - `embedding_model`: 当前加载的向量化底座模型
+  - `index_version`: LanceDB 底层物理表结构版本
 
 ### `GET /ready`
 - **用途**：就绪检查。

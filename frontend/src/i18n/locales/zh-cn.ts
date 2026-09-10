@@ -1,6 +1,6 @@
 export default {
     // PLUGIN
-    PLUGIN_NAME: "语义雷达",
+    PLUGIN_NAME: "Semantix",
 
     // 状态 (Status)
     STATUS_UNKNOWN: "未知",

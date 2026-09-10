@@ -108,3 +108,13 @@ export interface RadarSearchResponse {
     related: RadarCardItem[];
     discover: RadarCardItem[];
 }
+
+export interface HealthResponse {
+    status: 'ok' | 'loading' | 'error';
+    message: string;
+    engine_version?: string;
+    api_version?: string;
+    embedding_model?: string;
+    index_version?: string;
+}
+

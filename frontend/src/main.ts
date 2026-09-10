@@ -106,15 +106,15 @@ export default class SemantixPlugin extends Plugin {
 
         // 6. 全局命令
         this.addCommand({
-            id: 'semantix-open-radar',
-            name: `${t('PLUGIN_NAME')}: Open Radar`,
+            id: 'open-sidebar',
+            name: `${t('PLUGIN_NAME')}: Open sidebar`,
             callback: () => {
                 this.activateWhispererView();
             }
         });
         this.addCommand({
-            id: 'semantix-scan-note',
-            name: `${t('PLUGIN_NAME')}: Scan Whole Note`,
+            id: 'scan-note',
+            name: `${t('PLUGIN_NAME')}: Scan whole note`,
             callback: () => {
                 this.activateWhispererView();
                 this.whisperer.triggerNoteScan();

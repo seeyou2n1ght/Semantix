@@ -1,6 +1,6 @@
 export default {
     // PLUGIN
-    PLUGIN_NAME: "SemantixRadar",
+    PLUGIN_NAME: "Semantix",
 
     // Status
     STATUS_UNKNOWN: "Unknown",

@@ -32,33 +32,31 @@ Semantix 后端基于高性能的 FastAPI 与 LanceDB。
 
 ## 2. 安装与配置插件
 
-### 构建插件
+### 插件安装
 1. 进入前端目录：
    ```bash
    cd Semantix/frontend
    npm install
    npm run build
    ```
-2. 复制生成的 `main.js`、`manifest.json` 和 `styles.css`（位于前端根目录）到 Vault 的插件目录：
-   `<your-vault>/.obsidian/plugins/obsidian-semantix/`
+2. 复制生成的 `main.js`、`manifest.json` 和 `styles.css` 到 Vault 的插件目录：
+   `<your-vault>/.obsidian/plugins/semantix/`
 
 > [!NOTE]
 > 样式的源文件位于 `src/styles.css`，构建过程会自动处理并输出到根目录。请勿直接修改根目录下的 `styles.css`。
 
 ### 插件配置
-在 Obsidian 内部启用插件后，进入设置面板开始配置：
+在 Obsidian 内部启用插件后，进入设置面板：
 
-#### A. 本地边车模式 (推荐 - Local Sidecar)
-适用于在办公电脑上直接运行后端。
+#### A. 本地引擎模式 (Local Engine)
+适用于在电脑上本地运行 Semantix Engine。
 
 1. **Backend mode**: 选择 `Local Sidecar`。
-2. **Backend project path**: 填入您克隆仓库后的 `backend/` 文件夹绝对路径。
-3. **环境对齐**: 
-   - 路径填入后，插件会自动探测其环境并显示对应的状态。
-   - 如果未发现环境，将提供 **[一键初始化环境]** 按钮，点击即可创建虚拟环境并同步依赖。
+2. **连接探测**: 确保后台已启动 Engine（`uv run uvicorn main:app --host 127.0.0.1 --port 8000`）。
+3. **Backend project path**: （可选）填入本地 `backend/` 项目目录绝对路径。
 4. **启动控制**:
-   - **Auto-start server**: 开启此项后，后端将随插件启动而自动拉起，插件卸载或 Obsidian 关闭时自动停止。
-   - **探测服务连接/立即唤醒后端**: 用于手动状态检查或在自动拉起失效时手动执行启动（包含端口冲突检测）。
+   - **Auto-start server**: 开启后，插件可在桌面端随 Obsidian 启动自动尝试拉起本地已安装的 Engine 进程。
+   - **探测连接**: 手动检查服务活跃度与 API 协议匹配情况。
 
 #### B. 远程服务模式 (Remote Service)
 适用于后端部署在 NAS、服务器或 Docker 中的场景。
@@ -89,7 +87,7 @@ Semantix 后端基于高性能的 FastAPI 与 LanceDB。
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `SEMANTIX_API_TOKEN` | 空 | 简单鉴权 Token，需在插件端同步填写 |
-| `SEMANTIX_DB_PATH` | `./semantix.db` | 索引数据存储路径 |
+| `SEMANTIX_DB_PATH` | `./semantix_lance` | 索引数据存储路径 |
 | `SEMANTIX_ALLOWED_ORIGINS` | - | CORS 跨域白名单 |
 | `SEMANTIX_LOG_LEVEL` | `INFO` | 控制输出日志精细度 |
 

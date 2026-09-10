@@ -32,7 +32,7 @@ export class WhispererView extends ItemView {
     }
 
     getDisplayText() {
-        return "Semantix Radar";
+        return "Semantix";
     }
 
     getIcon() {

@@ -10,6 +10,7 @@ import {
     IndexStatusResponse,
     RadarSearchRequest,
     RadarSearchResponse,
+    HealthResponse,
 } from './types';
 
 export enum HealthStatus {
@@ -21,6 +22,7 @@ export enum HealthStatus {
 export class ApiClient {
     private settings: SemantixSettings;
     private vaultId: string;
+    public lastHealthResponse: HealthResponse | null = null;
 
     constructor(settings: SemantixSettings, vaultId: string) {
         this.settings = settings;
@@ -72,10 +74,13 @@ export class ApiClient {
                 const res: RequestUrlResponse = await requestUrl(req);
                 
                 if (res.status === 200 && res.json && res.json.status === 'ok') {
+                    this.lastHealthResponse = res.json as HealthResponse;
                     return HealthStatus.READY;
                 }
+                this.lastHealthResponse = null;
                 return HealthStatus.CONFLICT;
-            } catch (error) {
+            } catch (_error) {
+                this.lastHealthResponse = null;
                 return HealthStatus.NONE;
             }
         };

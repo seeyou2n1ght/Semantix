@@ -1,7 +1,7 @@
 {
-	"name": "obsidian-semantix",
-	"version": "0.7.0",
-	"description": "基于本地大模型与向量数据库的隐式知识链接发现工具",
+	"name": "semantix",
+	"version": "0.8.0",
+	"description": "Surface related notes and unexpected semantic connections as you write.",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {

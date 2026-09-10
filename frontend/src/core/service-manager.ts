@@ -1,9 +1,7 @@
 import { Notice, Platform } from 'obsidian';
 import SemantixPlugin from '../main';
 import { spawn, ChildProcess, exec, execSync } from 'child_process';
-import * as path from 'path';
 import { HealthStatus } from '../api/client';
-import { t } from '../i18n/helpers';
 
 export class ServiceManager {
     private plugin: SemantixPlugin;
@@ -68,13 +66,7 @@ export class ServiceManager {
                 }
             }
 
-            // 1. (可选) 执行 uv sync
-            if (settings.uvSyncOnStart && settings.pythonPath === 'uv') {
-                this.reportStatus("正在同步后端依赖 (uv sync)...");
-                await this.runSync();
-            }
-
-            // 2. 构造启动命令
+            // 构造启动命令
             const args = settings.pythonPath === 'uv' 
                 ? ['run', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', '8000']
                 : ['-m', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', '8000'];
@@ -258,75 +250,15 @@ export class ServiceManager {
         }
     }
 
-    /**
-     * 运行 uv sync 确保环境最新
-     */
-    private async runSync(): Promise<void> {
-        if (!Platform.isDesktop) return;
-
-        return new Promise((resolve) => {
-            const syncProc = spawn('uv', ['sync'], {
-                cwd: this.plugin.settings.backendPath,
-                shell: true
-            });
-
-            syncProc.stderr?.on('data', (data) => {
-                const line = data.toString();
-                if (line.includes("Resolved")) this.reportStatus("正在解析依赖关系...");
-                if (line.includes("Prepared") || line.includes("Installed")) this.reportStatus("正在同步环境依赖...");
-            });
-
-            syncProc.on('close', () => {
-                resolve();
-            });
-        });
-    }
-
     public isRunning(): boolean {
         return this.process !== null;
     }
 
     /**
-     * 判断是否正在处理启动流程（包括环境同步或进程拉起）
+     * 判断是否正在处理启动流程
      */
     public isActivating(): boolean {
         return (this.isStarting || this.isRunning()) && Platform.isDesktop;
     }
-
-    /**
-     * 一键初始化虚拟环境并同步依赖 (uv venv + uv sync)
-     */
-    public async initializeEnvironment(): Promise<void> {
-        const { backendPath } = this.plugin.settings;
-        if (!backendPath) return;
-
-        return new Promise(async (resolve, reject) => {
-            try {
-                // 1. 创建虚拟环境
-                const venvProc = spawn('uv', ['venv'], {
-                    cwd: backendPath,
-                    shell: Platform.isWin
-                });
-
-                venvProc.on('close', async (code) => {
-                    if (code !== 0) {
-                        reject(new Error(t('ENV_FAILED')));
-                        return;
-                    }
-
-                    // 2. 同步依赖
-                    try {
-                        await this.runSync();
-                        resolve();
-                    } catch (e) {
-                        reject(e);
-                    }
-                });
-
-                venvProc.on('error', (err) => reject(new Error("Environment initialization failed (Process Error)")));
-            } catch (error) {
-                reject(new Error("Environment initialization failed (Unexpected Error)"));
-            }
-        });
-    }
 }
+
