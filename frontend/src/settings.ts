@@ -29,27 +29,29 @@ function getChildProcess(): ChildProcessModule | null {
 }
 
 export interface SemantixSettings {
+    // 1. 引擎连接 (Engine Connection)
     backendMode: 'local' | 'remote';
     backendUrl: string;
     apiToken: string;
     autoStartServer: boolean;
     pythonPath: string;
     backendPath: string;
-    whispererScope: 'paragraph' | 'document';
-    debounceDelay: number;
-    syncBatchInterval: number;
-    exclusionRules: string;
-    filterLinkedNotes: boolean;
-    topNResults: number;
-    minSimilarityThreshold: number;
-    colorThresholdHigh: number;
-    colorThresholdMedium: number;
-    enableExplainableResults: boolean;
-    enableOnMobile: boolean;
-    dbRetentionDays: number;
-    enableReranking: boolean;
-    enableAdaptiveFiltering: boolean;
+
+    // 2. 写作与灵感推荐 (Writing & Discovery)
     rankingMode: 'fast' | 'balanced' | 'high_quality';
+    topNResults: number;
+    debounceDelay: number;
+    exclusionRules: string;
+
+    // 3. 知识库索引 (Vault Indexing)
+    syncBatchInterval: number;
+
+    // 4. 移动端 (Mobile)
+    enableOnMobile: boolean;
+
+    // 5. 存储维护 (Storage Maintenance)
+    dbRetentionDays: number;
+    enableAdaptiveFiltering: boolean;
 }
 
 export const DEFAULT_SETTINGS: SemantixSettings = {
@@ -59,21 +61,18 @@ export const DEFAULT_SETTINGS: SemantixSettings = {
     autoStartServer: false,
     pythonPath: 'uv',
     backendPath: '',
-    whispererScope: 'paragraph',
-    debounceDelay: 400,
-    syncBatchInterval: 60,
-    exclusionRules: '',
-    filterLinkedNotes: true,
+
+    rankingMode: 'balanced',
     topNResults: 4,
-    minSimilarityThreshold: 0.70,
-    colorThresholdHigh: 0.85,
-    colorThresholdMedium: 0.75,
-    enableExplainableResults: true,
+    debounceDelay: 400,
+    exclusionRules: '',
+
+    syncBatchInterval: 60,
+
     enableOnMobile: false,
+
     dbRetentionDays: 7,
-    enableReranking: true,
-    enableAdaptiveFiltering: true,
-    rankingMode: 'balanced'
+    enableAdaptiveFiltering: false
 };
 
 export class SemantixSettingTab extends PluginSettingTab {
@@ -214,10 +213,15 @@ export class SemantixSettingTab extends PluginSettingTab {
             case 'disabled': statusText = t('STATUS_DISABLED'); statusColor = "var(--text-muted)"; break;
         }
 
-        const header = containerEl.createEl('div', { attr: { style: 'display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding: 10px; border-radius: 8px; background-color: var(--background-secondary);' } });
-        header.createEl('h2', { text: t('SETTINGS_TITLE'), attr: { style: 'margin: 0;' } });
-        
-        const badge = header.createEl('div', { attr: { style: `display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 12px; border: 1px solid ${statusColor}; font-size: 0.85em;` } });
+        // Header Setting using official setHeading API
+        const headerSetting = new Setting(containerEl)
+            .setName(t('SETTINGS_TITLE'))
+            .setDesc("Semantix Local Knowledge Engine")
+            .setHeading();
+
+        const badge = headerSetting.controlEl.createEl('div', { 
+            attr: { style: `display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 12px; border: 1px solid ${statusColor}; font-size: 0.85em;` } 
+        });
         badge.createEl('span', { attr: { style: `width: 8px; height: 8px; border-radius: 50%; background-color: ${statusColor};` } });
         badge.createEl('span', { text: statusText, attr: { style: `color: ${statusColor}; font-weight: bold;` } });
 
@@ -234,9 +238,12 @@ export class SemantixSettingTab extends PluginSettingTab {
         const isMobile = Platform.isMobile;
         const isRemote = isMobile || this.plugin.settings.backendMode === 'remote';
 
-        if (!isMobile) {
-            new Setting(containerEl).setName(t('SETTINGS_GENERAL_SECTION')).setHeading();
+        // =========================================================================
+        // Section 1: 引擎连接与服务管理 (Engine Connection)
+        // =========================================================================
+        new Setting(containerEl).setName(t('SETTINGS_SECTION_CONNECTION')).setHeading();
 
+        if (!isMobile) {
             new Setting(containerEl)
                 .setName(t('BACKEND_MODE_NAME'))
                 .setDesc(t('BACKEND_MODE_DESC'))
@@ -255,7 +262,6 @@ export class SemantixSettingTab extends PluginSettingTab {
         }
 
         if (isRemote) {
-            new Setting(containerEl).setName(t('REMOTE_SECTION')).setHeading();
             new Setting(containerEl)
                 .setName(t('BACKEND_URL_NAME'))
                 .setDesc(t('BACKEND_URL_DESC'))
@@ -287,9 +293,8 @@ export class SemantixSettingTab extends PluginSettingTab {
                     });
                 });
         } else {
-            new Setting(containerEl).setName(t('LOCAL_SECTION')).setHeading();
-            
-            // 1. [核心输入] 后端项目路径
+            // 本地边车模式
+            // 1. 本地引擎目录
             new Setting(containerEl)
                 .setName(t('BACKEND_PATH_NAME'))
                 .setDesc(t('BACKEND_PATH_DESC'))
@@ -304,12 +309,12 @@ export class SemantixSettingTab extends PluginSettingTab {
                         this.debounceTimer = window.setTimeout(() => this.validateBackend(value), 800);
                     }));
 
-            // 2. [即时反馈] 环境探测状态（紧贴路径下方）
+            // 2. 状态反馈
             if (this.pythonStatus || this.backendStatus) {
                 const isError = this.pythonStatus.includes('❌') || this.pythonStatus.includes('⚠️');
                 const isSuccess = this.pythonStatus.includes('✅');
                 let color = 'var(--text-muted)';
-                if (isError) color = 'var(--text-accent)'; // 橙色/红色提示
+                if (isError) color = 'var(--text-accent)';
                 if (isSuccess) color = 'var(--color-green)';
 
                 const statusDiv = containerEl.createEl('div', { 
@@ -317,12 +322,10 @@ export class SemantixSettingTab extends PluginSettingTab {
                     attr: { style: `color: ${color}; margin-top: -15px; margin-bottom: 20px; font-size: 0.85em; font-weight: ${isSuccess ? 'bold' : 'normal'}; display: flex; align-items: center; justify-content: space-between;` } 
                 });
                 
-                // 优先显示环境状态，如果没有则显示路径校验状态
                 statusDiv.createEl('span', { text: this.pythonStatus || this.backendStatus });
 
                 const rightContainer = statusDiv.createEl('div', { attr: { style: 'display: flex; align-items: center; gap: 10px;' } });
 
-                // 辅助逻辑 A: 如果成功，显示“修改”
                 if (isSuccess && !this.showPythonInput) {
                     const changeBtn = rightContainer.createEl('a', { 
                         text: t('BACKEND_MODE_NAME'),
@@ -345,7 +348,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                 infoDiv.setText(`● Semantix Engine 已就绪 (引擎版本: v${health.engine_version || '0.8.0'}, 协议版本: v${health.api_version || '1'}, 模型: ${health.embedding_model || 'bge-small-zh-v1.5'})`);
             }
 
-            // 3. [高级配置] Python 路径（仅在需要时展开）
+            // 3. Python 路径输入 (按需展开)
             const isAutoDetected = this.pythonStatus.includes('✅');
             const shouldShowInput = this.showPythonInput || (!isAutoDetected && this.plugin.settings.pythonPath !== 'uv');
 
@@ -364,8 +367,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                         }));
             }
 
-            new Setting(containerEl).setName(t('AUTOMATION_SECTION')).setHeading();
-
+            // 4. 自动启动
             new Setting(containerEl)
                 .setName(t('AUTO_START_NAME'))
                 .setDesc(t('AUTO_START_DESC'))
@@ -376,6 +378,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     }));
 
+            // 5. 运行控制
             new Setting(containerEl)
                 .setName(t('RUN_CONTROL_NAME'))
                 .setDesc(t('RUN_CONTROL_DESC'))
@@ -396,6 +399,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                         if (status === "READY") {
                             new Notice(t('BACKEND_RUNNING'));
                         } else if (status === "CONFLICT") {
+                            // eslint-disable-next-line no-alert
                             if (confirm(t('PORT_CONFLICT'))) {
                                 await this.plugin.serviceManager.forceKillAndStart();
                             }
@@ -406,14 +410,79 @@ export class SemantixSettingTab extends PluginSettingTab {
                         btn.setButtonText(t('WAKE_UP_BACKEND'));
                     }));
 
-            // 存活机制说明
+            // 看门狗说明
             const tipEl = containerEl.createEl('div', { 
-                attr: { style: 'margin-top: 15px; padding: 12px; border-radius: 8px; border-left: 4px solid var(--text-accent); background-color: var(--background-secondary-alt); font-size: 0.85em; line-height: 1.4;' } 
+                attr: { style: 'margin-top: 15px; margin-bottom: 15px; padding: 12px; border-radius: 8px; border-left: 4px solid var(--text-accent); background-color: var(--background-secondary-alt); font-size: 0.85em; line-height: 1.4;' } 
             });
             tipEl.createEl('strong', { text: t('WATCHDOG_TITLE'), attr: { style: 'display: block; margin-bottom: 4px; color: var(--text-accent);' } });
             tipEl.createSpan({ text: t('WATCHDOG_DESC') });
         }
 
+        // =========================================================================
+        // Section 2: 写作与灵感推荐 (Writing & Discovery)
+        // =========================================================================
+        new Setting(containerEl).setName(t('SETTINGS_SECTION_RECOMMENDATION')).setHeading();
+
+        // 1. 语义精排策略
+        new Setting(containerEl)
+            .setName(t('RANKING_MODE_NAME'))
+            .setDesc(t('RANKING_MODE_DESC'))
+            .addDropdown(dropdown => dropdown
+                .addOption('fast', t('RANKING_MODE_FAST'))
+                .addOption('balanced', t('RANKING_MODE_BALANCED'))
+                .addOption('high_quality', t('RANKING_MODE_HIGH'))
+                .setValue(this.plugin.settings.rankingMode || 'balanced')
+                .onChange(async (value) => {
+                    this.plugin.settings.rankingMode = value as 'fast' | 'balanced' | 'high_quality';
+                    await this.plugin.saveSettings();
+                }));
+
+        // 2. 各栏呈现卡片数 (2 - 8)
+        new Setting(containerEl)
+            .setName(t('TOP_N_NAME'))
+            .setDesc(t('TOP_N_DESC') + this.plugin.settings.topNResults)
+            .addSlider(slider => slider
+                .setLimits(2, 8, 1)
+                .setValue(this.plugin.settings.topNResults)
+                .setDynamicTooltip()
+                .onChange(async (value) => {
+                    this.plugin.settings.topNResults = value;
+                    await this.plugin.saveSettings();
+                    this.display();
+                }));
+
+        // 3. 实时防抖延迟
+        new Setting(containerEl)
+            .setName(t('DEBOUNCE_NAME'))
+            .setDesc(t('DEBOUNCE_DESC'))
+            .addText(text => text
+                .setValue(this.plugin.settings.debounceDelay.toString())
+                .onChange(async (value) => {
+                    const parsed = parseInt(value, 10);
+                    if (!isNaN(parsed) && parsed >= 100) {
+                        this.plugin.settings.debounceDelay = parsed;
+                        await this.plugin.saveSettings();
+                    }
+                }));
+
+        // 4. 路径排除规则
+        new Setting(containerEl)
+            .setName(t('EXCLUSION_NAME'))
+            .setDesc(t('EXCLUSION_DESC'))
+            .addTextArea(text => text
+                .setPlaceholder('Templates/**\n**/*.canvas\nArchive/**/*.md')
+                .setValue(this.plugin.settings.exclusionRules)
+                .onChange(async (value) => {
+                    this.plugin.settings.exclusionRules = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        // =========================================================================
+        // Section 3: 知识库索引管理 (Vault Indexing)
+        // =========================================================================
+        new Setting(containerEl).setName(t('SETTINGS_SECTION_INDEXING')).setHeading();
+
+        // 1. Vault ID
         new Setting(containerEl)
             .setName(t('VAULT_ID_NAME'))
             .setDesc(t('VAULT_ID_DESC'))
@@ -421,8 +490,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                 .setValue(this.plugin.vaultId || '')
                 .setDisabled(true));
 
-        new Setting(containerEl).setName(t('INDEXING_SECTION')).setHeading();
-
+        // 2. 全量建立索引
         new Setting(containerEl)
             .setName(t('START_INDEX_NAME'))
             .setDesc(t('START_INDEX_DESC'))
@@ -436,6 +504,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                     this.display();
                 }));
 
+        // 3. 取消索引
         new Setting(containerEl)
             .setName(t('CANCEL_INDEX_NAME'))
             .setDesc(t('CANCEL_INDEX_DESC'))
@@ -447,6 +516,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                     this.display();
                 }));
 
+        // 4. 增量同步间隔
         new Setting(containerEl)
             .setName(t('SYNC_INTERVAL_NAME'))
             .setDesc(t('SYNC_INTERVAL_DESC'))
@@ -454,36 +524,42 @@ export class SemantixSettingTab extends PluginSettingTab {
                 .setValue(this.plugin.settings.syncBatchInterval.toString())
                 .onChange(async (value) => {
                     const parsed = parseInt(value, 10);
-                    if (!isNaN(parsed)) {
+                    if (!isNaN(parsed) && parsed >= 5) {
                         this.plugin.settings.syncBatchInterval = parsed;
                         await this.plugin.saveSettings();
                     }
                 }));
 
-        new Setting(containerEl)
-            .setName(t('EXCLUSION_NAME'))
-            .setDesc(t('EXCLUSION_DESC'))
-            .addTextArea(text => text
-                .setPlaceholder('Templates/**\n**/*.canvas\nArchive/**/*.md')
-                .setValue(this.plugin.settings.exclusionRules)
-                .onChange(async (value) => {
-                    this.plugin.settings.exclusionRules = value;
-                    await this.plugin.saveSettings();
-                }));
+        // =========================================================================
+        // Section 4: 移动端与远程访问 (Mobile & Remote Access)
+        // =========================================================================
+        new Setting(containerEl).setName(t('SETTINGS_SECTION_MOBILE')).setHeading();
 
-        new Setting(containerEl)
-            .setName(t('EXPLAINABLE_NAME'))
-            .setDesc(t('EXPLAINABLE_DESC'))
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.enableExplainableResults)
-                .onChange(async (value) => {
-                    this.plugin.settings.enableExplainableResults = value;
-                    await this.plugin.saveSettings();
-                }));
+        if (Platform.isDesktop) {
+            new Setting(containerEl)
+                .setName(t('ENABLE_MOBILE_NAME'))
+                .setDesc(t('ENABLE_MOBILE_DESC'))
+                .addToggle(toggle => toggle
+                    .setValue(this.plugin.settings.enableOnMobile)
+                    .onChange(async (value) => {
+                        this.plugin.settings.enableOnMobile = value;
+                        await this.plugin.saveSettings();
+                        new Notice(t('MOBILE_RESTART_NOTICE'));
+                    }));
+        } else {
+            const mobileNotice = containerEl.createEl('div', {
+                cls: 'setting-item-description',
+                attr: { style: 'margin-bottom: 15px; color: var(--text-muted); font-size: 0.85em; line-height: 1.5;' }
+            });
+            mobileNotice.setText(t('MOBILE_CURRENT_NOTICE'));
+        }
 
-        // --- Database Maintenance Section ---
-        new Setting(containerEl).setName(t('DB_MAINTENANCE_SECTION')).setHeading();
+        // =========================================================================
+        // Section 5: 存储维护与高级操作 (Storage & Danger)
+        // =========================================================================
+        new Setting(containerEl).setName(t('SETTINGS_SECTION_STORAGE')).setHeading();
 
+        // 1. LanceDB 物理指标卡片
         const dbSizeMb = this.dbMetrics?.db_size_bytes ? (this.dbMetrics.db_size_bytes / (1024 * 1024)).toFixed(2) : "0.00";
         const lastMt = this.dbMetrics?.last_maintenance_at ? new Date(this.dbMetrics.last_maintenance_at).toLocaleString() : t('STATUS_UNKNOWN');
 
@@ -493,6 +569,7 @@ export class SemantixSettingTab extends PluginSettingTab {
         metricsEl.createEl('div', { attr: { style: 'margin-bottom: 8px; font-size: 0.9em;' } }).innerHTML = `<strong>${t('DB_SIZE')}</strong> ${dbSizeMb} MB`;
         metricsEl.createEl('div', { attr: { style: 'font-size: 0.9em;' } }).innerHTML = `<strong>${t('LAST_MAINTENANCE')}</strong> ${lastMt}`;
 
+        // 2. 历史保留天数
         new Setting(containerEl)
             .setName(t('RETENTION_DAYS'))
             .setDesc(t('RETENTION_DAYS_DESC'))
@@ -505,8 +582,10 @@ export class SemantixSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
+        // 3. 执行磁盘优化按钮
         new Setting(containerEl)
             .setName(t('RUN_MAINTENANCE_BTN'))
+            .setDesc(t('DB_MAINTENANCE_SECTION'))
             .addButton(btn => btn
                 .setButtonText(t('RUN_MAINTENANCE_BTN'))
                 .onClick(async () => {
@@ -524,46 +603,10 @@ export class SemantixSettingTab extends PluginSettingTab {
                     btn.setButtonText(t('RUN_MAINTENANCE_BTN'));
                 }));
 
-        new Setting(containerEl).setName(t('SEARCH_SECTION')).setHeading();
-
+        // 4. 启发式噪音分析
         new Setting(containerEl)
-            .setName(t('WHISPERER_SCOPE_NAME'))
-            .setDesc(t('WHISPERER_SCOPE_DESC'))
-            .addDropdown(dropdown => dropdown
-                .addOption('paragraph', t('WHISPERER_PARAGRAPH'))
-                .addOption('document', t('WHISPERER_DOCUMENT'))
-                .setValue(this.plugin.settings.whispererScope)
-                .onChange(async (value) => {
-                    this.plugin.settings.whispererScope = value as 'paragraph' | 'document';
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName("精排模式 (Ranking Mode)")
-            .setDesc("选择检索精排深度：快速（纯向量极速），平衡（Top 24 候选 Cross-Encoder 精排），高质量（Top 30 全候选精排）。")
-            .addDropdown(dropdown => dropdown
-                .addOption('fast', '快速 (Fast)')
-                .addOption('balanced', '平衡 (Balanced, 推荐)')
-                .addOption('high_quality', '高质量 (High Quality)')
-                .setValue(this.plugin.settings.rankingMode || 'balanced')
-                .onChange(async (value) => {
-                    this.plugin.settings.rankingMode = value as 'fast' | 'balanced' | 'high_quality';
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName(t('RERANKING_NAME'))
-            .setDesc(t('RERANKING_DESC'))
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.enableReranking)
-                .onChange(async (value) => {
-                    this.plugin.settings.enableReranking = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName(t('ADAPTIVE_FILTER_NAME') || "Enable Adaptive Filtering")
-            .setDesc(t('ADAPTIVE_FILTER_DESC') || "Dynamically hide frequent 'noise' words based on your vault content.")
+            .setName(t('ADAPTIVE_FILTER_NAME'))
+            .setDesc(t('ADAPTIVE_FILTER_DESC'))
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.enableAdaptiveFiltering)
                 .onChange(async (value) => {
@@ -575,125 +618,19 @@ export class SemantixSettingTab extends PluginSettingTab {
                     }
                 }))
             .addButton(btn => btn
-                .setButtonText(t('RUN_ADAPTIVE_ANALYSIS_BTN') || "Analyze Noise")
-                .setTooltip(t('RUN_ADAPTIVE_ANALYSIS_DESC') || "Re-scan your vault to identify common words.")
+                .setButtonText(t('RUN_ADAPTIVE_ANALYSIS_BTN'))
+                .setTooltip(t('RUN_ADAPTIVE_ANALYSIS_DESC'))
                 .onClick(async () => {
                     btn.setDisabled(true);
                     const res = await this.plugin.apiClient.computeStopwords();
                     if (res) {
-                        new Notice(t('ADAPTIVE_SUCCESS', { count: res.count }) || `Analysis complete. Found ${res.count} noise words.`);
+                        new Notice(t('ADAPTIVE_SUCCESS', { count: res.count }));
                         await this.plugin.checkConnection({ silent: true });
                     }
                     btn.setDisabled(false);
                 }));
 
-        new Setting(containerEl)
-            .setName(t('DEBOUNCE_NAME'))
-            .setDesc(t('DEBOUNCE_DESC'))
-            .addText(text => text
-                .setValue(this.plugin.settings.debounceDelay.toString())
-                .onChange(async (value) => {
-                    const parsed = parseInt(value, 10);
-                    if (!isNaN(parsed)) {
-                        this.plugin.settings.debounceDelay = parsed;
-                        await this.plugin.saveSettings();
-                    }
-                }));
-
-        new Setting(containerEl)
-            .setName(t('TOP_N_NAME'))
-            .setDesc(t('TOP_N_DESC'))
-            .addText(text => text
-                .setValue(this.plugin.settings.topNResults.toString())
-                .onChange(async (value) => {
-                    const parsed = parseInt(value, 10);
-                    if (!isNaN(parsed)) {
-                        this.plugin.settings.topNResults = parsed;
-                        await this.plugin.saveSettings();
-                    }
-                }));
-
-        new Setting(containerEl)
-            .setName(t('MIN_SIMILARITY_NAME'))
-            .setDesc(t('MIN_SIMILARITY_DESC') + this.plugin.settings.minSimilarityThreshold.toFixed(2))
-            .addSlider(slider => slider
-                .setLimits(0, 100, 1)
-                .setValue(Math.round(this.plugin.settings.minSimilarityThreshold * 100))
-                .setDynamicTooltip()
-                .onChange(async (value) => {
-                    this.plugin.settings.minSimilarityThreshold = value / 100;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName(t('FILTER_LINKED_NAME'))
-            .setDesc(t('FILTER_LINKED_DESC'))
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.filterLinkedNotes)
-                .onChange(async (value) => {
-                    this.plugin.settings.filterLinkedNotes = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName(t('THRESHOLD_HIGH_NAME'))
-            .setDesc(t('THRESHOLD_HIGH_DESC') + this.plugin.settings.colorThresholdHigh.toFixed(2))
-            .addSlider(slider => slider
-                .setLimits(0, 100, 1)
-                .setValue(Math.round(this.plugin.settings.colorThresholdHigh * 100))
-                .setDynamicTooltip()
-                .onChange(async (value) => {
-                    const newValue = value / 100;
-                    // 确保高分阈值始终大于中分阈值
-                    if (newValue <= this.plugin.settings.colorThresholdMedium) {
-                        new Notice(t('THRESHOLD_ERROR_HIGH'));
-                        return;
-                    }
-                    this.plugin.settings.colorThresholdHigh = newValue;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName(t('THRESHOLD_MED_NAME'))
-            .setDesc(t('THRESHOLD_MED_DESC') + this.plugin.settings.colorThresholdMedium.toFixed(2))
-            .addSlider(slider => slider
-                .setLimits(0, 100, 1)
-                .setValue(Math.round(this.plugin.settings.colorThresholdMedium * 100))
-                .setDynamicTooltip()
-                .onChange(async (value) => {
-                    const newValue = value / 100;
-                    // 确保中分阈值始终小于高分阈值
-                    if (newValue >= this.plugin.settings.colorThresholdHigh) {
-                        new Notice(t('THRESHOLD_ERROR_MED'));
-                        return;
-                    }
-                    this.plugin.settings.colorThresholdMedium = newValue;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl).setName(t('MOBILE_SECTION')).setHeading();
-
-        if (Platform.isDesktop) {
-            new Setting(containerEl)
-                .setName(t('ENABLE_MOBILE_NAME'))
-                .setDesc(t('ENABLE_MOBILE_DESC'))
-                .addToggle(toggle => toggle
-                    .setValue(this.plugin.settings.enableOnMobile)
-                    .onChange(async (value) => {
-                        this.plugin.settings.enableOnMobile = value;
-                        await this.plugin.saveSettings();
-                        new Notice(t('MOBILE_RESTART_NOTICE'));
-                    }));
-        } else {
-            const mobileNotice = containerEl.createEl('div', {
-                cls: 'setting-item-description',
-                attr: { style: 'margin-bottom: 15px; color: var(--text-muted); font-size: 0.85em;' }
-            });
-            mobileNotice.setText("当前移动设备正在以远程服务模式运行。如需完全关闭移动端加载以节省电量，可在桌面端设置中关闭“启用移动端支持”。");
-        }
-
-        new Setting(containerEl).setName(t('DANGER_SECTION')).setHeading();
-
+        // 5. 重建/清空向量数据库 (Danger Zone)
         new Setting(containerEl)
             .setName(t('REBUILD_INDEX_NAME'))
             .setDesc(t('REBUILD_INDEX_DESC'))
@@ -715,7 +652,6 @@ export class SemantixSettingTab extends PluginSettingTab {
                     const success = await this.plugin.apiClient.clearIndex();
                     if (success) {
                         new Notice(t('CLEAR_SUCCESS'));
-                        // 更新状态显示
                         this.plugin.checkConnection({ silent: true });
                     } else {
                         new Notice(t('CLEAR_FAILED'));
