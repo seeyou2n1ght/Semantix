@@ -57,8 +57,18 @@ class LanceDBStorage:
                 pa.field("links", pa.list_(pa.string())),# 出链列表
             ]
         )
+        # 获取现有表名集合，优先使用现代 list_tables 接口避免 DeprecationWarning
+        existing_tables: list[str] = []
+        if hasattr(self.db, "list_tables"):
+            tables_res = self.db.list_tables()
+            if hasattr(tables_res, "tables"):
+                existing_tables = list(tables_res.tables)
+            elif isinstance(tables_res, (list, tuple)):
+                existing_tables = [t for t in tables_res if isinstance(t, str)]
+        elif hasattr(self.db, "table_names"):
+            existing_tables = list(self.db.table_names())
 
-        if COLLECTION_NAME in self.db.table_names():
+        if COLLECTION_NAME in existing_tables:
             self.table = self.db.open_table(COLLECTION_NAME)
             existing_fields = {field.name for field in self.table.schema}
             # 如果缺少必要字段，触发重建

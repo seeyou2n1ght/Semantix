@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Depends, Header, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta
 from typing import Dict, Optional
+from contextlib import asynccontextmanager
 
 # Local imports
 from models import (
@@ -118,9 +119,59 @@ def verify_token(x_semantix_token: str | None = Header(default=None)):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
+ENGINE_VERSION = "0.8.0"
+API_VERSION = "1"
+INDEX_VERSION = "1"
+
+# Initialize Database Service
+db_path = os.getenv("SEMANTIX_DB_PATH", "./semantix_lance").strip()
+db_svc = DatabaseService(db_path=db_path)
+
+
+def maintenance_worker() -> None:
+    """后台定时维护任务：清理过期版本，优化磁盘空间"""
+    logger.info("Maintenance worker started.")
+    last_run = 0.0
+    while True:
+        try:
+            # 每 24 小时执行一次 (86400 秒)
+            now = time.time()
+            if now - last_run > 86400:
+                retention = int(METRICS.get("current_retention_days", 7))
+                db_svc.optimize_database(retention_days=retention)
+                METRICS["last_maintenance_at"] = datetime.now().isoformat()
+                METRICS["db_size_bytes"] = db_svc.get_storage_metrics()
+                last_run = now
+        except Exception as e:
+            logger.error("Error in maintenance worker: %s", e)
+
+        # 每 30 分钟检查一次是否需要执行（避免长期占用 CPU）
+        time.sleep(1800)
+
+
+@asynccontextmanager
+async def lifespan(app_instance: FastAPI):
+    """应用全局生命周期管理器 (替代已废弃的 on_event)"""
+    # 启动看门狗线程
+    thread = threading.Thread(target=watchdog, daemon=True)
+    thread.start()
+    # 启动后台维护线程
+    mt_thread = threading.Thread(target=maintenance_worker, daemon=True)
+    mt_thread.start()
+    # 预加载精排模型
+    reranker_service.start_loading()
+    logger.info("Semantix backend service started. Parent PID: %d", PARENT_PID)
+    yield
+    logger.info("Semantix backend service is shutting down...")
+    db_svc.close()
+
+
 # Initialize FastAPI app
 app = FastAPI(
-    title="Semantix AI Backend", version="0.6.1", dependencies=[Depends(verify_token)]
+    title="Semantix Engine",
+    version=ENGINE_VERSION,
+    dependencies=[Depends(verify_token)],
+    lifespan=lifespan,
 )
 
 # Add CORS middleware (Obsidian uses file:// or similar, but we should allow all for local MVP)
@@ -146,56 +197,6 @@ async def log_requests(request, call_next):
         duration_ms,
     )
     return response
-
-
-# Initialize Database Service
-# In production, this path could be configurable via env vars
-db_path = os.getenv("SEMANTIX_DB_PATH", "./semantix.db")
-db_svc = DatabaseService(db_path=db_path)
-
-
-def maintenance_worker():
-    """后台定时维护任务：清理过期版本，优化磁盘空间"""
-    logger.info("Maintenance worker started.")
-    last_run = 0
-    while True:
-        try:
-            # 每 24 小时执行一次 (86400 秒)
-            now = time.time()
-            if now - last_run > 86400:
-                retention = METRICS.get("current_retention_days", 7)
-                db_svc.optimize_database(retention_days=retention)
-                METRICS["last_maintenance_at"] = datetime.now().isoformat()
-                METRICS["db_size_bytes"] = db_svc.get_storage_metrics()
-                last_run = now
-        except Exception as e:
-            logger.error("Error in maintenance worker: %s", e)
-        
-        # 每 30 分钟检查一次是否需要执行（避免长期占用 CPU）
-        time.sleep(1800)
-
-@app.on_event("startup")
-def startup_event():
-    # 启动看门狗线程
-    thread = threading.Thread(target=watchdog, daemon=True)
-    thread.start()
-    # 启动后台维护线程
-    mt_thread = threading.Thread(target=maintenance_worker, daemon=True)
-    mt_thread.start()
-    # 预加载精排模型
-    reranker_service.start_loading()
-    logger.info("Semantix backend service started. Parent PID: %d", PARENT_PID)
-
-
-@app.on_event("shutdown")
-def shutdown_event():
-    logger.info("Semantix backend service is shutting down...")
-    db_svc.close()
-
-
-ENGINE_VERSION = "0.8.0"
-API_VERSION = "1"
-INDEX_VERSION = "1"
 
 
 # --- Routes ---
@@ -505,4 +506,18 @@ async def compute_stopwords_api(request: MaintenanceRequest, authorization: str 
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# To run: uvicorn main:app --reload --host 0.0.0.0 --port 8000
+if __name__ == "__main__":
+    import uvicorn
+
+    host = os.getenv("SEMANTIX_HOST", "127.0.0.1")
+    raw_port = os.getenv("SEMANTIX_PORT", "8000")
+    try:
+        port = int(raw_port)
+    except ValueError:
+        logger.warning("Invalid SEMANTIX_PORT '%s', falling back to 8000", raw_port)
+        port = 8000
+
+    log_level = os.getenv("SEMANTIX_LOG_LEVEL", "info").lower()
+    logger.info("Starting Semantix Engine via CLI on %s:%d (log_level=%s)...", host, port, log_level)
+    uvicorn.run("main:app", host=host, port=port, reload=False, log_level=log_level)
+
