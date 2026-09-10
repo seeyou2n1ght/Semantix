@@ -1,10 +1,32 @@
-import { App, PluginSettingTab, Setting, Notice } from "obsidian";
+import { App, PluginSettingTab, Setting, Notice, Platform } from "obsidian";
 import SemantixPlugin from "./main";
-import { exec } from "child_process";
-import * as fs from "fs";
-import * as path from "path";
-import { HealthStatus } from "./api/client";
 import { t } from "./i18n/helpers";
+import { getElectronNodeModule } from "./utils/node-adapter";
+
+interface FsModule {
+    existsSync: (path: string) => boolean;
+    statSync: (path: string) => { isDirectory: () => boolean };
+}
+
+interface PathModule {
+    join: (...paths: string[]) => string;
+}
+
+interface ChildProcessModule {
+    exec: (command: string, callback?: (error: Error | null, stdout: string, stderr: string) => void) => unknown;
+}
+
+function getFs(): FsModule | null {
+    return getElectronNodeModule<FsModule>('fs');
+}
+
+function getPath(): PathModule | null {
+    return getElectronNodeModule<PathModule>('path');
+}
+
+function getChildProcess(): ChildProcessModule | null {
+    return getElectronNodeModule<ChildProcessModule>('child_process');
+}
 
 export interface SemantixSettings {
     backendMode: 'local' | 'remote';
@@ -81,44 +103,50 @@ export class SemantixSettingTab extends PluginSettingTab {
     }
 
     private async validatePython(pythonPath: string) {
-        if (!pythonPath) {
+        if (!Platform.isDesktop || !pythonPath) {
             this.updateStatus('python', "");
             return;
         }
+        const cp = getChildProcess();
+        if (!cp) return;
+
         this.pythonStatus = t('VALIDATING_PYTHON');
-        // 简单触发一次刷新
         this.display();
 
-        exec(`"${pythonPath}" --version`, (error, stdout, stderr) => {
+        cp.exec(`"${pythonPath}" --version`, (error, stdout, stderr) => {
             if (error) {
                 this.updateStatus('python', t('PYTHON_INVALID') + ` (${error.message.split('\n')[0]})`);
             } else {
-                const version = stdout.trim() || stderr.trim();
+                const version = (stdout?.trim() || stderr?.trim() || "");
                 this.updateStatus('python', t('PYTHON_IDENTIFIED') + version);
             }
         });
     }
 
     private validateBackend(backendPath: string) {
-        if (!backendPath) {
+        if (!Platform.isDesktop || !backendPath) {
             this.updateStatus('backend', "");
             return;
         }
 
+        const fsMod = getFs();
+        const pathMod = getPath();
+        if (!fsMod || !pathMod) return;
+
         try {
-            if (!fs.existsSync(backendPath)) {
+            if (!fsMod.existsSync(backendPath)) {
                 this.updateStatus('backend', "❌ 路径不存在");
                 return;
             }
             
-            const stats = fs.statSync(backendPath);
+            const stats = fsMod.statSync(backendPath);
             if (!stats.isDirectory()) {
                 this.updateStatus('backend', "❌ 提供的路径不是一个目录");
                 return;
             }
 
-            const mainPy = path.join(backendPath, 'main.py');
-            if (!fs.existsSync(mainPy)) {
+            const mainPy = pathMod.join(backendPath, 'main.py');
+            if (!fsMod.existsSync(mainPy)) {
                 this.updateStatus('backend', "❌ 未找到 main.py (确认是否是后端根目录)");
                 return;
             }
@@ -134,21 +162,26 @@ export class SemantixSettingTab extends PluginSettingTab {
     }
 
     private autoDetectPythonEnvironment(backendPath: string) {
-        const isWindows = process.platform === "win32";
+        if (!Platform.isDesktop) return;
+        const fsMod = getFs();
+        const pathMod = getPath();
+        if (!fsMod || !pathMod) return;
+
+        const isWindows = Platform.isWin;
         const venvPython = isWindows 
-            ? path.join(backendPath, '.venv', 'Scripts', 'python.exe')
-            : path.join(backendPath, '.venv', 'bin', 'python');
+            ? pathMod.join(backendPath, '.venv', 'Scripts', 'python.exe')
+            : pathMod.join(backendPath, '.venv', 'bin', 'python');
 
         // 特殊逻辑：如果是 uv 项目（包含 uv.lock），我们强制使用 'uv' 命令，因为 uv run 比直连 .venv 更稳健
-        const uvLock = path.join(backendPath, 'uv.lock');
-        if (fs.existsSync(uvLock)) {
+        const uvLock = pathMod.join(backendPath, 'uv.lock');
+        if (fsMod.existsSync(uvLock)) {
             this.plugin.settings.pythonPath = 'uv';
             this.plugin.saveSettings();
             this.updateStatus('python', t('UV_DETECTED'));
             return;
         }
 
-        if (fs.existsSync(venvPython)) {
+        if (fsMod.existsSync(venvPython)) {
             this.plugin.settings.pythonPath = venvPython;
             this.plugin.saveSettings();
             this.updateStatus('python', t('VENV_DETECTED') + venvPython);
@@ -188,25 +221,40 @@ export class SemantixSettingTab extends PluginSettingTab {
         badge.createEl('span', { attr: { style: `width: 8px; height: 8px; border-radius: 50%; background-color: ${statusColor};` } });
         badge.createEl('span', { text: statusText, attr: { style: `color: ${statusColor}; font-weight: bold;` } });
 
-        new Setting(containerEl).setName(t('SETTINGS_GENERAL_SECTION')).setHeading();
+        // 如果是移动端，展示专用模式横幅
+        if (Platform.isMobile) {
+            const mobileBanner = containerEl.createEl('div', {
+                attr: {
+                    style: 'margin-bottom: 20px; padding: 12px; border-radius: 8px; border-left: 4px solid var(--text-accent); background-color: var(--background-secondary-alt); font-size: 0.9em; line-height: 1.5;'
+                }
+            });
+            mobileBanner.createSpan({ text: t('MOBILE_REMOTE_BANNER') });
+        }
 
-        new Setting(containerEl)
-            .setName(t('BACKEND_MODE_NAME'))
-            .setDesc(t('BACKEND_MODE_DESC'))
-            .addDropdown(dropdown => dropdown
-                .addOption('local', t('BACKEND_MODE_LOCAL'))
-                .addOption('remote', t('BACKEND_MODE_REMOTE'))
-                .setValue(this.plugin.settings.backendMode)
-                .onChange(async (value) => {
-                    this.plugin.settings.backendMode = value as 'local' | 'remote';
-                    if (value === 'local') {
-                        this.plugin.settings.backendUrl = 'http://localhost:8000';
-                    }
-                    await this.plugin.saveSettings();
-                    this.display(); // 立即刷新 UI
-                }));
+        const isMobile = Platform.isMobile;
+        const isRemote = isMobile || this.plugin.settings.backendMode === 'remote';
 
-        if (this.plugin.settings.backendMode === 'remote') {
+        if (!isMobile) {
+            new Setting(containerEl).setName(t('SETTINGS_GENERAL_SECTION')).setHeading();
+
+            new Setting(containerEl)
+                .setName(t('BACKEND_MODE_NAME'))
+                .setDesc(t('BACKEND_MODE_DESC'))
+                .addDropdown(dropdown => dropdown
+                    .addOption('local', t('BACKEND_MODE_LOCAL'))
+                    .addOption('remote', t('BACKEND_MODE_REMOTE'))
+                    .setValue(this.plugin.settings.backendMode)
+                    .onChange(async (value) => {
+                        this.plugin.settings.backendMode = value as 'local' | 'remote';
+                        if (value === 'local') {
+                            this.plugin.settings.backendUrl = 'http://localhost:8000';
+                        }
+                        await this.plugin.saveSettings();
+                        this.display(); // 立即刷新 UI
+                    }));
+        }
+
+        if (isRemote) {
             new Setting(containerEl).setName(t('REMOTE_SECTION')).setHeading();
             new Setting(containerEl)
                 .setName(t('BACKEND_URL_NAME'))
@@ -625,16 +673,24 @@ export class SemantixSettingTab extends PluginSettingTab {
 
         new Setting(containerEl).setName(t('MOBILE_SECTION')).setHeading();
 
-        new Setting(containerEl)
-            .setName(t('ENABLE_MOBILE_NAME'))
-            .setDesc(t('ENABLE_MOBILE_DESC'))
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.enableOnMobile)
-                .onChange(async (value) => {
-                    this.plugin.settings.enableOnMobile = value;
-                    await this.plugin.saveSettings();
-                    new Notice(t('MOBILE_RESTART_NOTICE'));
-                }));
+        if (Platform.isDesktop) {
+            new Setting(containerEl)
+                .setName(t('ENABLE_MOBILE_NAME'))
+                .setDesc(t('ENABLE_MOBILE_DESC'))
+                .addToggle(toggle => toggle
+                    .setValue(this.plugin.settings.enableOnMobile)
+                    .onChange(async (value) => {
+                        this.plugin.settings.enableOnMobile = value;
+                        await this.plugin.saveSettings();
+                        new Notice(t('MOBILE_RESTART_NOTICE'));
+                    }));
+        } else {
+            const mobileNotice = containerEl.createEl('div', {
+                cls: 'setting-item-description',
+                attr: { style: 'margin-bottom: 15px; color: var(--text-muted); font-size: 0.85em;' }
+            });
+            mobileNotice.setText("当前移动设备正在以远程服务模式运行。如需完全关闭移动端加载以节省电量，可在桌面端设置中关闭“启用移动端支持”。");
+        }
 
         new Setting(containerEl).setName(t('DANGER_SECTION')).setHeading();
 

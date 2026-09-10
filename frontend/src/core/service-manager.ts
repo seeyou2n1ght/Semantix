@@ -1,7 +1,18 @@
 import { Notice, Platform } from 'obsidian';
 import SemantixPlugin from '../main';
-import { spawn, ChildProcess, exec, execSync } from 'child_process';
+import type { ChildProcess } from 'child_process';
 import { HealthStatus } from '../api/client';
+import { getElectronNodeModule } from '../utils/node-adapter';
+
+interface ChildProcessModule {
+    spawn: (command: string, args: string[], options: Record<string, unknown>) => ChildProcess;
+    exec: (command: string, callback?: (error: Error | null, stdout: string, stderr: string) => void) => unknown;
+    execSync: (command: string) => Buffer | string;
+}
+
+function getChildProcess(): ChildProcessModule | null {
+    return getElectronNodeModule<ChildProcessModule>('child_process');
+}
 
 export class ServiceManager {
     private plugin: SemantixPlugin;
@@ -76,9 +87,16 @@ export class ServiceManager {
                 SEMANTIX_PARENT_PID: process.pid.toString() 
             };
 
+            const cp = getChildProcess();
+            if (!cp) {
+                this.reportStatus("当前环境不支持本地进程管理 ❌");
+                this.isStarting = false;
+                return;
+            }
+
             this.reportStatus("正在唤醒后端服务...");
             // 为路径包含空格的情况加固
-            const proc = spawn(`"${settings.pythonPath}"`, args, {
+            const proc = cp.spawn(`"${settings.pythonPath}"`, args, {
                 cwd: settings.backendPath,
                 shell: true, // 在 Windows 下 spawn 字符串命令需要 shell
                 detached: false,
@@ -164,14 +182,16 @@ export class ServiceManager {
     private async killPortConflict(): Promise<void> {
         return new Promise((resolve) => {
             const port = 8000;
+            const cp = getChildProcess();
+            if (!cp) { resolve(); return; }
             
             if (Platform.isWin) {
                 // Windows 实现
-                exec('netstat -ano | findstr :8000', (error, stdout) => {
+                cp.exec('netstat -ano | findstr :8000', (error, stdout) => {
                     if (error || !stdout) { resolve(); return; }
                     const lines = stdout.split('\n');
                     const pids = new Set<string>();
-                    lines.forEach(line => {
+                    lines.forEach((line: string) => {
                         const parts = line.trim().split(/\s+/);
                         const pid = parts[parts.length - 1];
                         if (pid && !isNaN(parseInt(pid)) && pid !== '0') pids.add(pid);
@@ -183,7 +203,7 @@ export class ServiceManager {
                     
                     try {
                         for (const pid of pids) {
-                            const cmdInfo = execSync(`wmic process where processid=${pid} get commandline`).toString();
+                            const cmdInfo = cp.execSync(`wmic process where processid=${pid} get commandline`).toString();
                             if (cmdInfo.includes("main:app") && (cmdInfo.includes(backendPathKey) || cmdInfo.includes("uv"))) {
                                 targetPids.push(pid);
                             }
@@ -192,20 +212,20 @@ export class ServiceManager {
 
                     if (targetPids.length === 0) { resolve(); return; }
                     const pidStr = targetPids.join(' /PID ');
-                    exec(`taskkill /F /PID ${pidStr}`, () => resolve());
+                    cp.exec(`taskkill /F /PID ${pidStr}`, () => resolve());
                 });
             } else {
                 // Unix (macOS/Linux) 实现
-                exec(`lsof -t -i :${port}`, (error, stdout) => {
+                cp.exec(`lsof -t -i :${port}`, (error, stdout) => {
                     if (error || !stdout) { resolve(); return; }
                     
                     const pids = stdout.trim().split('\n');
                     const targetPids: string[] = [];
                     const backendPathKey = this.plugin.settings.backendPath.split(/[\\/]/).pop() || "";
 
-                    pids.forEach(pid => {
+                    pids.forEach((pid: string) => {
                         try {
-                            const cmdLine = execSync(`ps -p ${pid} -o args=`).toString();
+                            const cmdLine = cp.execSync(`ps -p ${pid} -o args=`).toString();
                             if (cmdLine.includes("main:app") && (cmdLine.includes(backendPathKey) || cmdLine.includes("uv"))) {
                                 targetPids.push(pid);
                             }
@@ -214,7 +234,7 @@ export class ServiceManager {
 
                     if (targetPids.length === 0) { resolve(); return; }
 
-                    exec(`kill -9 ${targetPids.join(' ')}`, () => {
+                    cp.exec(`kill -9 ${targetPids.join(' ')}`, () => {
                         this.reportStatus("已清理旧的后端进程");
                         resolve();
                     });
@@ -232,13 +252,14 @@ export class ServiceManager {
         if (this.process && this.process.pid) {
             const targetPid = this.process.pid;
             this.reportStatus("正在停止服务并回收资源...");
+            const cp = getChildProcess();
             
             if (Platform.isWin) {
                 // Windows 下必须使用 taskkill /T (Tree) 才能杀死通过 shell 启动的子进程
                 // 使用 execSync 确保在插件 onunload 完成前同步结束进程
                 try {
                     // 对 PID 使用引号包裹增加安全性
-                    execSync(`taskkill /F /T /PID "${targetPid}"`);
+                    if (cp) cp.execSync(`taskkill /F /T /PID "${targetPid}"`);
                 } catch (e) {
                     // 忽略进程可能已经自行退出的报错
                 }

@@ -125,8 +125,8 @@ export default class SemantixPlugin extends Plugin {
         this.app.workspace.onLayoutReady(async () => {
             if (!this.isMobileHibernating) {
                 this.activateWhispererView();
-                // 如果开启了本地自建边车模式，则尝试启动（非阻塞调用，提升冷启动体验）
-                if (this.settings.backendMode === 'local' && this.settings.autoStartServer) {
+                // 如果开启了本地自建边车模式，则尝试启动（仅桌面端支持）
+                if (Platform.isDesktop && this.settings.backendMode === 'local' && this.settings.autoStartServer) {
                     this.serviceManager.start();
                 }
                 // 初次自检设为静默，避免启动瞬间的竞态导致误报
@@ -208,7 +208,7 @@ export default class SemantixPlugin extends Plugin {
             return;
         }
 
-        if (this.settings.backendMode === 'local') {
+        if (Platform.isDesktop && this.settings.backendMode === 'local') {
             if (this.serviceManager.isActivating()) {
                 // 如果正在启动中，且健康检查还没通过，我们保持 syncing 状态
                 this.updateAllViewStatus('syncing');

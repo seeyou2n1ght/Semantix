@@ -110,10 +110,11 @@ export default {
     THRESHOLD_ERROR_MED: "Medium threshold must be less than high!",
     
     // Mobile
-    MOBILE_SECTION: "Mobile & Performance",
-    ENABLE_MOBILE_NAME: "Enable on mobile",
-    ENABLE_MOBILE_DESC: "Force start on mobile (may increase battery usage; restart required).",
-    MOBILE_RESTART_NOTICE: "Please restart plugin after toggling mobile support.",
+    MOBILE_SECTION: "Mobile & Remote Access",
+    ENABLE_MOBILE_NAME: "Enable Mobile Support (Remote Mode)",
+    ENABLE_MOBILE_DESC: "When disabled (recommended default), Semantix hibernates on mobile devices to save battery and memory. When enabled, mobile devices will use Remote Service mode to connect to your configured backend API address (mobile devices cannot run local sidecars).",
+    MOBILE_RESTART_NOTICE: "Mobile settings updated. Please reload plugin on mobile device for changes to take effect.",
+    MOBILE_REMOTE_BANNER: "📱 Mobile Environment: Mobile devices cannot run local Python sidecars. Semantix is operating in Remote Service mode. Please configure your remote API address and token.",
     
     // Danger
     DANGER_SECTION: "Danger Zone",
@@ -166,7 +167,7 @@ export default {
     SCORE_HIGH: "Highly related: Themes align closely",
     SCORE_MED: "Related: Many commonalities",
     SCORE_LOW: "Maybe related: Some connection found",
-    MOBILE_HIBERNATING: "Semantix is hibernating on mobile. Enable it in settings.",
+    MOBILE_HIBERNATING: "Semantix is hibernating on mobile. To use it on mobile devices, please enable 'Enable Mobile Support (Remote Mode)' in desktop settings and ensure remote service is reachable.",
     RERANKING_NAME: "Enable Reranking (Cross-Encoder)",
     RERANKING_DESC: "Use BGE-Reranker for higher accuracy. Turn off for 'Lightweight Mode' on older machines to save memory and CPU.",
     ADAPTIVE_FILTER_NAME: "Adaptive Noise Filtering",

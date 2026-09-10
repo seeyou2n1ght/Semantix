@@ -110,10 +110,11 @@ export default {
     THRESHOLD_ERROR_MED: "中分阈值必须小于高分阈值！",
     
     // 移动端 (Mobile)
-    MOBILE_SECTION: "移动端与性能",
-    ENABLE_MOBILE_NAME: "移动端强制开启",
-    ENABLE_MOBILE_DESC: "开启可能增加耗电；修改后需要重启插件生效。",
-    MOBILE_RESTART_NOTICE: "移动端开关修改后请重启插件生效。",
+    MOBILE_SECTION: "移动端与远程访问",
+    ENABLE_MOBILE_NAME: "启用移动端支持 (远程模式)",
+    ENABLE_MOBILE_DESC: "关闭此开关时（推荐默认），在手机或平板移动端打开 Obsidian 将默认休眠并不加载核心服务，节省电量与内存；开启后，移动端将启用插件并自动使用“远程服务模式”连接指定的后端 API 地址（移动设备无法运行本地 Python 边车，需配置可访问的远程服务地址）。",
+    MOBILE_RESTART_NOTICE: "移动端开关已更新，请在移动端重新加载插件或重启 Obsidian 生效。",
+    MOBILE_REMOTE_BANNER: "📱 移动端环境：移动设备无法运行本地 Python 边车，Semantix 正在以远程服务模式运行。请配置可访问的远程后端服务地址与 API 令牌。",
     
     // 危险操作 (Danger)
     DANGER_SECTION: "危险操作",
@@ -169,7 +170,7 @@ export default {
     SCORE_HIGH: "高度相关：内容主题高度一致",
     SCORE_MED: "相关：内容有较多共同点",
     SCORE_LOW: "可能相关：内容有一定关联",
-    MOBILE_HIBERNATING: "语义雷达在移动端处于休眠状态。如需开启请前往设置。",
+    MOBILE_HIBERNATING: "Semantix 在移动端处于休眠保护状态。如需在移动设备上使用，请在桌面端设置中开启“启用移动端支持 (远程模式)”，并确保远程服务可用。",
     RERANKING_NAME: "启用精排 (Cross-Encoder)",
     RERANKING_DESC: "使用 BGE-Reranker 进一步提升搜索准确度。在旧机器上可关闭此项以进入“轻量模式”，节省内存和 CPU。",
     ADAPTIVE_FILTER_NAME: "启发式噪音过滤",
