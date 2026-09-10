@@ -134,29 +134,29 @@ export class SemantixSettingTab extends PluginSettingTab {
 
         try {
             if (!fsMod.existsSync(backendPath)) {
-                this.updateStatus('backend', "❌ 路径不存在");
+                this.updateStatus('backend', t('PATH_NOT_EXIST'));
                 return;
             }
             
             const stats = fsMod.statSync(backendPath);
             if (!stats.isDirectory()) {
-                this.updateStatus('backend', "❌ 提供的路径不是一个目录");
+                this.updateStatus('backend', t('PATH_NOT_DIR'));
                 return;
             }
 
             const mainPy = pathMod.join(backendPath, 'main.py');
             if (!fsMod.existsSync(mainPy)) {
-                this.updateStatus('backend', "❌ 未找到 main.py (确认是否是后端根目录)");
+                this.updateStatus('backend', t('MAIN_NOT_FOUND'));
                 return;
             }
 
-            this.updateStatus('backend', "✅ 合法的后端项目路径");
+            this.updateStatus('backend', t('PATH_VALID'));
             
             // 联动：自动探测虚拟环境
             this.autoDetectPythonEnvironment(backendPath);
         } catch (e) {
             const errorMsg = e instanceof Error ? e.message : String(e);
-            this.updateStatus('backend', `❌ 校验出错: ${errorMsg}`);
+            this.updateStatus('backend', `❌ ${errorMsg}`);
         }
     }
 
@@ -216,7 +216,7 @@ export class SemantixSettingTab extends PluginSettingTab {
         // Header Setting using official setHeading API
         const headerSetting = new Setting(containerEl)
             .setName(t('SETTINGS_TITLE'))
-            .setDesc("Semantix Local Knowledge Engine")
+            .setDesc(t('SETTINGS_SUBTITLE'))
             .setHeading();
 
         const badge = headerSetting.controlEl.createEl('div', { 
@@ -585,7 +585,7 @@ export class SemantixSettingTab extends PluginSettingTab {
         // 3. 执行磁盘优化按钮
         new Setting(containerEl)
             .setName(t('RUN_MAINTENANCE_BTN'))
-            .setDesc(t('DB_MAINTENANCE_SECTION'))
+            .setDesc(t('RUN_MAINTENANCE_DESC'))
             .addButton(btn => btn
                 .setButtonText(t('RUN_MAINTENANCE_BTN'))
                 .onClick(async () => {

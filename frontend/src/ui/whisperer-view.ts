@@ -74,7 +74,8 @@ export class WhispererView extends ItemView {
         // 临时 Note Mode 扫描按钮
         this.scanNoteBtnEl = topBar.createEl("button", {
             cls: "semantix-btn-scan-note",
-            text: "扫描整篇"
+            text: t('BTN_SCAN_NOTE'),
+            attr: { "title": t('BTN_SCAN_NOTE_TOOLTIP'), "aria-label": t('BTN_SCAN_NOTE') }
         });
         this.scanNoteBtnEl.addEventListener("click", () => {
             this.plugin.whisperer.triggerNoteScan();
@@ -87,8 +88,8 @@ export class WhispererView extends ItemView {
         const relatedSection = contentArea.createEl("div", { cls: "semantix-section" });
         relatedSection.createEl("div", { 
             cls: "semantix-section-header", 
-            text: "RELATED",
-            attr: { "title": "与当前输入高度相关的笔记与段落" }
+            text: t('STREAM_RELATED_TITLE'),
+            attr: { "title": t('STREAM_RELATED_TOOLTIP') }
         });
         this.relatedContainerEl = relatedSection.createEl("div", { cls: "semantix-card-list" });
         this.relatedContainerEl.createEl("p", {
@@ -100,12 +101,12 @@ export class WhispererView extends ItemView {
         const discoverSection = contentArea.createEl("div", { cls: "semantix-section" });
         discoverSection.createEl("div", { 
             cls: "semantix-section-header", 
-            text: "DISCOVER",
-            attr: { "title": "相关但不重复、可能带来新联想的意外关联" }
+            text: t('STREAM_DISCOVER_TITLE'),
+            attr: { "title": t('STREAM_DISCOVER_TOOLTIP') }
         });
         this.discoverContainerEl = discoverSection.createEl("div", { cls: "semantix-card-list" });
         this.discoverContainerEl.createEl("p", {
-            text: "写作时将自动发掘跨主题关联与未链接笔记...",
+            text: t('DISCOVER_INITIAL'),
             cls: "semantix-empty-text"
         });
 
@@ -137,10 +138,10 @@ export class WhispererView extends ItemView {
         this.updateContextBreadcrumb(contextPath, contextHeading);
 
         // 渲染 Related
-        this.renderCardList(this.relatedContainerEl, related, "暂无高度相关的已有笔记");
+        this.renderCardList(this.relatedContainerEl, related, t('STREAM_RELATED_EMPTY'));
 
         // 渲染 Discover
-        this.renderCardList(this.discoverContainerEl, discover, "暂无具有新颖度的意外关联");
+        this.renderCardList(this.discoverContainerEl, discover, t('STREAM_DISCOVER_EMPTY'));
     }
 
     private renderCardList(container: HTMLElement, items: RadarCardItem[], emptyText: string) {
@@ -154,7 +155,7 @@ export class WhispererView extends ItemView {
 
         for (const item of items) {
             const card = container.createEl("div", { cls: "semantix-radar-card" });
-            card.setAttribute("title", "点击直接打开笔记");
+            card.setAttribute("title", t('CARD_CLICK_OPEN'));
 
             // 标题行与右侧动作区
             const titleRow = card.createEl("div", { cls: "semantix-card-title-row" });
@@ -168,7 +169,7 @@ export class WhispererView extends ItemView {
                 metaRow.createEl("span", { 
                     cls: "semantix-card-score", 
                     text: `${pct}%`,
-                    attr: { "title": `语义匹配度: ${pct}%` }
+                    attr: { "title": `${t('POPOVER_MATCH')}: ${pct}%` }
                 });
             }
 
@@ -176,7 +177,7 @@ export class WhispererView extends ItemView {
             const linkBtn = metaRow.createEl("button", {
                 cls: "semantix-card-btn-link",
                 text: "🔗",
-                attr: { "title": "插入 [[笔记]] 链接至当前光标处", "aria-label": "插入链接" }
+                attr: { "title": t('CARD_INSERT_LINK'), "aria-label": t('CARD_INSERT_LINK') }
             });
             linkBtn.addEventListener("click", (e: MouseEvent) => {
                 e.stopPropagation();
@@ -214,14 +215,14 @@ export class WhispererView extends ItemView {
 
     private translateLabel(code: string): string {
         switch (code) {
-            case 'KEYWORD_MATCH': return '关键词匹配';
-            case 'DEEP_SEMANTIC': return '深度相关';
-            case 'SAME_FOLDER': return '同目录';
-            case 'SHARED_TAGS': return '标签关联';
-            case 'CROSS_TOPIC': return '跨主题';
-            case 'CROSS_FOLDER': return '跨目录';
-            case 'UNLINKED': return '未建立链接';
-            case 'SERENDIPITY': return '潜在延伸';
+            case 'KEYWORD_MATCH': return t('LABEL_KEYWORD_MATCH');
+            case 'DEEP_SEMANTIC': return t('LABEL_DEEP_SEMANTIC');
+            case 'SAME_FOLDER': return t('LABEL_SAME_FOLDER');
+            case 'SHARED_TAGS': return t('LABEL_SHARED_TAGS');
+            case 'CROSS_TOPIC': return t('LABEL_CROSS_TOPIC');
+            case 'CROSS_FOLDER': return t('LABEL_CROSS_FOLDER');
+            case 'UNLINKED': return t('LABEL_UNLINKED');
+            case 'SERENDIPITY': return t('LABEL_SERENDIPITY');
             default: return code;
         }
     }
@@ -258,7 +259,7 @@ export class WhispererView extends ItemView {
         const link = `[[${item.title}]]`;
         editor.replaceRange(link, cursor);
         editor.setCursor({ line: cursor.line, ch: cursor.ch + link.length });
-        new Notice(`已插入链接: [[${item.title}]]`, 1500);
+        new Notice(`${t('CARD_INSERT_LINK_NOTICE')}[[${item.title}]]`, 1500);
     }
 
     public showLoading() {

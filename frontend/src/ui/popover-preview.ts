@@ -1,4 +1,5 @@
 import { RadarCardItem } from '../api/types';
+import { t } from '../i18n/helpers';
 
 function applyStyles(element: HTMLElement, styles: Record<string, string>) {
     for (const [prop, val] of Object.entries(styles)) {
@@ -55,16 +56,16 @@ export class PopoverPreview {
             const pct = Math.round(item.score * 100);
             titleArea.createEl("span", { 
                 cls: "semantix-popover-score", 
-                text: `${pct}% 匹配` 
+                text: `${pct}% ${t('POPOVER_MATCH')}` 
             });
         }
 
         const actions = header.createEl("div", { cls: "semantix-popover-actions" });
         const insertBtn = actions.createEl("button", {
             cls: "semantix-popover-btn mod-cta",
-            text: "🔗 引用"
+            text: `🔗 ${t('POPOVER_INSERT')}`
         });
-        insertBtn.setAttribute("title", "插入 [[笔记]] 链接至当前光标处");
+        insertBtn.setAttribute("title", t('CARD_INSERT_LINK'));
         insertBtn.addEventListener("click", (e: MouseEvent) => {
             e.stopPropagation();
             this.hide();
@@ -73,14 +74,14 @@ export class PopoverPreview {
 
         const copyBtn = actions.createEl("button", {
             cls: "semantix-popover-btn",
-            text: "📋 复制"
+            text: `📋 ${t('POPOVER_COPY')}`
         });
-        copyBtn.setAttribute("title", "复制匹配片段文本");
+        copyBtn.setAttribute("title", t('POPOVER_COPY'));
         copyBtn.addEventListener("click", async (e: MouseEvent) => {
             e.stopPropagation();
             await navigator.clipboard.writeText(item.snippet || item.title);
-            copyBtn.setText("已复制");
-            setTimeout(() => copyBtn.setText("📋 复制"), 1500);
+            copyBtn.setText(t('POPOVER_COPIED'));
+            setTimeout(() => copyBtn.setText(`📋 ${t('POPOVER_COPY')}`), 1500);
         });
 
         // 2. 路径元数据行
@@ -159,14 +160,14 @@ export class PopoverPreview {
 
     private translateLabel(code: string): string {
         switch (code) {
-            case 'KEYWORD_MATCH': return '关键词匹配';
-            case 'DEEP_SEMANTIC': return '深度语义';
-            case 'SAME_FOLDER': return '同目录';
-            case 'SHARED_TAGS': return '标签关联';
-            case 'CROSS_TOPIC': return '跨主题';
-            case 'CROSS_FOLDER': return '跨目录';
-            case 'UNLINKED': return '未建立链接';
-            case 'SERENDIPITY': return '意外偶遇';
+            case 'KEYWORD_MATCH': return t('LABEL_KEYWORD_MATCH');
+            case 'DEEP_SEMANTIC': return t('LABEL_DEEP_SEMANTIC');
+            case 'SAME_FOLDER': return t('LABEL_SAME_FOLDER');
+            case 'SHARED_TAGS': return t('LABEL_SHARED_TAGS');
+            case 'CROSS_TOPIC': return t('LABEL_CROSS_TOPIC');
+            case 'CROSS_FOLDER': return t('LABEL_CROSS_FOLDER');
+            case 'UNLINKED': return t('LABEL_UNLINKED');
+            case 'SERENDIPITY': return t('LABEL_SERENDIPITY');
             default: return code;
         }
     }

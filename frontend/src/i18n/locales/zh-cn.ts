@@ -10,7 +10,8 @@ export default {
     STATUS_DISABLED: "已禁用",
     
     // 设置页眉 (Settings Header)
-    SETTINGS_TITLE: "配置",
+    SETTINGS_TITLE: "Semantix 设置",
+    SETTINGS_SUBTITLE: "管理本地知识引擎连接、写作灵感推荐与向量索引",
     SETTINGS_GENERAL_SECTION: "通用配置",
     
     // 后端模式 (Backend Mode)
@@ -125,6 +126,7 @@ export default {
     RETENTION_DAYS: "历史版本保留天数: ",
     RETENTION_DAYS_DESC: "数据库保留冗余历史版本的时长（用于“时间旅行”回滚）。设为 0 则仅保留当前状态。",
     RUN_MAINTENANCE_BTN: "立即执行磁盘优化",
+    RUN_MAINTENANCE_DESC: "整理 LanceDB 数据碎片，清理超出保留天数的过期版本以压缩存储体积。",
     MAINTENANCE_RUNNING: "正在优化...",
     MAINTENANCE_SUCCESS: "数据库优化完成，已释放冗余空间。",
 
@@ -146,11 +148,25 @@ export default {
     STARTUP_FAILED: "后端启动失败 ❌ ",
 
     // 视图相关 (Views)
-    VIEW_WHISPERER_TITLE: "建议灵感",
-    VIEW_RADAR_TITLE: "孤岛雷达",
-    WHISPERER_HEADER: "动态灵感",
-    RADAR_HEADER: "孤岛雷达",
-    WAITING_INPUT: "等待输入...",
+    VIEW_WHISPERER_TITLE: "Semantix 灵感雷达",
+    WHISPERER_HEADER: "Semantix",
+    STREAM_RELATED_TITLE: "RELATED",
+    STREAM_RELATED_TOOLTIP: "与当前输入高度相关的笔记与段落",
+    STREAM_DISCOVER_TITLE: "DISCOVER",
+    STREAM_DISCOVER_TOOLTIP: "相关但不重复、可能带来新联想的意外关联",
+    STREAM_RELATED_EMPTY: "暂无高度相关的已有笔记",
+    STREAM_DISCOVER_EMPTY: "暂无具有新颖度的意外关联",
+    WAITING_INPUT: "输入文字时将自动发掘已有笔记关联...",
+    DISCOVER_INITIAL: "写作时将自动发掘跨主题关联与未链接笔记...",
+    BTN_SCAN_NOTE: "扫描整篇",
+    BTN_SCAN_NOTE_TOOLTIP: "针对当前笔记全篇触发一次深度语义联想",
+    CARD_CLICK_OPEN: "点击在主编辑区打开笔记",
+    CARD_INSERT_LINK: "插入 [[笔记]] 链接至当前光标处",
+    CARD_INSERT_LINK_NOTICE: "已插入链接：",
+    POPOVER_MATCH: "匹配",
+    POPOVER_COPY: "复制",
+    POPOVER_COPIED: "已复制",
+    POPOVER_INSERT: "引用",
     INDEXED_COUNT: "已索引: ",
     LAST_UPDATE: "上次更新: ",
     INDEXING_PROGRESS: "索引进度: ",
@@ -177,8 +193,13 @@ export default {
     SCORE_SEMANTIC: "语义相似度",
     SCORE_BONUS: "关联加成",
     REASON_SAME_FOLDER: "🏠 位于相同文件夹",
-    REASON_RELATED_FOLDER: "📁 位于相关父子目录",
-    REASON_SHARE_TAGS: "🏷️ 共享多个相同标签",
-    REASON_LINKED: "🔗 已有主动引用记录",
-    REASON_HIGH_DENSITY: "📊 内容中存在多处匹配",
+    // 标签系统 (Labels)
+    LABEL_KEYWORD_MATCH: "关键词匹配",
+    LABEL_DEEP_SEMANTIC: "深度相关",
+    LABEL_SAME_FOLDER: "同目录",
+    LABEL_SHARED_TAGS: "标签关联",
+    LABEL_CROSS_TOPIC: "跨主题",
+    LABEL_CROSS_FOLDER: "跨目录",
+    LABEL_UNLINKED: "未建立链接",
+    LABEL_SERENDIPITY: "意外偶遇",
 }
