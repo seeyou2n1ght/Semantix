@@ -108,13 +108,15 @@ export class ResultStabilizer {
         incomingList: RadarCardItem[],
         policy: StabilizerPolicy,
         now: number,
-        isNewParagraph: boolean
+        allowRelaxedReplacement: boolean
     ): DisplayedCard[] {
         if (currentList.length === 0) {
             return this.createDisplayedCards(incomingList, now);
         }
+        // 当 incoming 为空时，超过最低展示寿命后允许清空淡出，避免旧卡片永久常驻
         if (!incomingList || incomingList.length === 0) {
-            return currentList;
+            const hasYoungCard = currentList.some(c => (now - c.enteredAt) < policy.minimumLifetimeMs);
+            return hasYoungCard ? currentList : [];
         }
 
         const incomingMap = new Map<string, RadarCardItem>();
@@ -125,7 +127,11 @@ export class ResultStabilizer {
         const nextCards: DisplayedCard[] = [];
         const retainedIds = new Set<string>();
         let replacementCount = 0;
-        const maxReplacements = isNewParagraph ? policy.maxReplacementsPerTick + 1 : policy.maxReplacementsPerTick;
+        const maxReplacements = allowRelaxedReplacement ? policy.maxReplacementsPerTick + 1 : policy.maxReplacementsPerTick;
+
+        // 筛选未展示的新入候选
+        const unshownIncoming = incomingList.filter(item => !currentList.some(c => c.item.id === item.id));
+        let nextCandidateIdx = 0;
 
         // 遍历当前已展示卡片，判定是否保留
         for (const displayed of currentList) {
@@ -135,32 +141,36 @@ export class ResultStabilizer {
             // 情况 1: 该卡片在 incoming 中依然存在
             if (incomingSame) {
                 retainedIds.add(displayed.item.id);
-                // 关键原则：只要卡片保留，保持原有的 displayLabels，防止标签跳闪
+                // 标签平滑演进：以既有稳定标签为主，但融合新标签，不锁死
+                const mergedLabels = Array.from(new Set([...displayed.displayLabels, ...incomingSame.labels])).slice(0, 2);
                 nextCards.push({
                     item: {
                         ...incomingSame,
-                        labels: displayed.displayLabels || incomingSame.labels
+                        labels: mergedLabels
                     },
                     enteredAt: displayed.enteredAt,
                     position: nextCards.length,
-                    displayLabels: displayed.displayLabels
+                    displayLabels: mergedLabels
                 });
                 continue;
             }
 
-            // 情况 2: 该卡片未出现在 incoming 中，但尚未达到最短展示寿命
+            // 情况 2: 未达到最短展示寿命，强制保留
             if (age < policy.minimumLifetimeMs) {
                 retainedIds.add(displayed.item.id);
                 nextCards.push(displayed);
                 continue;
             }
 
-            // 情况 3: 达到寿命且已被 incoming 淘汰，尝试允许置换
-            if (replacementCount < maxReplacements) {
+            // 情况 3: 达到寿命且已被 incoming 淘汰，校验 replacementMargin 优势
+            const nextBest = unshownIncoming[nextCandidateIdx];
+            const marginSatisfied = !nextBest || (nextBest.score >= displayed.item.score + policy.replacementMargin);
+
+            if (replacementCount < maxReplacements && marginSatisfied) {
                 replacementCount++;
-                // 此卡片被淘汰，不放入 nextCards
+                nextCandidateIdx++;
+                // 此卡片被淘汰
             } else {
-                // 超过单次置换上限，暂时保留一轮
                 retainedIds.add(displayed.item.id);
                 nextCards.push(displayed);
             }

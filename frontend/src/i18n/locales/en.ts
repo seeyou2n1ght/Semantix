@@ -7,6 +7,7 @@ export default {
     STATUS_CONNECTED: "Connected",
     STATUS_DISCONNECTED: "Disconnected",
     STATUS_SYNCING: "Connecting",
+    STATUS_SCANNING: "Scanning...",
     STATUS_DISABLED: "Disabled",
     
     // Settings Header
@@ -141,7 +142,14 @@ export default {
     DIVERSITY_DESC: "Diversity weight for the Discover stream: Focused ↔ Exploratory.",
     ADAPTIVE_FILTERING_NAME: "Adaptive noise filtering",
     ADAPTIVE_FILTERING_DESC: "Automatically filter high-frequency boilerplate words based on vault frequency distribution.",
+    ADAPTIVE_STOPWORDS_TITLE: "Active Adaptive Stopwords",
+    ADAPTIVE_STOPWORDS_EMPTY: "(No adaptive stopwords, click recalculate to generate)",
+    CUSTOM_STOPWORDS_NAME: "Custom Stopwords",
+    CUSTOM_STOPWORDS_DESC: "User-defined noise words to ignore (e.g. project codes, personal phrases). Separated by commas, spaces, or newlines.",
+    CUSTOM_STOPWORDS_PLACEHOLDER: "Enter words, e.g.: note, archive, project_code",
     BTN_CALCULATE_STOPWORDS: "Recalculate",
+    STOPWORDS_CALCULATING: "Calculating...",
+    STOPWORDS_FAILED: "Noise-word calculation failed. Check that the engine is connected and the index is not empty.",
     STORAGE_SIZE_NAME: "Database size & fragmentation",
     STORAGE_RETENTION_NAME: "History retention days",
     STORAGE_RETENTION_DESC: "Duration to keep historical database versions (for time travel fallback). Set to 0 to keep only current state.",

@@ -109,5 +109,52 @@ def test_radar_search_empty_query():
     assert data["discover"] == []
 
 
+def test_feature_builder_links_and_bridges():
+    from services.ranking.features import FeatureBuilder
+
+    # 构造候选 1: 具有与当前笔记反向链接 (候选 links 存了 basename "CurrentNote")
+    c1 = RetrievalCandidate(
+        path="folder/Candidate1.md",
+        title="Candidate 1",
+        snippet="Snippet 1",
+        vector=[0.1] * 5,
+        semantic_score=0.8,
+        lexical_score=1.0,
+        matched_chunk_index=0,
+        tags=["ai"],
+        links=["CurrentNote"],  # 历史未解析别名
+        full_path="folder > Candidate1",
+    )
+    # 构造候选 2: 与当前笔记共享同一核心概念出链 (2-hop 共同引用)
+    c2 = RetrievalCandidate(
+        path="folder/Candidate2.md",
+        title="Candidate 2",
+        snippet="Snippet 2",
+        vector=[0.2] * 5,
+        semantic_score=0.75,
+        lexical_score=1.0,
+        matched_chunk_index=0,
+        tags=["tech"],
+        links=["System/Architecture.md"],  # 共享核心链接
+        full_path="folder > Candidate2",
+    )
+
+    feats = FeatureBuilder.build_features(
+        candidates=[c1, c2],
+        current_path="Daily/CurrentNote.md",
+        current_tags=["ai"],
+        current_links=["System/Architecture.md"],
+    )
+
+    # 验证 c1 成功识别反向链接
+    assert feats[0].is_direct_link is True
+    assert feats[0].shared_links_count == 0
+
+    # 验证 c2 无直接链接，但 2-hop 共同引用桥梁数精准命中 1
+    assert feats[1].is_direct_link is False
+    assert feats[1].shared_links_count == 1
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
+

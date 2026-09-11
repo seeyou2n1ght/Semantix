@@ -3,6 +3,7 @@ from typing import List, Set, Optional
 from services.ranking.features import CandidateFeatures
 from services.ranking.mmr import select_by_mmr, cosine_similarity
 from services.ranking.labels import LabelResolver
+from config import ranking_config
 
 logger = logging.getLogger("semantix")
 
@@ -20,11 +21,11 @@ class DiscoverRanker:
         related_selected: List[CandidateFeatures],
         current_path: Optional[str] = None,
         top_k: int = 4,
-        min_relevance: float = 0.45,
-        hard_duplicate_threshold: float = 0.88,
-        alpha_related_penalty: float = 0.20,
-        beta_known_relation_penalty: float = 0.15,
-        mmr_lambda: float = 0.65,
+        min_relevance: float = ranking_config.DISCOVER_MIN_RELEVANCE,
+        hard_duplicate_threshold: float = ranking_config.DISCOVER_HARD_DUPLICATE_THRESHOLD,
+        alpha_related_penalty: float = ranking_config.DISCOVER_ALPHA_RELATED_PENALTY,
+        beta_known_relation_penalty: float = ranking_config.DISCOVER_BETA_KNOWN_RELATION_PENALTY,
+        mmr_lambda: float = ranking_config.DISCOVER_DEFAULT_MMR_LAMBDA,
     ) -> List[CandidateFeatures]:
         if not all_features or top_k <= 0:
             return []
@@ -65,19 +66,31 @@ class DiscoverRanker:
             if max_sim >= hard_duplicate_threshold:
                 continue
 
-            # 5. 计算基础 Discover 分数：扣除 Related 重复度与已知结构关系 (已双链/同目录)
+            # 5. 计算 Discover 分数：Relevance - 惩罚 (Related重复度/已知关系) + 奖励 (概念与跨域桥梁)
             known_relation = 0.0
             if feat.is_direct_link:
                 known_relation += 1.0
             if feat.is_same_folder:
                 known_relation += 0.5
 
+            bridge_bonus = 0.0
+            # 2-hop 共同引用桥梁：非直接双链，但双方共同引用核心概念节点
+            if feat.shared_links_count > 0 and not feat.is_direct_link:
+                bridge_bonus += min(0.08, 0.04 * feat.shared_links_count)
+
+            # 跨目录共享专有标签桥梁
+            if feat.is_cross_folder_shared_tag:
+                bridge_bonus += min(0.06, 0.03 * feat.tag_overlap)
+
+            feat.bridge_score = bridge_bonus
+
             base_discover_score = (
                 relevance
                 - alpha_related_penalty * max_sim
                 - beta_known_relation_penalty * known_relation
+                + bridge_bonus
             )
-            feat.discover_score = max(0.01, base_discover_score)
+            feat.discover_score = min(1.0, max(0.01, base_discover_score))
             filtered_pool.append(feat)
 
         if not filtered_pool:

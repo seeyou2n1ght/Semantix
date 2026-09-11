@@ -13,6 +13,8 @@ export interface BatchIndexRequest {
 export interface BatchIndexResponse {
     status: string;
     indexed: number;
+    indexed_chunks?: number;
+    failed_paths?: string[];
 }
 
 export interface DeleteIndexRequest {

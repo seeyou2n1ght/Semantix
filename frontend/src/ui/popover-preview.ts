@@ -47,16 +47,19 @@ export class PopoverPreview {
         this.currentTargetEl = targetEl;
         this.popoverEl.empty();
 
-        // 1. 顶部操作栏与标题
+        // 1. 顶部操作栏与匹配分值（移除冗余笔记名，仅保留分值与操作按钮）
         const header = this.popoverEl.createEl("div", { cls: "semantix-popover-header" });
-        const titleArea = header.createEl("div", { cls: "semantix-popover-title-area" });
-        titleArea.createEl("span", { cls: "semantix-popover-title", text: item.title });
 
         if (typeof item.score === 'number' && !isNaN(item.score)) {
-            const pct = Math.round(item.score * 100);
-            titleArea.createEl("span", { 
+            const scoreVal = (Math.round(item.score * 100) / 100).toFixed(2);
+            header.createEl("span", { 
                 cls: "semantix-popover-score", 
-                text: `${pct}% ${t('POPOVER_MATCH')}` 
+                text: `${t('POPOVER_MATCH')}: ${scoreVal}` 
+            });
+        } else {
+            header.createEl("span", { 
+                cls: "semantix-popover-score", 
+                text: t('POPOVER_MATCH') 
             });
         }
 
@@ -84,10 +87,16 @@ export class PopoverPreview {
             setTimeout(() => copyBtn.setText(`📋 ${t('POPOVER_COPY')}`), 1500);
         });
 
-        // 2. 路径元数据行
+        // 2. 路径元数据行（可点击快速跳转打开笔记）
         if (item.path) {
             const metaBar = this.popoverEl.createEl("div", { cls: "semantix-popover-meta" });
-            metaBar.createEl("span", { cls: "semantix-popover-path", text: `📁 ${item.path}` });
+            const pathEl = metaBar.createEl("span", { cls: "semantix-popover-path", text: `📁 ${item.path}` });
+            pathEl.setAttribute("title", t('CARD_CLICK_OPEN'));
+            pathEl.addEventListener("click", (e: MouseEvent) => {
+                e.stopPropagation();
+                this.hide();
+                if (this.onOpenNoteCallback) this.onOpenNoteCallback(item);
+            });
         }
 
         // 3. 完整父块上下文内容

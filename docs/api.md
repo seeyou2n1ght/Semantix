@@ -54,8 +54,15 @@ Semantix 后端通过 REST API 提供服务。所有涉及数据的请求均需�
   ```json
   { "documents": [{ "vault_id": "...", "path": "file.md", "text": "..." }] }
   ```
-
-### `POST /index/delete`
+- **响应**：
+  ```json
+  {
+    "status": "success",
+    "indexed": 10,
+    "indexed_chunks": 35,
+    "failed_paths": []
+  }
+  ```
 - **用途**：按路径删除索引项。
 
 ### `POST /index/clear/request` & `/confirm`
@@ -123,7 +130,7 @@ Semantix 后端通过 REST API 提供服务。所有涉及数据的请求均需�
   | `top_k_related` | int | Related 流最大返回条数（默认 4） |
   | `top_k_discover` | int | Discover 流最大返回条数（默认 4） |
   | `exclude_paths` | list[str] | 排除路径列表（强制包含当前笔记路径） |
-  | `ranking_mode` | string | 精排策略：`fast`（关闭精排）、`balanced`（Top 12 精排）、`high_quality`（Top 25 全量精排） |
+  | `ranking_mode` | string | 精排策略：`fast`（关闭精排）、`balanced`（Top 24 精排）、`high_quality`（Top 30 全量精排） |
   | `mmr_lambda` | float | MMR 多样性权重（默认 0.65，0.2~0.9；值越小越发散、越具探索性） |
 
 - **Response Body**:

@@ -12,13 +12,13 @@ export class WhispererView extends ItemView {
     private statusTextEl!: HTMLElement;
     private contextBreadcrumbEl!: HTMLElement;
     private scanNoteBtnEl!: HTMLElement;
+    private scanBarEl!: HTMLElement;
     private progressContainerEl!: HTMLElement;
     private progressTextEl!: HTMLElement;
-    private progressPercentEl!: HTMLElement;
+    private progressCountEl!: HTMLElement;
     private progressBarEl!: HTMLElement;
     private relatedContainerEl!: HTMLElement;
     private discoverContainerEl!: HTMLElement;
-    private loadingEl: HTMLElement | null = null;
     private popoverPreview: PopoverPreview;
 
     constructor(leaf: WorkspaceLeaf, plugin: SemantixPlugin) {
@@ -69,12 +69,6 @@ export class WhispererView extends ItemView {
             cls: "semantix-status-text"
         });
 
-        // 隐式 Focus：当前文件与 Heading 面包屑
-        this.contextBreadcrumbEl = topBar.createEl("div", {
-            cls: "semantix-context-breadcrumb",
-            text: "Semantix"
-        });
-
         // 临时 Note Mode 扫描按钮
         this.scanNoteBtnEl = topBar.createEl("button", {
             cls: "semantix-btn-scan-note",
@@ -85,7 +79,10 @@ export class WhispererView extends ItemView {
             this.plugin.whisperer.triggerNoteScan();
         });
 
-        // --- 动态进度反馈条 (全量索引与增量同步) ---
+        // 实时检索微光扫描条 (常驻顶栏下方，检索时优雅渐显，无 DOM 重排跳动)
+        this.scanBarEl = wrapper.createEl("div", { cls: "semantix-scan-bar" });
+
+        // --- 动态进度反馈条 (全量索引与增量同步，仅展示分数/计数，不展示百分比) ---
         this.progressContainerEl = wrapper.createEl("div", { 
             cls: "semantix-indexing-progress-container is-hidden" 
         });
@@ -94,9 +91,9 @@ export class WhispererView extends ItemView {
             cls: "semantix-progress-text",
             text: "" 
         });
-        this.progressPercentEl = progressHeader.createEl("span", { 
-            cls: "semantix-progress-percent",
-            text: "0%" 
+        this.progressCountEl = progressHeader.createEl("span", { 
+            cls: "semantix-progress-count", 
+            text: "" 
         });
         const progressTrack = this.progressContainerEl.createEl("div", { cls: "semantix-progress-track" });
         this.progressBarEl = progressTrack.createEl("div", { cls: "semantix-progress-bar" });
@@ -142,15 +139,8 @@ export class WhispererView extends ItemView {
         this.popoverPreview.destroy();
     }
 
-    public updateContextBreadcrumb(filePath?: string, heading?: string) {
-        if (!this.contextBreadcrumbEl) return;
-        if (!filePath) {
-            this.contextBreadcrumbEl.setText("Semantix");
-            return;
-        }
-        const fileName = filePath.split('/').pop()?.replace(/\.md$/, '') || filePath;
-        const headingPart = heading ? ` > ${heading}` : "";
-        this.contextBreadcrumbEl.setText(`${fileName}${headingPart}`);
+    public updateContextBreadcrumb(_filePath?: string, _heading?: string) {
+        // 顶部栏已精简化，移除 Connected 右侧冗余文件名，保持接口兼容
     }
 
     public renderRadarResults(
@@ -197,6 +187,17 @@ export class WhispererView extends ItemView {
         if (this.plugin.settings.enableAdaptiveFiltering && this.plugin.vaultStopwords?.length > 0) {
             for (const word of this.plugin.vaultStopwords) {
                 stopWords.add(word.toLowerCase());
+            }
+        }
+
+        // 合并用户自主定义的停用词
+        if (this.plugin.settings.customStopwords) {
+            const customList = this.plugin.settings.customStopwords
+                .split(/[\n,，\s]+/)
+                .map(w => w.trim().toLowerCase())
+                .filter(Boolean);
+            for (const word of customList) {
+                stopWords.add(word);
             }
         }
 
@@ -262,32 +263,25 @@ export class WhispererView extends ItemView {
             card.setAttribute("tabindex", "0");
             card.setAttribute("role", "button");
 
-            // 标题行与右侧动作区
-            const titleRow = card.createEl("div", { cls: "semantix-card-title-row" });
-            titleRow.createEl("span", { cls: "semantix-card-title", text: item.title });
-
-            const metaRow = titleRow.createEl("div", { cls: "semantix-card-meta-actions" });
-
-            // 分值百分比
+            // 顶行：仅展示相关度指示分数（移除卡片内冗余文件名与引用按钮，空间让渡给联想内容）
             if (typeof item.score === 'number' && !isNaN(item.score)) {
-                const pct = Math.round(item.score * 100);
-                metaRow.createEl("span", { 
-                    cls: "semantix-card-score", 
-                    text: `${pct}%`,
-                    attr: { "title": `${t('POPOVER_MATCH')}: ${pct}%` }
+                const scoreVal = (Math.round(item.score * 100) / 100).toFixed(2);
+                let tierText = "●●○";
+                let tierCls = "mid";
+                if (item.score >= 0.75) {
+                    tierText = "●●●";
+                    tierCls = "high";
+                } else if (item.score < 0.50) {
+                    tierText = "●○○";
+                    tierCls = "low";
+                }
+                const headerRow = card.createEl("div", { cls: "semantix-card-header-row" });
+                headerRow.createEl("span", {
+                    cls: `semantix-card-score mod-${tierCls}`,
+                    text: tierText,
+                    attr: { "title": `${t('POPOVER_MATCH')}: ${scoreVal}` }
                 });
             }
-
-            // 快捷引用按钮（插入到当前光标处，阻止冒泡）
-            const linkBtn = metaRow.createEl("button", {
-                cls: "semantix-card-btn-link",
-                text: "🔗",
-                attr: { "title": t('CARD_INSERT_LINK'), "aria-label": t('CARD_INSERT_LINK') }
-            });
-            linkBtn.addEventListener("click", (e: MouseEvent) => {
-                e.stopPropagation();
-                this.handleInsertLink(item);
-            });
 
             // 摘要行 (高亮关键词与自适应降噪)
             this.renderHighlightedSnippet(card, item.snippet, keywords);
@@ -340,24 +334,32 @@ export class WhispererView extends ItemView {
     }
 
     private async handleJumpToNote(item: RadarCardItem) {
+        this.popoverPreview.hide();
         const file = this.plugin.app.vault.getAbstractFileByPath(item.path);
         if (!file || !(file instanceof TFile)) return;
 
-        // 在主编辑区原位打开（支持 Obsidian 历史后退）
-        const leaf = this.plugin.app.workspace.getLeaf(false);
+        // 在主编辑区原位打开并激活该活动叶子，显式聚焦编辑器，确保用户可直接编辑
+        let leaf = this.plugin.app.workspace.getLeaf(false);
+        if (!leaf || leaf.view instanceof WhispererView) {
+            leaf = this.plugin.app.workspace.getLeaf('tab');
+        }
         await leaf.openFile(file);
+        this.plugin.app.workspace.setActiveLeaf(leaf, { focus: true });
 
-        // 定位匹配段落并滚动高亮
-        if (leaf.view instanceof MarkdownView && item.snippet) {
+        // 定位匹配段落并滚动高亮，无论是否匹配均聚焦编辑器
+        if (leaf.view instanceof MarkdownView) {
             const editor = leaf.view.editor;
-            const cleanSnip = item.snippet.replace(/^\.\.\.|\.\.\.$/g, '').trim().slice(0, 25);
-            const count = editor.lineCount();
-            for (let i = 0; i < count; i++) {
-                const line = editor.getLine(i);
-                if (cleanSnip && line.includes(cleanSnip)) {
-                    editor.setCursor({ line: i, ch: 0 });
-                    editor.scrollIntoView({ from: { line: i, ch: 0 }, to: { line: i, ch: line.length } }, true);
-                    break;
+            editor.focus();
+            if (item.snippet) {
+                const cleanSnip = item.snippet.replace(/^\.\.\.|\.\.\.$/g, '').trim().slice(0, 25);
+                const count = editor.lineCount();
+                for (let i = 0; i < count; i++) {
+                    const line = editor.getLine(i);
+                    if (cleanSnip && line.includes(cleanSnip)) {
+                        editor.setCursor({ line: i, ch: 0 });
+                        editor.scrollIntoView({ from: { line: i, ch: 0 }, to: { line: i, ch: line.length } }, true);
+                        break;
+                    }
                 }
             }
         }
@@ -371,20 +373,25 @@ export class WhispererView extends ItemView {
         const link = `[[${item.title}]]`;
         editor.replaceRange(link, cursor);
         editor.setCursor({ line: cursor.line, ch: cursor.ch + link.length });
+        editor.focus();
         new Notice(`${t('CARD_INSERT_LINK_NOTICE')}[[${item.title}]]`, 1500);
     }
 
     public showLoading() {
-        if (!this.loadingEl && this.containerEl) {
-            this.loadingEl = this.containerEl.createEl("div", { cls: "semantix-loading-bar" });
+        if (this.scanBarEl) {
+            this.scanBarEl.addClass("is-scanning");
+        }
+        if (this.indicatorEl && this.statusTextEl) {
+            this.indicatorEl.className = 'semantix-status-indicator status-scanning';
+            this.statusTextEl.setText(t('STATUS_SCANNING'));
         }
     }
 
     public clearLoading() {
-        if (this.loadingEl) {
-            this.loadingEl.remove();
-            this.loadingEl = null;
+        if (this.scanBarEl) {
+            this.scanBarEl.removeClass("is-scanning");
         }
+        this.updateStatus(this.plugin.getConnectionStatus());
     }
 
     public updateStatus(status: 'connected' | 'disconnected' | 'syncing' | 'disabled') {
@@ -403,22 +410,27 @@ export class WhispererView extends ItemView {
      * 更新索引与同步进度视觉指示器
      */
     public updateIndexingProgress(state: IndexingState) {
-        if (!this.progressContainerEl || !this.progressBarEl || !this.progressTextEl || !this.progressPercentEl) {
+        if (!this.progressContainerEl || !this.progressBarEl || !this.progressTextEl || !this.progressCountEl) {
             return;
         }
 
-        if (state && state.active && state.total > 0) {
+        const shouldShowBox = state && state.active && state.total > 0 && (state.label === 'full' || state.total >= 5);
+        if (shouldShowBox) {
             this.progressContainerEl.removeClass("is-hidden");
             const pct = Math.min(100, Math.max(0, Math.round((state.current / state.total) * 100)));
             this.progressBarEl.setCssStyles({ width: `${pct}%` });
-            this.progressPercentEl.setText(`${pct}%`);
+            this.progressCountEl.setText(`(${state.current}/${state.total})`);
             const label = state.label === 'sync' ? t('PROGRESS_LABEL_SYNC') : t('PROGRESS_LABEL_INDEX');
-            this.progressTextEl.setText(`${label} (${state.current}/${state.total})`);
+            this.progressTextEl.setText(label);
             this.updateStatus('syncing');
         } else {
             this.progressContainerEl.addClass("is-hidden");
             this.progressBarEl.setCssStyles({ width: '0%' });
-            this.updateStatus(this.plugin.getConnectionStatus());
+            if (state && state.active && state.total > 0) {
+                this.updateStatus('syncing');
+            } else {
+                this.updateStatus(this.plugin.getConnectionStatus());
+            }
         }
     }
 

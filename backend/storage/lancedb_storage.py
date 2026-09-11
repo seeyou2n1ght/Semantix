@@ -29,7 +29,7 @@ class LanceDBStorage:
         self._fts_dirty = False
         self._last_fts_rebuild_at = 0.0
         self.stopword_file = os.path.join(db_path, "custom_stopwords.json")
-        self.vault_stopwords: Set[str] = self._load_custom_stopwords()
+        self.vault_stopwords: Dict[str, Set[str]] = self._load_custom_stopwords()
         self.table = None
         self._init_collection()
 
@@ -73,9 +73,7 @@ class LanceDBStorage:
             existing_fields = {field.name for field in self.table.schema}
             # 如果缺少必要字段，触发重建
             if any(f not in existing_fields for f in ["parent_text", "full_path", "tags", "links"]):
-                logger.warning("Schema mismatch detected, recreating table %s...", COLLECTION_NAME)
-                self.db.drop_table(COLLECTION_NAME)
-                self.table = self.db.create_table(COLLECTION_NAME, schema=schema)
+                raise RuntimeError("Incompatible index schema; back up and explicitly rebuild the index")
             else:
                 logger.info("Table %s opened with verified schema.", COLLECTION_NAME)
         else:
@@ -103,23 +101,35 @@ class LanceDBStorage:
             raise ValueError(f"Invalid {name}: contains disallowed characters")
         return value
 
-    def _load_custom_stopwords(self) -> Set[str]:
+    def _load_custom_stopwords(self) -> Dict[str, Set[str]]:
         if os.path.exists(self.stopword_file):
             try:
                 with open(self.stopword_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    return set(data)
+                    if isinstance(data, dict):
+                        return {vid: set(words) for vid, words in data.items()}
+                    elif isinstance(data, list):
+                        return {"__default__": set(data)}
             except Exception as e:
                 logger.error("Failed to load custom stopwords: %s", e)
-        return set()
+        return {}
 
     def _save_custom_stopwords(self):
         try:
             os.makedirs(self.db_path, exist_ok=True)
             with open(self.stopword_file, "w", encoding="utf-8") as f:
-                json.dump(list(self.vault_stopwords), f, ensure_ascii=False, indent=2)
+                dump_data = {vid: sorted(list(words)) for vid, words in self.vault_stopwords.items()}
+                json.dump(dump_data, f, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.error("Failed to save custom stopwords: %s", e)
+
+    def get_vault_stopwords(self, vault_id: str) -> Set[str]:
+        return self.vault_stopwords.get(vault_id, set())
+
+    def set_vault_stopwords(self, vault_id: str, words: List[str]):
+        # 重算结果是当前语料的完整快照，必须替换旧集合，避免陈旧噪音词永久残留。
+        self.vault_stopwords[vault_id] = set(words)
+        self._save_custom_stopwords()
 
     def count_notes(self, vault_id: Optional[str] = None) -> int:
         try:
@@ -128,19 +138,18 @@ class LanceDBStorage:
                 return 0
             import pyarrow.compute as pc
 
-            arrow_tbl = self.table.to_arrow()
-            logger.info("count_notes: arrow_tbl rows=%d, vault_id=%s", len(arrow_tbl), vault_id)
             if not vault_id:
-                return len(pc.unique(arrow_tbl.column("path")))
+                arrow_tbl = self.table.search().select(["vault_id", "path"]).limit(None).to_arrow()
+                return len(set(zip(arrow_tbl.column("vault_id").to_pylist(), arrow_tbl.column("path").to_pylist())))
 
-            mask = pc.equal(arrow_tbl.column("vault_id"), vault_id)
-            filtered_paths = pc.filter(arrow_tbl.column("path"), mask)
-            cnt = len(pc.unique(filtered_paths))
+            escaped_vid = self._escape_sql_string(vault_id)
+            arrow_tbl = self.table.search().where(f"vault_id = '{escaped_vid}'").select(["path"]).limit(None).to_arrow()
+            cnt = len(pc.unique(arrow_tbl.column("path")))
             logger.info("count_notes: unique notes=%d for vault_id=%s", cnt, vault_id)
             return cnt
         except Exception as e:
             logger.error("Error counting notes: %s", e)
-            return 0
+            raise
 
     def delete_by_paths(self, vault_id: str, paths: List[str]):
         if not paths or self.table is None:
@@ -161,6 +170,7 @@ class LanceDBStorage:
         self._validate_identifier(vault_id, "vault_id")
         try:
             self.table.delete(f"vault_id = '{self._escape_sql_string(vault_id)}'")
+            self.set_vault_stopwords(vault_id, [])
             logger.info("Cleared all notes for vault_id=%s", vault_id)
         except Exception as e:
             logger.error("Error clearing vault: %s", e)
@@ -170,6 +180,8 @@ class LanceDBStorage:
         try:
             self.db.drop_table(COLLECTION_NAME)
             self._init_collection()
+            self.vault_stopwords.clear()
+            self._save_custom_stopwords()
             logger.info("Table cleared and recreated.")
         except Exception as e:
             logger.error("Error clearing table: %s", e)
@@ -186,6 +198,27 @@ class LanceDBStorage:
             logger.error("Error inserting rows to table: %s", e)
             raise
 
+    def replace_documents(self, rows: List[Dict[str, Any]], paths_by_vault: Dict[str, Set[str]]):
+        """Replace only successfully encoded documents in one Lance transaction.
+
+        The scoped delete removes old surplus chunks when a note shrinks, while
+        a failed merge leaves its previous version available.
+        """
+        if self.table is None:
+            raise RuntimeError("Index table is unavailable")
+        scopes = []
+        for vault_id, paths in paths_by_vault.items():
+            formatted = ", ".join(f"'{self._escape_sql_string(p)}'" for p in sorted(paths))
+            scopes.append(f"(vault_id = '{self._escape_sql_string(vault_id)}' AND path IN ({formatted}))")
+        if not scopes:
+            return
+        data = pa.Table.from_pylist(rows, schema=self.table.schema)
+        (self.table.merge_insert(["vault_id", "path", "chunk_index"])
+         .when_matched_update_all()
+         .when_not_matched_insert_all()
+         .when_not_matched_by_source_delete(" OR ".join(scopes))
+         .execute(data))
+
     def rebuild_fts_index(self):
         try:
             if self.table is not None:
@@ -193,6 +226,7 @@ class LanceDBStorage:
                 logger.info("FTS index on 'text' rebuilt successfully.")
         except Exception as e:
             logger.error("Failed to rebuild FTS index: %s", e)
+            raise
 
     def mark_fts_dirty(self):
         with self._fts_rebuild_lock:
@@ -222,14 +256,18 @@ class LanceDBStorage:
             with self._fts_rebuild_lock:
                 self._fts_rebuild_in_progress = False
 
-    def optimize_database(self, retention_days: int = 7):
+    def optimize_database(self, retention_days: int = 0):
         from datetime import timedelta
         try:
             if self.table is None:
                 return
             logger.info("Starting database optimization (retention: %d days)...", retention_days)
-            self.table.optimize()
-            self.table.cleanup_old_versions(older_than=timedelta(days=retention_days))
+            # LanceDB 0.29+: optimize 执行 Compaction、Prune 与 Index 维护
+            # cleanup_older_than 设为 retention_days（为 0 时清理所有历史版本，仅保留最新版，彻底回收空间）
+            self.table.optimize(
+                cleanup_older_than=timedelta(days=max(0, retention_days)),
+                delete_unverified=True
+            )
             logger.info("Database optimization completed.")
         except Exception as e:
             logger.error("Failed to optimize database: %s", e)

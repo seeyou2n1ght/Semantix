@@ -7,6 +7,7 @@ export default {
     STATUS_CONNECTED: "已连接",
     STATUS_DISCONNECTED: "断开连接",
     STATUS_SYNCING: "同步中",
+    STATUS_SCANNING: "检索中...",
     STATUS_DISABLED: "已禁用",
     
     // 设置页眉 (Settings Header)
@@ -141,7 +142,14 @@ export default {
     DIVERSITY_DESC: "Discover 流的发散性权重：更聚焦 ↔ 更具探索性。",
     ADAPTIVE_FILTERING_NAME: "自适应噪音词过滤",
     ADAPTIVE_FILTERING_DESC: "基于仓库词频分布自动过滤高频模板噪音词。",
+    ADAPTIVE_STOPWORDS_TITLE: "当前自适应停用词",
+    ADAPTIVE_STOPWORDS_EMPTY: "（暂无自适应停用词，点击右侧重新计算可基于词频自动生成）",
+    CUSTOM_STOPWORDS_NAME: "自定义停用词",
+    CUSTOM_STOPWORDS_DESC: "自定义需要忽略的高频无意义词汇（如项目代号、个人口头禅等）。支持逗号、空格或换行分隔，将与自适应停用词合并用于检索与高亮降噪。",
+    CUSTOM_STOPWORDS_PLACEHOLDER: "输入词汇，例如：笔记, 归档, 项目代号",
     BTN_CALCULATE_STOPWORDS: "重新计算",
+    STOPWORDS_CALCULATING: "计算中...",
+    STOPWORDS_FAILED: "噪音词计算失败，请确认引擎已连接且索引不为空。",
     STORAGE_SIZE_NAME: "数据库体积与碎片",
     STORAGE_RETENTION_NAME: "历史版本保留天数",
     STORAGE_RETENTION_DESC: "数据库保留冗余历史版本的时长（用于时间旅行回滚）。设为 0 仅保留当前最新状态。",

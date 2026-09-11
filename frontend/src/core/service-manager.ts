@@ -116,6 +116,10 @@ export class ServiceManager {
                 this.plugin.checkConnection({ silent: true });
                 return;
             }
+            if (status === HealthStatus.LOADING) {
+                this.reportStatus("后端正在载入模型，等待就绪... ⏳");
+                return;
+            }
 
             await this.forceKillAndStart({ isHeal: true });
         }, backoffDelay);
@@ -172,11 +176,17 @@ export class ServiceManager {
                 this.plugin.checkConnection({ silent: !force });
                 return;
             }
+            if (status === HealthStatus.LOADING) {
+                this.reportStatus("后端正在载入模型... ⏳");
+                this.isStarting = false;
+                return;
+            }
 
+            const effectivePort = this.getEffectivePort();
             // 构造启动命令
             const args = settings.pythonPath === 'uv' 
-                ? ['run', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', '8000']
-                : ['-m', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', '8000'];
+                ? ['run', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', effectivePort.toString()]
+                : ['-m', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', effectivePort.toString()];
 
             const env = { 
                 ...process.env, 
@@ -266,10 +276,24 @@ export class ServiceManager {
     }
 
     /**
+     * 从设置项 backendUrl 中动态提取有效端口（默认 8000）
+     */
+    public getEffectivePort(): number {
+        try {
+            const parsed = new URL(this.plugin.settings.backendUrl || 'http://localhost:8000');
+            if (parsed.port) return parseInt(parsed.port, 10);
+            return parsed.protocol === 'https:' ? 443 : 80;
+        } catch {
+            return 8000;
+        }
+    }
+
+    /**
      * 强力清理并重新启动 (支持自愈模式透传)
      */
     public async forceKillAndStart(options: { isHeal?: boolean } = {}) {
-        this.reportStatus(options.isHeal ? "正在自愈重启引擎..." : "正在清理 8000 端口并重新尝试手动启动...");
+        const port = this.getEffectivePort();
+        this.reportStatus(options.isHeal ? "正在自愈重启引擎..." : `正在清理 ${port} 端口并重新尝试手动启动...`);
         await this.killPortConflict();
         // 给系统一点释放资源的时间
         await new Promise(r => setTimeout(r, 1000));
@@ -277,7 +301,7 @@ export class ServiceManager {
     }
 
     /**
-     * 扫描并结束 8000 端口上的非本插件进程 (优先使用 PID 锁文件精准回收)
+     * 扫描并结束目标端口上的非本插件进程 (优先使用 PID 锁文件精准回收)
      */
     private async killPortConflict(): Promise<void> {
         return new Promise((resolve) => {
@@ -314,10 +338,10 @@ export class ServiceManager {
             }
 
             // 2. 降级方案：端口占用探测与清理
-            const port = 8000;
+            const port = this.getEffectivePort();
             if (Platform.isWin) {
                 // Windows 实现
-                cp.exec('netstat -ano | findstr :8000', (error, stdout) => {
+                cp.exec(`netstat -ano | findstr :${port}`, (error, stdout) => {
                     if (error || !stdout) { resolve(); return; }
                     const lines = stdout.split('\n');
                     const pids = new Set<string>();

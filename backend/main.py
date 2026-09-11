@@ -30,7 +30,7 @@ from models import (
 )
 from services.embedding_service import embedding_service
 from services.reranker_service import reranker_service
-from db_svc import db_svc, DatabaseService
+from db_svc import db_svc
 
 API_TOKEN = os.getenv("SEMANTIX_API_TOKEN", "").strip() or None
 ALLOWED_ORIGINS = [
@@ -151,11 +151,6 @@ def verify_token(x_semantix_token: str | None = Header(default=None)):
 ENGINE_VERSION = "0.8.0"
 API_VERSION = "1"
 INDEX_VERSION = "1"
-
-# Initialize Database Service
-db_path = os.getenv("SEMANTIX_DB_PATH", "./semantix_lance").strip()
-db_svc = DatabaseService(db_path=db_path)
-
 
 def maintenance_worker() -> None:
     """后台定时维护任务：清理过期版本，优化磁盘空间"""
@@ -279,25 +274,24 @@ def get_index_status(vault_id: str = "default"):
         total_notes=count, 
         last_updated=METRICS["last_index_at"], 
         vault_id=vault_id,
-        vault_stopwords=list(db_svc.vault_stopwords)
+        vault_stopwords=list(db_svc.get_vault_stopwords(vault_id))
     )
 
 
 @app.get("/metrics", response_model=MetricsResponse, tags=["Status"])
-def get_metrics():
+def get_metrics(vault_id: Optional[str] = None):
     # 实时刷新数据库大小指标
     METRICS["db_size_bytes"] = db_svc.get_storage_metrics()
-    return MetricsResponse(**METRICS)
+    return MetricsResponse(**{**METRICS, "total_indexed_docs": db_svc.count_notes(vault_id)})
 
 @app.post("/maintenance/run", tags=["Maintenance"])
 def run_maintenance(request: Optional[MaintenanceRequest] = None):
-    """手动触发数据库维护"""
+    """手动触发数据库深度维护，立即回收全部历史废弃版本。"""
     try:
-        retention = request.retention_days if request else METRICS.get("current_retention_days", 7)
-        # 更新当前的全局配置
-        METRICS["current_retention_days"] = retention
-        
-        db_svc.optimize_database(retention_days=retention)
+        # 保存定时维护策略；手动操作本次仍以 0 天阈值立即回收空间。
+        if request is not None:
+            METRICS["current_retention_days"] = max(0, request.retention_days)
+        db_svc.optimize_database(retention_days=0)
         
         METRICS["last_maintenance_at"] = datetime.now().isoformat()
         METRICS["db_size_bytes"] = db_svc.get_storage_metrics()
@@ -328,7 +322,7 @@ def batch_index(request: BatchIndexRequest, background_tasks: BackgroundTasks):
     ]
 
     try:
-        db_svc.upsert_documents(data_to_insert)
+        upsert_res = db_svc.upsert_documents(data_to_insert)
         # 标记 FTS 脏位，由节流逻辑决定是否真正 rebuild
         db_svc.mark_fts_dirty()
         background_tasks.add_task(db_svc.maybe_rebuild_fts_index)
@@ -337,13 +331,22 @@ def batch_index(request: BatchIndexRequest, background_tasks: BackgroundTasks):
             status_code=500, detail=f"Database insertion failed: {str(e)}"
         )
 
+    success_docs = upsert_res["success_docs"]
+    indexed_chunks = upsert_res["indexed_chunks"]
+    failed_docs = upsert_res["failed_docs"]
+
     duration_ms = (time.perf_counter() - start) * 1000
-    METRICS["total_indexed_docs"] += len(request.documents)
+    METRICS["total_indexed_docs"] += success_docs
     METRICS["last_index_at"] = datetime.now().isoformat()
     METRICS["last_index_ms"] = duration_ms
-    logger.info("Indexed %d documents in %.2fms", len(request.documents), duration_ms)
+    logger.info("Indexed %d chunks (%d documents, %d failed) in %.2fms", indexed_chunks, success_docs, len(failed_docs), duration_ms)
 
-    return {"status": "success", "indexed": len(request.documents)}
+    return {
+        "status": "success",
+        "indexed": success_docs,
+        "indexed_chunks": indexed_chunks,
+        "failed_paths": failed_docs,
+    }
 
 
 @app.post("/index/delete", tags=["Index"])
@@ -455,6 +458,8 @@ def radar_search(request: RadarSearchRequest):
             vault_id=request.vault_id,
             query_text=query_text,
             current_path=ctx.path,
+            title=ctx.title,
+            heading=ctx.heading,
             current_tags=ctx.tags,
             current_links=ctx.links,
             exclude_paths=request.exclude_paths,
@@ -536,7 +541,9 @@ def semantic_search(request: SemanticSearchRequest):
 
 
 @app.post("/index/compute-stopwords", tags=["Index"])
-async def compute_stopwords_api(request: MaintenanceRequest):
+def compute_stopwords_api(request: MaintenanceRequest):
+    if not request.vault_id:
+        raise HTTPException(status_code=422, detail="vault_id is required")
     try:
         noise_words = db_svc.compute_vault_stopwords(request.vault_id)
         return {"status": "success", "count": len(noise_words), "words": noise_words}

@@ -36,8 +36,11 @@ class DatabaseService:
     def count_notes(self, vault_id: Optional[str] = None) -> int:
         return self.storage.count_notes(vault_id)
 
-    def upsert_documents(self, data: List[Dict[str, Any]]) -> int:
+    def upsert_documents(self, data: List[Dict[str, Any]]) -> Dict[str, Any]:
         return self.index_svc.upsert_documents(data)
+
+    def get_vault_stopwords(self, vault_id: str) -> Set[str]:
+        return self.storage.get_vault_stopwords(vault_id)
 
     def delete_by_paths(self, vault_id: str, paths: List[str]):
         self.storage.delete_by_paths(vault_id, paths)
@@ -63,7 +66,7 @@ class DatabaseService:
     def get_storage_metrics(self) -> int:
         return self.storage.get_storage_metrics()
 
-    def compute_vault_stopwords(self, vault_id: str, threshold: float = 0.6) -> List[str]:
+    def compute_vault_stopwords(self, vault_id: str, threshold: float = 0.3) -> List[str]:
         return self.index_svc.compute_vault_stopwords(vault_id, threshold)
 
     def radar_search(
@@ -71,6 +74,8 @@ class DatabaseService:
         vault_id: str,
         query_text: str,
         current_path: Optional[str] = None,
+        title: Optional[str] = None,
+        heading: Optional[str] = None,
         current_tags: Optional[List[str]] = None,
         current_links: Optional[List[str]] = None,
         exclude_paths: Optional[List[str]] = None,
@@ -84,6 +89,8 @@ class DatabaseService:
             vault_id=vault_id,
             query_text=query_text,
             current_path=current_path,
+            title=title,
+            heading=heading,
             current_tags=current_tags,
             current_links=current_links,
             exclude_paths=exclude_paths,

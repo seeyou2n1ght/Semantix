@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 import os
 import sys
+from unittest.mock import MagicMock
 
 # Add root to sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -34,6 +35,22 @@ def test_metrics_endpoint():
     response = client.get("/metrics")
     assert response.status_code == 200
     assert "total_indexed_docs" in response.json()
+
+
+def test_manual_maintenance_forces_deep_cleanup(monkeypatch):
+    """手动维护必须忽略历史保留配置并以 0 天阈值立即清理旧版本。"""
+    import main
+
+    optimize = MagicMock()
+    monkeypatch.setattr(main.db_svc, "optimize_database", optimize)
+    monkeypatch.setattr(main.db_svc, "get_storage_metrics", lambda: 0)
+    monkeypatch.setitem(main.METRICS, "current_retention_days", 7)
+
+    response = client.post("/maintenance/run", json={"retention_days": 30})
+
+    assert response.status_code == 200
+    optimize.assert_called_once_with(retention_days=0)
+    assert main.METRICS["current_retention_days"] == 30
 
 
 def test_ready_endpoint():

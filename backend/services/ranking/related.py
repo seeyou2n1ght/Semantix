@@ -1,6 +1,7 @@
 from typing import List
 from services.ranking.features import CandidateFeatures
 from services.ranking.labels import LabelResolver
+from config import ranking_config
 
 
 class RelatedRanker:
@@ -13,9 +14,9 @@ class RelatedRanker:
     def rank(
         features: List[CandidateFeatures],
         top_k: int = 4,
-        rerank_weight: float = 0.50,
-        semantic_weight: float = 0.35,
-        lexical_weight: float = 0.15,
+        rerank_weight: float = ranking_config.RELATED_RERANK_WEIGHT,
+        semantic_weight: float = ranking_config.RELATED_SEMANTIC_WEIGHT,
+        lexical_weight: float = ranking_config.RELATED_LEXICAL_WEIGHT,
     ) -> List[CandidateFeatures]:
         if not features or top_k <= 0:
             return []

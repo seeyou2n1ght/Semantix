@@ -14,11 +14,13 @@ Semantix 采用基于 LanceDB 的四阶段混合召回与动态双流排序架�
 
 ---
 
-## 2. 粗排混合召回 (Hybrid Retrieval)
+## 2. 粗排独立召回与 RRF 融合 (Decoupled Retrieval & RRF Fusion)
 
-- **Vector 语义召回**：基于 `BAAI/bge-small-zh-v1.5` 生成 512 维向量，通过 LanceDB 检索余弦相似度 Top 45。
-- **FTS 关键词召回**：通过 LanceDB 内置 Tantivy 倒排索引检索精确词频 Top 45。
-- **块级去重聚合**：将 Top 45 子块按笔记文件路径聚合为 Top 25 篇候选。同一笔记命中多个块时保留最高分块作为匹配基点，并赋予命中频次奖励（Hit Bonus: 单次 +0.02，上限 +0.06）。
+- **Vector 语义召回**：基于 `BAAI/bge-small-zh-v1.5` 生成 512 维向量，通过 LanceDB 独立检索余弦相似度 Top 40。
+- **FTS 关键词召回**：通过 LanceDB 内置 Tantivy 倒排索引独立检索精确词频 Top 40。
+- **倒数排名融合 (RRF)**：解耦两路独立召回分数，采用标准 Reciprocal Rank Fusion 公式计算无量纲融合基分：
+  $$\text{RRF}(d) = \sum_{m \in \{\text{vec}, \text{fts}\}} \frac{1}{60 + \text{rank}_m(d)}$$
+- **多块命中提权 (Hit Bonus)**：同一笔记命中多个块时保留最高分块作为匹配基点，并根据块命中频次追加频次奖励（单次额外命中 $+0.02$，上限 $+0.06$）。粗排最终聚合输出 Top 25 篇候选。
 
 ---
 
@@ -41,11 +43,13 @@ $$\widetilde{S}(x) = \frac{x - \min(X)}{\max(X) - \min(X) + \epsilon}$$
        ▼                                 ▼
  [Related 强相关流]               [Discover 探索流]
        │                                 │
- Cross-Encoder 精排              Relevance Gate 门控 (≥ 0.35)
+ Cross-Encoder 精排              Relevance Gate 门控 (≥ 0.45)
        │                                 │
  结构亲和度提权 (Path/Tag/Link)    强排除 Related 结果
        │                                 │
- 最终截断 Top K_related           结构惩罚 (出链/同目录降权)
+ 最终截断 Top K_related           二跳知识桥接提权 (Bridge Bonus)
+                                         │
+                                   结构惩罚 (出链/同目录降权)
                                          │
                                    MMR 贪心多样性打散
                                          │
@@ -53,7 +57,7 @@ $$\widetilde{S}(x) = \frac{x - \min(X)}{\max(X) - \min(X) + \epsilon}$$
 ```
 
 ### 4.1 Related (强相关流)
-1. **精排重打分**：调用 `BAAI/bge-reranker-base` 对 Top 12（balanced）或 Top 25（high_quality）候选进行 Cross-Attention 计算，经 Sigmoid 结合幂函数非线性校准映射至 $[0, 1]$。
+1. **精排重打分**：调用 `BAAI/bge-reranker-base` 对 Top 24（balanced）或 Top 30（high_quality）候选进行 Cross-Attention 计算，经 Sigmoid 结合幂函数非线性校准映射至 $[0, 1]$。
 2. **结构加权 (Structure Boosting)**：
    - **出链笔记 (Direct Link)**：$S_{\text{rel}} \leftarrow S_{\text{rel}} + 0.20$
    - **同目录笔记 (Same Folder)**：$S_{\text{rel}} \leftarrow S_{\text{rel}} + 0.05$
@@ -61,12 +65,15 @@ $$\widetilde{S}(x) = \frac{x - \min(X)}{\max(X) - \min(X) + \epsilon}$$
 3. **截断输出**：按复合分降序排列，取 Top $K_{\text{related}}$。
 
 ### 4.2 Discover (意料之外流)
-1. **Relevance Gate**：过滤归一化相关分低于阈值（默认 0.35）的无关噪音。
+1. **Relevance Gate**：过滤归一化相关分低于门控阈值（默认 0.45）的弱相关或无关噪音。
 2. **Hard Mutual Exclusion**：强排除已入选 Related 的全部笔记。
-3. **结构惩罚 (Novelty Penalty)**：
-   - 已直接链接的笔记降权：$S_{\text{disc}} \leftarrow S_{\text{disc}} \times 0.6$
-   - 同目录笔记降权：$S_{\text{disc}} \leftarrow S_{\text{disc}} \times 0.8$
-4. **MMR (Maximal Marginal Relevance) 内部多样性打散**：
+3. **二跳知识桥接提权 (Concept Bridge Bonus)**：
+   - 当前笔记与候选笔记共享 $\ge 1$ 个共同出链目标时判定为两跳概念桥接节点：$S_{\text{disc}} \leftarrow S_{\text{disc}} + 0.15$
+   - 跨物理目录且包含共有标签的笔记额外赋予跨域线索加权：$S_{\text{disc}} \leftarrow S_{\text{disc}} + 0.10$
+4. **结构惩罚 (Novelty Penalty)**：
+   - 已直接链接的笔记降权：$S_{\text{disc}} \leftarrow S_{\text{disc}} \times 0.60$
+   - 同目录笔记降权：$S_{\text{disc}} \leftarrow S_{\text{disc}} \times 0.80$
+5. **MMR (Maximal Marginal Relevance) 内部多样性打散**：
    在剩余候选集 $R \setminus S$ 中贪心迭代选择使下式最大化的候选 $d_i$ 加入结果集 $S$：
 
    $$\text{MMR}(d_i) = \lambda \cdot \operatorname{Sim}(d_i, q) - (1 - \lambda) \max_{d_j \in S} \operatorname{Sim}(d_i, d_j)$$
@@ -81,6 +88,7 @@ $$\widetilde{S}(x) = \frac{x - \min(X)}{\max(X) - \min(X) + \epsilon}$$
 - `DIRECT_LINK`：当前笔记存在指向该文件的双向链接
 - `SHARE_TAGS`：共享核心标签
 - `SAME_FOLDER` / `RELATED_FOLDER`：物理目录共存或相邻
+- `SHARED_CONCEPT`：两跳共同出链桥接概念或跨目录共同标签
 - `HIGH_RELEVANCE`：语义相关度极高（前 10%）
 - `CROSS_TOPIC`：跨越目录但存在潜在语义桥梁
 - `SPARK`：Discover 流高新颖度灵感推荐

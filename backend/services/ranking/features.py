@@ -15,6 +15,8 @@ class CandidateFeatures:
         is_direct_link: bool,
         is_same_folder: bool,
         tag_overlap: int,
+        shared_links_count: int = 0,
+        is_cross_folder_shared_tag: bool = False,
     ):
         self.candidate = candidate
         self.semantic_norm = semantic_norm
@@ -23,11 +25,14 @@ class CandidateFeatures:
         self.is_direct_link = is_direct_link
         self.is_same_folder = is_same_folder
         self.tag_overlap = tag_overlap
+        self.shared_links_count = shared_links_count
+        self.is_cross_folder_shared_tag = is_cross_folder_shared_tag
 
         # 动态特征：在精排流水线中计算注入
         self.relevance_score: float = 0.0
         self.max_sim_to_related: float = 0.0
         self.discover_score: float = 0.0
+        self.bridge_score: float = 0.0
         self.labels: List[str] = []
 
 
@@ -51,7 +56,19 @@ class FeatureBuilder:
 
         current_dir = os.path.dirname(current_path).replace("\\", "/").strip("/") if current_path else None
         current_tags_set = set(current_tags or [])
-        current_links_set = set(current_links or [])
+        # 构造规范化路径集合与 Basename 集合，保障完整路径与未解析别名双向兼容
+        def _norm_path(p: str) -> str:
+            return os.path.splitext(p)[0].replace("\\", "/").strip("/").lower()
+
+        def _base_name(p: str) -> str:
+            return os.path.splitext(os.path.basename(p))[0].lower()
+
+        curr_p_norm = _norm_path(current_path) if current_path else ""
+        curr_p_base = _base_name(current_path) if current_path else ""
+
+        curr_links_exact = set(current_links or [])
+        curr_links_norm = {_norm_path(p) for p in curr_links_exact if p}
+        curr_links_base = {_base_name(p) for p in curr_links_exact if p}
 
         feature_list: List[CandidateFeatures] = []
 
@@ -66,15 +83,46 @@ class FeatureBuilder:
 
             lex_norm = norm_lexicals[i] if i < len(norm_lexicals) else 0.0
 
-            # 链接关系检测 (双向出入链判断)
-            is_linked = (c.path in current_links_set) or (current_path in (c.links or []))
+            # 链接关系检测 (双向直接出入链判断，兼容完整路径与文件名别名)
+            cand_links_exact = set(c.links or [])
+            cand_links_norm = {_norm_path(p) for p in cand_links_exact if p}
+            cand_links_base = {_base_name(p) for p in cand_links_exact if p}
+
+            cand_p_norm = _norm_path(c.path)
+            cand_p_base = _base_name(c.path)
+
+            is_linked = False
+            if current_path:
+                # 正向：当前笔记链接了候选笔记
+                linked_forward = (
+                    c.path in curr_links_exact
+                    or cand_p_norm in curr_links_norm
+                    or cand_p_base in curr_links_base
+                )
+                # 反向：候选笔记链接了当前笔记
+                linked_backward = (
+                    current_path in cand_links_exact
+                    or curr_p_norm in cand_links_norm
+                    or curr_p_base in cand_links_base
+                )
+                is_linked = linked_forward or linked_backward
+
+            # 2-hop 共同引用桥梁检测：无直接链接，但双方共同链接了同一篇核心概念笔记
+            # 同时计算精确路径交集与文件名交集，取最大匹配数
+            shared_links = 0
+            if not is_linked and (curr_links_exact or curr_links_base):
+                exact_shared = len(curr_links_exact & cand_links_exact)
+                norm_shared = len(curr_links_norm & cand_links_norm)
+                base_shared = len(curr_links_base & cand_links_base)
+                shared_links = max(exact_shared, norm_shared, base_shared)
 
             # 同目录判断
             item_dir = os.path.dirname(c.path).replace("\\", "/").strip("/")
             is_same_dir = bool(current_dir and item_dir and current_dir == item_dir)
 
-            # 标签重叠
+            # 标签重叠与跨目录稀有标签检测
             shared_tags = len(current_tags_set & set(c.tags or []))
+            is_cross_dir_tag = bool(not is_same_dir and shared_tags > 0)
 
             feat = CandidateFeatures(
                 candidate=c,
@@ -84,6 +132,8 @@ class FeatureBuilder:
                 is_direct_link=is_linked,
                 is_same_folder=is_same_dir,
                 tag_overlap=shared_tags,
+                shared_links_count=shared_links,
+                is_cross_folder_shared_tag=is_cross_dir_tag,
             )
             feature_list.append(feat)
 

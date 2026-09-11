@@ -6,6 +6,7 @@ from services.retrieval_service import RetrievalService, RetrievalCandidate
 from services.ranking.features import FeatureBuilder
 from services.ranking.related import RelatedRanker
 from services.ranking.discover import DiscoverRanker
+from config import ranking_config
 
 logger = logging.getLogger("semantix")
 
@@ -24,6 +25,8 @@ class RadarPipeline:
         vault_id: str,
         query_text: str,
         current_path: Optional[str] = None,
+        title: Optional[str] = None,
+        heading: Optional[str] = None,
         current_tags: Optional[List[str]] = None,
         current_links: Optional[List[str]] = None,
         exclude_paths: Optional[List[str]] = None,
@@ -35,8 +38,18 @@ class RadarPipeline:
         if not query_text or not query_text.strip():
             return {"related": [], "discover": []}
 
-        # 1. 生成带 BGE 检索前缀的 Query 向量
-        query_vector = embedding_service.encode_query(query_text)
+        # 1. 构建与索引分块端对称的结构化上下文 Query 文本
+        structured_query_text = query_text
+        if title or heading:
+            file_basename = title.strip() if title else ""
+            if file_basename.lower().endswith(".md"):
+                file_basename = file_basename[:-3]
+            heading_part = f" [{heading.strip()}]" if heading and heading.strip() else ""
+            prefix = f"[{file_basename}]{heading_part}\n" if file_basename else (f"{heading_part.strip()}\n" if heading_part else "")
+            structured_query_text = f"{prefix}{query_text}"
+
+        # 生成带 BGE 检索前缀的 Query 向量
+        query_vector = embedding_service.encode_query(structured_query_text)
 
         # 2. 召回粗排候选池 (Recall 40~50 -> Doc Aggregation 25~30)
         candidates = self.retrieval_svc.retrieve_candidates(
@@ -44,7 +57,7 @@ class RadarPipeline:
             query_vector=query_vector,
             query_text=query_text,
             exclude_paths=exclude_paths,
-            candidate_limit=45,
+            candidate_limit=ranking_config.RECALL_CANDIDATE_LIMIT,
         )
         if not candidates:
             return {"related": [], "discover": []}
@@ -53,11 +66,28 @@ class RadarPipeline:
         # fast: 0; balanced: 24; high_quality: 30
         rerank_scores: Optional[List[float]] = None
         if ranking_mode != "fast":
-            rerank_limit = 24 if ranking_mode == "balanced" else 30
+            rerank_limit = (
+                ranking_config.RERANK_LIMIT_HIGH_QUALITY
+                if ranking_mode == "high_quality"
+                else ranking_config.RERANK_LIMIT_BALANCED
+            )
             pool_for_rerank = candidates[:rerank_limit]
             texts_to_rerank = [c.snippet or c.title for c in pool_for_rerank]
+            # 构造适合 CrossEncoder 的对称上下文 Query，保留标题前缀并控制在 300 字符内
+            rerank_query = structured_query_text
+            if len(rerank_query) > 300:
+                if title or heading:
+                    file_basename = title.strip() if title else ""
+                    if file_basename.lower().endswith(".md"):
+                        file_basename = file_basename[:-3]
+                    heading_part = f" [{heading.strip()}]" if heading and heading.strip() else ""
+                    prefix = f"[{file_basename}]{heading_part}\n" if file_basename else (f"{heading_part.strip()}\n" if heading_part else "")
+                    remain_len = max(50, 300 - len(prefix))
+                    rerank_query = f"{prefix}{query_text[:remain_len]}"
+                else:
+                    rerank_query = query_text[:300]
             try:
-                rerank_scores = reranker_service.predict_scores(query_text, texts_to_rerank)
+                rerank_scores = reranker_service.predict_scores(rerank_query, texts_to_rerank)
             except Exception as e:
                 logger.error("Reranking failed (%s), fallback to base semantic.", e)
                 rerank_scores = None

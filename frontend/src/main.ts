@@ -125,10 +125,31 @@ export default class SemantixPlugin extends Plugin {
             }
         });
 
-        // 7. 工作区就绪后打开视图并探活
+        // 7. 工作区就绪后打开视图、探活并注册文件增量监听
         this.app.workspace.onLayoutReady(async () => {
             if (!this.isMobileHibernating) {
                 this.activateWhispererView();
+
+                // 清空初始队列，防止应用启动扫描期间累积幽灵事件
+                this.syncManager.clearQueue();
+
+                // 仓库初始就绪后再注册文件增量变更，彻底规避启动扫描期广播的伪 create 洪泛
+                this.registerEvent(this.app.vault.on('modify', (file: TAbstractFile) => {
+                    this.syncManager.queueUpdate(file);
+                }));
+                
+                this.registerEvent(this.app.vault.on('create', (file: TAbstractFile) => {
+                    this.syncManager.queueUpdate(file);
+                }));
+                
+                this.registerEvent(this.app.vault.on('delete', (file: TAbstractFile) => {
+                    this.syncManager.queueDelete(file);
+                }));
+                
+                this.registerEvent(this.app.vault.on('rename', (file: TAbstractFile, oldPath: string) => {
+                    this.syncManager.queueRename(file, oldPath);
+                }));
+
                 // 如果开启了本地自建边车模式，则尝试启动（仅桌面端支持）
                 if (Platform.isDesktop && this.settings.backendMode === 'local' && this.settings.autoStartServer) {
                     this.serviceManager.start();
@@ -139,7 +160,7 @@ export default class SemantixPlugin extends Plugin {
             }
         });
 
-        // 8. 注册增量同步与 Whisperer 事件（移动端禁用时不注册）
+        // 8. 注册 Whisperer 事件（移动端禁用时不注册）
         if (!this.isMobileHibernating) {
             this.registerEvent(this.app.workspace.on('file-open', (file) => {
                 this.whisperer.onFileOpen(file);
@@ -149,22 +170,6 @@ export default class SemantixPlugin extends Plugin {
                 if (view instanceof MarkdownView) {
                     this.whisperer.onEditorChange(editor, view);
                 }
-            }));
-            
-            this.registerEvent(this.app.vault.on('modify', (file: TAbstractFile) => {
-                this.syncManager.queueUpdate(file);
-            }));
-            
-            this.registerEvent(this.app.vault.on('create', (file: TAbstractFile) => {
-                this.syncManager.queueUpdate(file);
-            }));
-            
-            this.registerEvent(this.app.vault.on('delete', (file: TAbstractFile) => {
-                this.syncManager.queueDelete(file);
-            }));
-            
-            this.registerEvent(this.app.vault.on('rename', (file: TAbstractFile, oldPath: string) => {
-                this.syncManager.queueRename(file, oldPath);
             }));
         }
 
@@ -628,11 +633,25 @@ export default class SemantixPlugin extends Plugin {
                 }
                 
                 // 2. 提取出链 (Outlinks)
+                // 优先从 resolvedLinks 获取 Obsidian 核心解析后的规范 vault 路径
+                const resolved = this.app.metadataCache.resolvedLinks?.[file.path];
+                if (resolved) {
+                    Object.keys(resolved).forEach(targetPath => {
+                        if (targetPath) links.push(targetPath);
+                    });
+                }
+                // 若 resolvedLinks 暂无数据或有遗漏，回退至 cache.links 并尝试解析路径
                 if (cache.links) {
                     cache.links.forEach(l => {
-                        // 只需要路径，不需要锚点
                         const linkPath = l.link.split('#')[0];
-                        if (linkPath) links.push(linkPath);
+                        if (linkPath) {
+                            const dest = this.app.metadataCache.getFirstLinkpathDest(linkPath, file.path);
+                            if (dest) {
+                                links.push(dest.path);
+                            } else {
+                                links.push(linkPath);
+                            }
+                        }
                     });
                 }
             }

@@ -51,16 +51,6 @@
     color: var(--text-muted);
 }
 
-.semantix-context-breadcrumb {
-    font-size: 0.85em;
-    font-weight: 600;
-    color: var(--text-normal);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 140px;
-}
-
 .semantix-btn-scan-note {
     font-size: 0.75em;
     padding: 2px 8px;
@@ -107,10 +97,11 @@
     white-space: nowrap;
 }
 
-.semantix-progress-percent {
+.semantix-progress-count {
     font-weight: 600;
     color: var(--text-accent);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 
 .semantix-progress-track {
@@ -183,33 +174,10 @@
     border-color: var(--interactive-accent);
 }
 
-.semantix-radar-card:hover .semantix-card-btn-link {
-    opacity: 0.9;
-}
-
-.semantix-card-title-row {
+.semantix-card-header-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    margin-bottom: 3px;
-    gap: 6px;
-}
-
-.semantix-card-title {
-    font-weight: 600;
-    font-size: 0.88em;
-    color: var(--text-normal);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
-}
-
-.semantix-card-meta-actions {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    flex-shrink: 0;
+    margin-bottom: 4px;
 }
 
 .semantix-card-score {
@@ -223,21 +191,14 @@
     line-height: 1.2;
 }
 
-.semantix-card-btn-link {
-    background: transparent;
-    border: none;
-    padding: 1px 3px;
-    border-radius: 3px;
-    font-size: 0.82em;
-    cursor: pointer;
-    opacity: 0.35;
-    transition: opacity 0.15s ease, background-color 0.15s ease;
-    line-height: 1;
+.semantix-card-score.mod-mid {
+    color: var(--color-yellow, #eab308);
+    background: rgba(234, 179, 8, 0.12);
 }
 
-.semantix-card-btn-link:hover {
-    opacity: 1 !important;
-    background-color: var(--background-modifier-hover);
+.semantix-card-score.mod-low {
+    color: var(--text-muted);
+    background: var(--background-modifier-form-field);
 }
 
 .semantix-card-snippet {
@@ -279,27 +240,18 @@
     border-color: rgba(168, 85, 247, 0.3);
 }
 
+
 .badge-keyword_match, .badge-deep_semantic {
     color: var(--color-blue, #3b82f6);
     border-color: rgba(59, 130, 246, 0.3);
 }
-
-.semantix-popover-title-area {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    overflow: hidden;
-    flex: 1;
-}
-
 .semantix-popover-score {
-    font-size: 0.72em;
     font-family: var(--font-monospace);
     font-weight: 700;
     color: var(--color-green, #10b981);
     background: rgba(16, 185, 129, 0.12);
-    padding: 1px 5px;
-    border-radius: 3px;
+    padding: 2px 6px;
+    border-radius: 4px;
     white-space: nowrap;
 }
 
@@ -307,15 +259,14 @@
     font-size: 0.72em;
     color: var(--text-faint);
     font-family: var(--font-monospace);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    white-space: normal;
     margin-top: -2px;
 }
 
 /* --- Popover Preview 浮层 --- */
 .semantix-popover-preview {
-    width: 320px;
+    width: min(360px, calc(100vw - 20px));
     max-height: 280px;
     padding: 12px;
     border-radius: 8px;
@@ -351,20 +302,10 @@
     border-bottom: 1px solid var(--background-modifier-border);
     padding-bottom: 6px;
 }
-
-.semantix-popover-title {
-    font-weight: 700;
-    font-size: 0.9em;
-    color: var(--text-accent);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
 .semantix-popover-actions {
     display: flex;
     gap: 6px;
-    flex-shrink: 0;
+    align-items: center;
 }
 
 .semantix-popover-btn {
@@ -544,6 +485,123 @@
     font-weight: 600;
     color: var(--text-muted);
     margin: 16px 0 6px 0;
+}
+
+/* ========================================================================= */
+/* Settings v2 Styles                                                        */
+/* ========================================================================= */
+
+.semantix-status-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    gap: 12px;
+}
+
+.semantix-status-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.semantix-status-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 0.95em;
+}
+
+.semantix-status-desc {
+    font-size: 0.8em;
+    color: var(--text-muted);
+}
+
+.semantix-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.semantix-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--text-faint);
+}
+
+.semantix-status-dot.dot-ready {
+    background-color: var(--color-green);
+}
+
+.semantix-status-dot.dot-indexing {
+    background-color: var(--color-yellow);
+    animation: semantix-pulse 1.2s infinite;
+}
+
+.semantix-status-dot.dot-disconnected {
+    background-color: var(--text-accent);
+}
+
+.semantix-exclusion-drawer {
+    margin: 6px 0 16px 0;
+    padding: 12px;
+    background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.semantix-exclusion-textarea {
+    width: 100%;
+    height: 90px;
+    font-family: var(--font-monospace);
+    font-size: 0.85em;
+    resize: vertical;
+}
+
+.semantix-settings-advanced {
+    margin-top: 24px;
+    margin-bottom: 20px;
+    border-top: 1px solid var(--background-modifier-border);
+    padding-top: 16px;
+}
+
+.semantix-advanced-summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.95em;
+    color: var(--text-muted);
+    padding: 6px 0;
+    user-select: none;
+    transition: color 0.15s ease;
+}
+
+.semantix-advanced-summary:hover {
+    color: var(--text-normal);
+}
+
+.semantix-advanced-content {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.semantix-sub-heading {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin: 16px 0 6px 0;
     padding-bottom: 4px;
     border-bottom: 1px dashed var(--background-modifier-border);
     letter-spacing: 0.02em;
@@ -551,4 +609,98 @@
 
 .semantix-sub-heading:first-child {
     margin-top: 4px;
+}
+
+/* --- 实时检索脉冲与微光扫描条 --- */
+.semantix-scan-bar {
+    height: 2px;
+    width: 100%;
+    opacity: 0;
+    position: relative;
+    overflow: hidden;
+    background: transparent;
+    transition: opacity 0.2s ease-in-out;
+    margin-top: 2px;
+    margin-bottom: 4px;
+}
+
+.semantix-scan-bar.is-scanning {
+    opacity: 1;
+    background: rgba(var(--interactive-accent-rgb, 120, 100, 255), 0.15);
+}
+
+.semantix-scan-bar.is-scanning::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 35%;
+    background: linear-gradient(90deg, transparent, var(--interactive-accent), transparent);
+    animation: semantix-scan-sweep 1.2s infinite ease-in-out;
+}
+
+@keyframes semantix-scan-sweep {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(380%); }
+}
+
+.semantix-status-indicator.status-scanning {
+    background-color: var(--color-blue, #3b82f6);
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+    animation: semantix-pulse-blue 1.5s infinite;
+}
+
+@keyframes semantix-pulse-blue {
+    0% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+    }
+    70% {
+        transform: scale(1.1);
+        box-shadow: 0 0 0 6px rgba(59, 130, 246, 0);
+    }
+    100% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+    }
+}
+
+/* --- 自适应与自定义停用词展示 --- */
+.semantix-stopwords-container {
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+}
+
+.semantix-stopwords-header {
+    font-size: 0.78em;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+
+.semantix-stopwords-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.semantix-stopword-chip {
+    font-size: 0.75em;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background: var(--background-modifier-form-field);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    font-family: var(--font-monospace);
+}
+
+.semantix-stopwords-empty {
+    font-size: 0.75em;
+    color: var(--text-faint);
+    font-style: italic;
 }

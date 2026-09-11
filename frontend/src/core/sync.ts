@@ -15,12 +15,41 @@ export class SyncManager {
     
     private syncTimer: number | null = null;
     private isFlushing: boolean = false;
+    private isPaused: boolean = false;
+    private retryAttempts: number = 0;
 
     private cachedRulesStr: string | null = null;
     private cachedMatchers: ((path: string) => boolean)[] = [];
 
     constructor(plugin: SemantixPlugin) {
         this.plugin = plugin;
+    }
+
+    /**
+     * 暂停增量同步（如全量索引期间），仅积累队列，不向后端发送请求
+     */
+    public pause() {
+        this.isPaused = true;
+        this.clearTimer();
+    }
+
+    /**
+     * 恢复增量同步并触发积压队列处理
+     */
+    public resume() {
+        this.isPaused = false;
+        if (this.pendingUpdates.size > 0 || this.pendingDeletes.size > 0) {
+            this.startTimerIfNeeded();
+        }
+    }
+
+    /**
+     * 清空所有积压队列（用于初始化与重置，防止启动时伪事件积压）
+     */
+    public clearQueue() {
+        this.clearTimer();
+        this.pendingUpdates.clear();
+        this.pendingDeletes.clear();
     }
 
     /**
@@ -118,10 +147,11 @@ export class SyncManager {
     /**
      * 启动定时器（如果尚未启动）
      */
-    private startTimerIfNeeded() {
-        if (this.syncTimer !== null || this.isFlushing) return; // 已经在跑了或正在 flush
+    private startTimerIfNeeded(delayMs?: number) {
+        if (this.syncTimer !== null || this.isFlushing || this.isPaused) return;
 
-const intervalMs = this.plugin.settings.syncBatchInterval * 1000;
+        const defaultIntervalMs = this.plugin.settings.syncBatchInterval * 1000;
+        const intervalMs = delayMs !== undefined ? delayMs : defaultIntervalMs;
         
         this.syncTimer = window.setTimeout(async () => {
             this.syncTimer = null;
@@ -140,10 +170,10 @@ const intervalMs = this.plugin.settings.syncBatchInterval * 1000;
     }
 
     /**
-     * 执行批量同步
+     * 执行批量同步（两阶段确认机制 + 空文档删除）
      */
     public async flushQueue() {
-        if (this.isFlushing) return;
+        if (this.isFlushing || this.isPaused) return;
         if (this.pendingUpdates.size === 0 && this.pendingDeletes.size === 0) {
             return;
         }
@@ -153,44 +183,22 @@ const intervalMs = this.plugin.settings.syncBatchInterval * 1000;
         console.log(`Semantix Sync: Flushing queue. Deletes: ${this.pendingDeletes.size}, Updates: ${this.pendingUpdates.size}`);
 
         try {
-            // 浅拷贝当前队列并立即清空原始队列，防止在异步执行过程中新来的变更丢失
+            // 提取当前待处理项快照，切勿直接 clear()，待服务端确认成功后再逐项移除
             const currentUpdates = Array.from(this.pendingUpdates);
             const currentDeletes = Array.from(this.pendingDeletes);
-            
-            this.pendingUpdates.clear();
-            this.pendingDeletes.clear();
 
-            const totalTasks = currentUpdates.length + currentDeletes.length;
-            let processed = 0;
-            const canReportProgress = () => {
-                const state = this.plugin.getIndexingState();
-                return !(state.active && state.label === "full");
-            };
-            if (canReportProgress()) {
-                this.plugin.updateIndexingProgress(processed, totalTasks, true, "sync");
-            }
+            const emptyFilesToPurge: string[] = [];
+            const documents: IndexDocument[] = [];
 
-            // 1. 处理删除
-            if (currentDeletes.length > 0) {
-                await this.plugin.apiClient.indexDelete({ vault_id: this.plugin.vaultId, paths: currentDeletes });
-                processed += currentDeletes.length;
-                if (canReportProgress()) {
-                    this.plugin.updateIndexingProgress(processed, totalTasks, true, "sync");
-                }
-            }
-
-            // 2. 处理更新/写入
-            if (currentUpdates.length > 0) {
-                const documents: IndexDocument[] = [];
-                
-                for (const path of currentUpdates) {
-                    const file = this.plugin.app.vault.getAbstractFileByPath(path);
-                    if (file instanceof TFile && file.extension === 'md') {
-                        // 读取文件内容
-                        const rawText = await this.plugin.app.vault.cachedRead(file);
-                        const cleaned = cleanMarkdown(rawText);
-                        if (cleaned.length === 0) continue;
-                        
+            for (const path of currentUpdates) {
+                const file = this.plugin.app.vault.getAbstractFileByPath(path);
+                if (file instanceof TFile && file.extension === 'md') {
+                    const rawText = await this.plugin.app.vault.cachedRead(file);
+                    const cleaned = cleanMarkdown(rawText);
+                    if (cleaned.length === 0) {
+                        // 空文档语义：从索引中删除历史旧数据
+                        emptyFilesToPurge.push(path);
+                    } else {
                         const context = this.plugin.getFileContext(file);
                         documents.push({ 
                             vault_id: this.plugin.vaultId, 
@@ -200,15 +208,72 @@ const intervalMs = this.plugin.settings.syncBatchInterval * 1000;
                             links: context.links
                         });
                     }
-                    processed += 1;
-                    if (canReportProgress()) {
-                        this.plugin.updateIndexingProgress(processed, totalTasks, true, "sync");
-                    }
                 }
+            }
 
-                if (documents.length > 0) {
-                    await this.plugin.apiClient.indexBatch({ documents });
+            const allDeletes = Array.from(new Set([...currentDeletes, ...emptyFilesToPurge]));
+            const totalTasks = documents.length + allDeletes.length;
+            let processed = 0;
+
+            const canReportProgress = () => {
+                const state = this.plugin.getIndexingState();
+                return !(state.active && state.label === "full");
+            };
+            if (canReportProgress()) {
+                this.plugin.updateIndexingProgress(processed, totalTasks, true, "sync");
+            }
+
+            let anyFailure = false;
+
+            // 1. 处理删除任务（包含明确删除的文件与变为空白的文件）
+            if (allDeletes.length > 0) {
+                const delRes = await this.plugin.apiClient.indexDelete({ vault_id: this.plugin.vaultId, paths: allDeletes });
+                if (delRes && delRes.status === 'success') {
+                    for (const p of currentDeletes) {
+                        this.pendingDeletes.delete(p);
+                    }
+                    for (const p of emptyFilesToPurge) {
+                        this.pendingUpdates.delete(p);
+                    }
+                } else {
+                    anyFailure = true;
+                    // eslint-disable-next-line no-console
+                    console.warn("Semantix Sync: Delete batch failed, will retry.");
                 }
+                processed += allDeletes.length;
+                if (canReportProgress()) {
+                    this.plugin.updateIndexingProgress(processed, totalTasks, true, "sync");
+                }
+            }
+
+            // 2. 处理更新任务
+            if (documents.length > 0) {
+                const batchRes = await this.plugin.apiClient.indexBatch({ documents });
+                if (batchRes && batchRes.status === 'success') {
+                    const failedSet = new Set(batchRes.failed_paths || []);
+                    for (const doc of documents) {
+                        if (!failedSet.has(doc.path)) {
+                            this.pendingUpdates.delete(doc.path);
+                        }
+                    }
+                    if (failedSet.size > 0) {
+                        anyFailure = true;
+                    }
+                } else {
+                    anyFailure = true;
+                    // eslint-disable-next-line no-console
+                    console.warn("Semantix Sync: Batch upsert failed, will retry.");
+                }
+                processed += documents.length;
+                if (canReportProgress()) {
+                    this.plugin.updateIndexingProgress(processed, totalTasks, true, "sync");
+                }
+            }
+
+            if (!anyFailure) {
+                this.retryAttempts = 0;
+            } else {
+                this.retryAttempts += 1;
             }
         } finally {
             this.isFlushing = false;
@@ -220,8 +285,10 @@ const intervalMs = this.plugin.settings.syncBatchInterval * 1000;
                 this.plugin.clearIndexingProgress();
             }
 
-            if (this.pendingUpdates.size > 0 || this.pendingDeletes.size > 0) {
-                this.startTimerIfNeeded();
+            // 若仍有未完成的积压项，且未被 pause，使用指数退避触发下一次重试
+            if (!this.isPaused && (this.pendingUpdates.size > 0 || this.pendingDeletes.size > 0)) {
+                const backoffDelay = Math.min(30000, Math.max(1000, Math.pow(2, this.retryAttempts) * 1000));
+                this.startTimerIfNeeded(backoffDelay);
             }
         }
     }

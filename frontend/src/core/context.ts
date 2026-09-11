@@ -51,7 +51,7 @@ export class ContextEngine {
         const cleanedText = currentLineClean.length >= 4 ? currentLineClean : paragraphClean;
         if (cleanedText.length < 3) return null;
 
-        const heading = this.findClosestHeading(editor, cursor.line);
+        const heading = this.findClosestHeading(editor, cursor.line, view);
         const filePath = file.path;
 
         let transitionType: ContextTransitionType = 'SAME_PARAGRAPH';
@@ -172,10 +172,33 @@ export class ContextEngine {
     }
 
     /**
-     * 向上寻找离光标最近的 Heading
+     * 寻找离光标最近的 Heading：优先利用 metadataCache 二分查找，无缓存时回退向上扫描
      */
-    private findClosestHeading(editor: Editor, cursorLine: number): string | null {
-        for (let l = cursorLine; l >= 0; l--) {
+    private findClosestHeading(editor: Editor, cursorLine: number, view?: MarkdownView): string | null {
+        if (view && view.file) {
+            const cache = view.app.metadataCache.getFileCache(view.file);
+            const headings = cache?.headings;
+            if (headings && headings.length > 0) {
+                let low = 0;
+                let high = headings.length - 1;
+                let candidate: string | null = null;
+                while (low <= high) {
+                    const mid = (low + high) >> 1;
+                    const h = headings[mid];
+                    if (h && h.position.start.line <= cursorLine) {
+                        candidate = h.heading;
+                        low = mid + 1;
+                    } else {
+                        high = mid - 1;
+                    }
+                }
+                return candidate;
+            }
+        }
+
+        // 回退逻辑：向上扫描最多 100 行，避免大文档无限回退
+        const minLine = Math.max(0, cursorLine - 100);
+        for (let l = cursorLine; l >= minLine; l--) {
             const line = editor.getLine(l).trim();
             if (line.startsWith('#')) {
                 const match = line.match(/^#+\s+(.+)$/);

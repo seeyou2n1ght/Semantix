@@ -47,12 +47,19 @@ export class Whisperer {
         });
     }
 
-    public async onFileOpen(file: TFile | null) {
+    public onFileOpen(file: TFile | null): void {
         if (!file || file.extension !== 'md') return;
         this.queryGate.reset();
         this.contextEngine.reset();
         this.stabilizer.resetAll();
-        await this.handleFocusTrigger(true);
+
+        // 切换笔记时让渡微任务与渲染帧，确保 Obsidian 核心完成编辑器挂载与焦点初始化
+        window.setTimeout(() => {
+            const activeView = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+            if (activeView && activeView.file && activeView.file.path === file.path) {
+                this.handleFocusTrigger(true);
+            }
+        }, 120);
     }
 
     public onEditorChange(_editor: Editor, _view: MarkdownView): void {

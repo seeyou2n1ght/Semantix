@@ -54,6 +54,7 @@ export interface SemantixSettings {
     // 5. 存储维护 (Storage Maintenance)
     dbRetentionDays: number;
     enableAdaptiveFiltering: boolean;
+    customStopwords: string;
 }
 
 export const DEFAULT_SETTINGS: SemantixSettings = {
@@ -76,7 +77,8 @@ export const DEFAULT_SETTINGS: SemantixSettings = {
     enableOnMobile: false,
 
     dbRetentionDays: 7,
-    enableAdaptiveFiltering: false
+    enableAdaptiveFiltering: false,
+    customStopwords: ''
 };
 
 export class SemantixSettingTab extends PluginSettingTab {
@@ -583,6 +585,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                         const res = await this.plugin.apiClient.computeStopwords();
                         if (res?.words) {
                             this.plugin.vaultStopwords = res.words;
+                            renderStopwordsChips();
                         }
                         this.plugin.checkConnection({ silent: true });
                         if (this.plugin.whisperer) {
@@ -594,18 +597,62 @@ export class SemantixSettingTab extends PluginSettingTab {
                 .setButtonText(t('BTN_CALCULATE_STOPWORDS'))
                 .onClick(async () => {
                     btn.setDisabled(true);
-                    const res = await this.plugin.apiClient.computeStopwords();
-                    if (res) {
-                        if (res.words) {
-                            this.plugin.vaultStopwords = res.words;
+                    btn.setButtonText(t('STOPWORDS_CALCULATING'));
+                    try {
+                        const res = await this.plugin.apiClient.computeStopwords();
+                        if (res) {
+                            if (res.words) {
+                                this.plugin.vaultStopwords = res.words;
+                            }
+                            const wordsPreview = res.words && res.words.length > 0 ? ` (${res.words.join(', ')})` : "";
+                            new Notice(t('ADAPTIVE_SUCCESS', { count: res.count }) + wordsPreview);
+                            renderStopwordsChips();
+                            await this.plugin.checkConnection({ silent: true });
+                            if (this.plugin.whisperer) {
+                                this.plugin.whisperer.triggerNoteScan();
+                            }
+                        } else {
+                            new Notice(t('STOPWORDS_FAILED'));
                         }
-                        new Notice(t('ADAPTIVE_SUCCESS', { count: res.count }));
-                        await this.plugin.checkConnection({ silent: true });
-                        if (this.plugin.whisperer) {
-                            this.plugin.whisperer.triggerNoteScan();
-                        }
+                    } finally {
+                        btn.setButtonText(t('BTN_CALCULATE_STOPWORDS'));
+                        btn.setDisabled(false);
                     }
-                    btn.setDisabled(false);
+                }));
+
+        // 自适应停用词徽标展示区
+        const stopwordsChipsContainer = content.createEl('div', { cls: 'semantix-stopwords-container' });
+        const renderStopwordsChips = () => {
+            stopwordsChipsContainer.empty();
+            const header = stopwordsChipsContainer.createEl('div', { cls: 'semantix-stopwords-header' });
+            header.createEl('span', { 
+                cls: 'semantix-stopwords-title', 
+                text: `${t('ADAPTIVE_STOPWORDS_TITLE')} (${this.plugin.vaultStopwords?.length || 0}):` 
+            });
+            const listEl = stopwordsChipsContainer.createEl('div', { cls: 'semantix-stopwords-chips' });
+            if (this.plugin.vaultStopwords && this.plugin.vaultStopwords.length > 0) {
+                for (const word of this.plugin.vaultStopwords) {
+                    listEl.createEl('span', { cls: 'semantix-stopword-chip', text: word });
+                }
+            } else {
+                listEl.createEl('span', { 
+                    cls: 'semantix-stopwords-empty', 
+                    text: t('ADAPTIVE_STOPWORDS_EMPTY') 
+                });
+            }
+        };
+        renderStopwordsChips();
+
+        // 自主添加自定义停用词配置项
+        new Setting(content)
+            .setName(t('CUSTOM_STOPWORDS_NAME'))
+            .setDesc(t('CUSTOM_STOPWORDS_DESC'))
+            .addTextArea(text => text
+                .setPlaceholder(t('CUSTOM_STOPWORDS_PLACEHOLDER'))
+                .setValue(this.plugin.settings.customStopwords || "")
+                .onChange(async (val) => {
+                    this.plugin.settings.customStopwords = val;
+                    await this.plugin.saveSettings();
                 }));
 
         // --- 5.3 💾 存储维护与生命周期 ---

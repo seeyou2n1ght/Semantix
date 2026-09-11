@@ -21,6 +21,8 @@ class RetrievalCandidate:
         tags: List[str],
         links: List[str],
         full_path: str,
+        hit_count: int = 1,
+        rrf_score: float = 0.0,
     ):
         self.path = path
         self.title = title
@@ -32,6 +34,8 @@ class RetrievalCandidate:
         self.tags = tags
         self.links = links
         self.full_path = full_path
+        self.hit_count = hit_count
+        self.rrf_score = rrf_score
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -91,98 +95,108 @@ class RetrievalService:
         min_similarity: float = 0.0,
     ) -> List[RetrievalCandidate]:
         """
-        根据 query_vector 与 query_text 执行 Hybrid/Vector 召回，
-        按文档路径聚合并去重，输出候选池。
+        执行 Vector 与 FTS 独立召回并通过标准 Reciprocal Rank Fusion (RRF) 融合。
+        彻底消除 128 字符硬切断与分数语义混淆，按文档路径聚合并输出优质候选。
         """
         if self.storage.table is None:
             return []
 
         try:
-            is_hybrid = False
-            # 短查询开启 Hybrid (Vector + FTS)，长查询走纯向量
-            use_hybrid = bool(query_text and len(query_text.strip()) <= 128)
-
-            if use_hybrid:
-                try:
-                    from lancedb.rerankers import LinearCombinationReranker
-                    reranker = LinearCombinationReranker(weight=0.7)
-                    clean_query_text = query_text
-                    if self.storage.vault_stopwords:
-                        # 剔除高频自适应停用词，提升 FTS/BM25 检索信噪比
-                        tokens = [t for t in query_text.split() if t.lower() not in self.storage.vault_stopwords]
-                        if tokens:
-                            clean_query_text = " ".join(tokens)
-
-                    query = (
-                        self.storage.table.search(query_type="hybrid")
-                        .vector(query_vector)
-                        .text(clean_query_text)
-                        .rerank(reranker=reranker)
-                        .limit(candidate_limit)
-                    )
-                    is_hybrid = True
-                except Exception as e:
-                    logger.warning("Hybrid search failed (%s), fallback to vector search.", e)
-                    query = self.storage.table.search(query_vector).metric("cosine").limit(candidate_limit)
-            else:
-                query = self.storage.table.search(query_vector).metric("cosine").limit(candidate_limit)
-
-            if min_similarity > 0 and not is_hybrid:
-                max_distance = 1.0 - min_similarity
-                query = query.distance_range(upper_bound=max_distance)
-
             where_clauses = [f"vault_id = '{self.storage._escape_sql_string(vault_id)}'"]
             if exclude_paths:
                 formatted = ", ".join([f"'{self.storage._escape_sql_string(p)}'" for p in exclude_paths])
                 where_clauses.append(f"path NOT IN ({formatted})")
-
             filter_expr = " AND ".join(where_clauses)
-            raw_rows: List[Dict[str, Any]] = []
 
-            if is_hybrid:
+            # 1. 独立向量语义召回 (Vector Recall)
+            vector_rows: List[Dict[str, Any]] = []
+            try:
+                vec_query = self.storage.table.search(query_vector).metric("cosine").limit(candidate_limit)
+                if min_similarity > 0:
+                    max_dist = 1.0 - min_similarity
+                    vec_query = vec_query.distance_range(upper_bound=max_dist)
+                vector_rows = vec_query.where(filter_expr).to_list()
+            except Exception as e:
+                logger.warning("Vector retrieval failed (%s)", e)
+
+            # 2. 独立全文检索召回 (FTS/BM25 Recall)
+            fts_rows: List[Dict[str, Any]] = []
+            clean_query = query_text.strip() if query_text else ""
+            if clean_query:
+                vault_stops = self.storage.get_vault_stopwords(vault_id)
+                if vault_stops:
+                    tokens = [t for t in clean_query.split() if t.lower() not in vault_stops]
+                    if tokens:
+                        clean_query = " ".join(tokens)
                 try:
-                    raw_rows = query.where(filter_expr).to_list()
+                    fts_query = self.storage.table.search(clean_query, query_type="fts").limit(candidate_limit)
+                    fts_rows = fts_query.where(filter_expr).to_list()
                 except Exception as e:
-                    logger.warning("Hybrid execution failed (%s), falling back to pure vector search.", e)
-                    is_hybrid = False
-                    fallback_query = self.storage.table.search(query_vector).metric("cosine").limit(candidate_limit)
-                    if min_similarity > 0:
-                        fallback_query = fallback_query.distance_range(upper_bound=1.0 - min_similarity)
-                    raw_rows = fallback_query.where(filter_expr).to_list()
-            else:
-                raw_rows = query.where(filter_expr).to_list()
+                    logger.debug("FTS search unavailable or failed (%s), proceeding with vector-only.", e)
 
-            return self._aggregate_to_candidates(raw_rows, is_hybrid, min_similarity)
+            # 3. 执行 RRF 融合与文档分块聚合
+            return self._fuse_and_aggregate(
+                vector_rows=vector_rows,
+                fts_rows=fts_rows,
+                min_similarity=min_similarity,
+            )
         except Exception as e:
             logger.error("Error during candidate retrieval: %s", e)
             return []
 
-    def _aggregate_to_candidates(
+    def _fuse_and_aggregate(
         self,
-        rows: List[Dict[str, Any]],
-        is_hybrid: bool,
-        min_similarity: float,
+        vector_rows: List[Dict[str, Any]],
+        fts_rows: List[Dict[str, Any]],
+        min_similarity: float = 0.0,
+        rrf_k: float = 60.0,
     ) -> List[RetrievalCandidate]:
-        """将分块命中按笔记聚合，取最优 chunk 作为代表"""
+        """使用标准 Reciprocal Rank Fusion (k=60) 融合向量与词面分，并按文档路径聚合"""
+        vec_rank_map: Dict[str, int] = {}
+        for idx, row in enumerate(vector_rows):
+            key = f"{row['path']}#{row.get('chunk_index', 0)}"
+            vec_rank_map[key] = idx + 1
+
+        fts_rank_map: Dict[str, int] = {}
+        for idx, row in enumerate(fts_rows):
+            key = f"{row['path']}#{row.get('chunk_index', 0)}"
+            fts_rank_map[key] = idx + 1
+
+        chunk_dict: Dict[str, Dict[str, Any]] = {}
+        for r in vector_rows:
+            key = f"{r['path']}#{r.get('chunk_index', 0)}"
+            chunk_dict[key] = r
+        for r in fts_rows:
+            key = f"{r['path']}#{r.get('chunk_index', 0)}"
+            if key not in chunk_dict:
+                chunk_dict[key] = r
+
         doc_map: Dict[str, Dict[str, Any]] = {}
 
-        for row in rows:
+        for key, row in chunk_dict.items():
             path = row["path"]
 
-            # LanceDB 评分提取
-            if "_relevance_score" in row:
-                similarity = float(row["_relevance_score"])
-                lexical = float(row.get("_score", 0.0))
-            elif "_score" in row:
-                similarity = float(row["_score"])
-                lexical = similarity
+            # 计算本分块的纯向量余弦分
+            if "_distance" in row:
+                similarity = max(0.0, 1.0 - float(row["_distance"]))
+            elif key in vec_rank_map:
+                similarity = 0.5
             else:
-                distance = float(row.get("_distance", 1.0))
-                similarity = max(0.0, 1.0 - distance)
-                lexical = 0.0
+                similarity = 0.0
 
-            if not is_hybrid and min_similarity > 0 and similarity < min_similarity:
+            # 纯向量模式门槛过滤
+            if min_similarity > 0 and key in vec_rank_map and similarity < min_similarity:
                 continue
+
+            # 计算纯词面 BM25 分
+            lexical = float(row.get("_score", 0.0)) if key in fts_rank_map else 0.0
+
+            # 计算 RRF 分数
+            rrf_score = 0.0
+            if key in vec_rank_map:
+                rrf_score += 1.0 / (rrf_k + vec_rank_map[key])
+            if key in fts_rank_map:
+                rrf_score += 1.0 / (rrf_k + fts_rank_map[key])
 
             full_text = row.get("parent_text", row.get("text", ""))
             chunk_text = row.get("text", "")
@@ -192,7 +206,7 @@ class RetrievalService:
             tags = row.get("tags", [])
             links = row.get("links", [])
 
-            if path not in doc_map or similarity > doc_map[path]["semantic_score"]:
+            if path not in doc_map:
                 doc_map[path] = {
                     "path": path,
                     "title": os.path.splitext(os.path.basename(path))[0],
@@ -204,9 +218,26 @@ class RetrievalService:
                     "tags": tags,
                     "links": links,
                     "full_path": full_path,
+                    "hit_count": 1,
+                    "rrf_score": rrf_score,
                 }
+            else:
+                doc_map[path]["hit_count"] += 1
+                if rrf_score > doc_map[path]["rrf_score"]:
+                    doc_map[path]["snippet"] = self._create_snippet(full_text, chunk_text)
+                    doc_map[path]["vector"] = vector
+                    doc_map[path]["matched_chunk_index"] = chunk_idx
+                    doc_map[path]["full_path"] = full_path
+                doc_map[path]["semantic_score"] = max(doc_map[path]["semantic_score"], similarity)
+                doc_map[path]["lexical_score"] = max(doc_map[path]["lexical_score"], lexical)
+                doc_map[path]["rrf_score"] += rrf_score
+
+        # 多分块 Hit Bonus：同一文档命中多块时轻微奖励，提升整篇代表性
+        for doc in doc_map.values():
+            if doc["hit_count"] >= 2:
+                hit_bonus = min(0.15, 0.05 * (doc["hit_count"] - 1))
+                doc["rrf_score"] *= (1.0 + hit_bonus)
 
         candidates = [RetrievalCandidate(**item) for item in doc_map.values()]
-        # 初始按语义相似度降序
-        candidates.sort(key=lambda c: c.semantic_score, reverse=True)
+        candidates.sort(key=lambda c: c.rrf_score, reverse=True)
         return candidates

@@ -32,7 +32,9 @@ class LabelResolver:
         if not feat.is_direct_link:
             labels.append("UNLINKED")
 
-        if not feat.is_same_folder and feat.max_sim_to_related < 0.75:
+        if feat.shared_links_count > 0 and not feat.is_direct_link:
+            labels.append("SHARED_CONCEPT")
+        elif not feat.is_same_folder and feat.max_sim_to_related < 0.75:
             labels.append("CROSS_TOPIC")
         elif not feat.is_same_folder:
             labels.append("CROSS_FOLDER")

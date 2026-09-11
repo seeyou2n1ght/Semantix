@@ -23,7 +23,7 @@ def select_by_mmr(
     lambda_param: float = 0.6,
 ) -> List[Any]:
     r"""
-    Maximal Marginal Relevance (MMR) 贪心选择：
+    Maximal Marginal Relevance (MMR) 贪心选择（全矢量化加速版）：
     MMR = argmax_{d in C \ S} [ lambda * BaseScore(d) - (1 - lambda) * max_{s in S} Sim(d, s) ]
     """
     if not candidates or top_k <= 0:
@@ -32,40 +32,43 @@ def select_by_mmr(
     if len(candidates) <= top_k:
         return candidates
 
-    selected: List[Any] = []
-    selected_vectors: List[np.ndarray] = []
-    remaining = list(candidates)
+    # 1. 预先提取所有向量与基础分，一次性转为连续内存 2D 归一化矩阵
+    vectors = [get_vector(c) for c in candidates]
+    scores = np.array([get_score(c) for c in candidates], dtype=np.float32)
 
-    while len(selected) < top_k and remaining:
-        best_idx = -1
-        best_mmr_val = -float("inf")
+    vec_matrix = np.array(vectors, dtype=np.float32)
+    norms = np.linalg.norm(vec_matrix, axis=1, keepdims=True)
+    norms[norms == 0.0] = 1.0
+    norm_matrix = vec_matrix / norms
 
-        for idx, item in enumerate(remaining):
-            base_score = get_score(item)
-            item_vec = np.asarray(get_vector(item), dtype=np.float32)
-            norm_item = np.linalg.norm(item_vec)
+    n = len(candidates)
+    selected_indices: List[int] = []
+    unselected_mask = np.ones(n, dtype=bool)
 
-            # 计算与已选集合的最大相似度
-            if not selected_vectors or norm_item == 0:
-                max_sim_to_selected = 0.0
-            else:
-                sims = [
-                    float(np.dot(item_vec, s_vec) / (norm_item * np.linalg.norm(s_vec)))
-                    for s_vec in selected_vectors
-                ]
-                max_sim_to_selected = max(sims) if sims else 0.0
+    # 记录未选元素到已选集合的最大相似度 (初始为 0)
+    max_sim_to_selected = np.zeros(n, dtype=np.float32)
 
-            mmr_val = lambda_param * base_score - (1.0 - lambda_param) * max_sim_to_selected
+    while len(selected_indices) < top_k and np.any(unselected_mask):
+        # 矢量化 MMR 评价公式
+        mmr_scores = np.full(n, -np.inf, dtype=np.float32)
+        mmr_scores[unselected_mask] = (
+            lambda_param * scores[unselected_mask]
+            - (1.0 - lambda_param) * max_sim_to_selected[unselected_mask]
+        )
 
-            if mmr_val > best_mmr_val:
-                best_mmr_val = mmr_val
-                best_idx = idx
-
-        if best_idx >= 0:
-            chosen = remaining.pop(best_idx)
-            selected.append(chosen)
-            selected_vectors.append(np.asarray(get_vector(chosen), dtype=np.float32))
-        else:
+        best_idx = int(np.argmax(mmr_scores))
+        if mmr_scores[best_idx] == -np.inf:
             break
 
-    return selected
+        selected_indices.append(best_idx)
+        unselected_mask[best_idx] = False
+
+        if len(selected_indices) >= top_k:
+            break
+
+        # 增量单次矩阵点积更新与已选集合的最大相似度
+        best_vec = norm_matrix[best_idx]
+        sims_to_new = np.dot(norm_matrix, best_vec)
+        max_sim_to_selected = np.maximum(max_sim_to_selected, sims_to_new)
+
+    return [candidates[i] for i in selected_indices]

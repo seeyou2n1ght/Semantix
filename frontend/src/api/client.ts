@@ -15,7 +15,8 @@ import {
 
 export enum HealthStatus {
     READY = "READY",       // 我们的后端已就绪
-    CONFLICT = "CONFLICT", // 端口被占用（非本插件后端）
+    LOADING = "LOADING",   // 我们的后端正在加载模型
+    CONFLICT = "CONFLICT", // 端口被占用（非本插件后端或未知响应）
     NONE = "NONE"          // 端口空闲
 }
 
@@ -73,9 +74,15 @@ export class ApiClient {
                 
                 const res: RequestUrlResponse = await requestUrl(req);
                 
-                if (res.status === 200 && res.json && res.json.status === 'ok') {
-                    this.lastHealthResponse = res.json as HealthResponse;
-                    return HealthStatus.READY;
+                if (res.status === 200 && res.json) {
+                    if (res.json.status === 'ok') {
+                        this.lastHealthResponse = res.json as HealthResponse;
+                        return HealthStatus.READY;
+                    }
+                    if (res.json.status === 'loading') {
+                        this.lastHealthResponse = res.json as HealthResponse;
+                        return HealthStatus.LOADING;
+                    }
                 }
                 this.lastHealthResponse = null;
                 return HealthStatus.CONFLICT;
@@ -236,10 +243,13 @@ export class ApiClient {
      * 第一步：请求清空，获取确认 token
      * 第二步：使用 token 确认清空
      */
-    async clearIndex(): Promise<boolean> {
+    async clearIndex(vaultId?: string): Promise<boolean> {
         try {
+            const url = vaultId
+                ? `${this.baseUrl}/index/clear/request?vault_id=${encodeURIComponent(vaultId)}`
+                : `${this.baseUrl}/index/clear/request`;
             const requestRes = await requestUrl({
-                url: `${this.baseUrl}/index/clear/request`,
+                url,
                 method: 'POST',
                 contentType: 'application/json',
                 headers: this.getAuthHeaders()
@@ -254,12 +264,19 @@ export class ApiClient {
                 return false;
             }
             
+            const confirmPayload: { confirmation_token: string; vault_id?: string } = {
+                confirmation_token: token
+            };
+            if (vaultId) {
+                confirmPayload.vault_id = vaultId;
+            }
+
             const confirmRes = await requestUrl({
                 url: `${this.baseUrl}/index/clear/confirm`,
                 method: 'POST',
                 contentType: 'application/json',
                 headers: this.getAuthHeaders(),
-                body: JSON.stringify({ confirmation_token: token })
+                body: JSON.stringify(confirmPayload)
             });
             
             return confirmRes.status === 200;
@@ -297,7 +314,7 @@ export class ApiClient {
     async getMetrics(): Promise<Record<string, unknown> | null> {
         try {
             const res = await requestUrl({
-                url: `${this.baseUrl}/metrics`,
+                url: `${this.baseUrl}/metrics?vault_id=${encodeURIComponent(this.vaultId)}`,
                 method: 'GET',
                 contentType: 'application/json',
                 headers: this.getAuthHeaders()
