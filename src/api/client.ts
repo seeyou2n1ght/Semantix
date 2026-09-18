@@ -91,7 +91,7 @@ export class ApiClient {
         };
 
         const timeout = new Promise<HealthStatus>((resolve) => {
-            setTimeout(() => resolve(HealthStatus.NONE), 5000);
+            window.setTimeout(() => resolve(HealthStatus.NONE), 5000);
         });
 
         return Promise.race([fetchStatus(), timeout]);
@@ -121,7 +121,6 @@ export class ApiClient {
             }
             return null;
         } catch (error) {
-            // eslint-disable-next-line no-console
             console.error("Semantix: Batch index failed.", error);
             return null;
         }
@@ -149,7 +148,6 @@ export class ApiClient {
             }
             return null;
         } catch (error) {
-            // eslint-disable-next-line no-console
             console.error("Semantix: Delete index failed.", error);
             return null;
         }
@@ -180,7 +178,6 @@ export class ApiClient {
             return null;
         } catch (error) {
             if (error instanceof Error && error.name === 'AbortError') return null;
-            // eslint-disable-next-line no-console
             console.error("Semantix: Radar search failed.", error);
             return null;
         }
@@ -200,21 +197,19 @@ export class ApiClient {
             }
             return null;
         } catch (error) {
-            // eslint-disable-next-line no-console
             console.error("Semantix: Index status failed.", error);
             return null;
         }
     }
 
     /**
-     * µ©àþ®║ÕÉæÚçÅµò░µì«Õ║ôþ┤óÕ╝ò´╝êõ©ñµ¡Ñþí«Þ«ñ´╝ë
-     * þ¼¼õ©Çµ¡Ñ´╝ÜÞ»Àµ▒éµ©àþ®║´╝îÞÄÀÕÅûþí«Þ«ñ token
-     * þ¼¼õ║îµ¡Ñ´╝Üõ¢┐þö¿ token þí«Þ«ñµ©àþ®║
+     * 清空向量数据库索引（两步确认）
+     * 第一步：请求清空，获取确认 token
+     * 第二步：使用 token 确认清空
      */
     async clearIndex(vaultId?: string): Promise<boolean> {
         const targetVault = vaultId || this.vaultId;
         if (!targetVault) {
-            // eslint-disable-next-line no-console
             console.error("Semantix: Clear index aborted because vaultId is empty.");
             return false;
         }
@@ -251,7 +246,6 @@ export class ApiClient {
             
             return confirmRes.status === 200;
         } catch (error) {
-            // eslint-disable-next-line no-console
             console.error("Semantix: Clear index failed.", error);
             return false;
         }

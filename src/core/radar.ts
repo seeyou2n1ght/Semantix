@@ -198,7 +198,6 @@ export class RadarEngine {
                 );
             }
         } catch (e) {
-            // eslint-disable-next-line no-console
             console.error("Radar search execution error:", e);
         } finally {
             if (searchId === this.currentSearchId) {

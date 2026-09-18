@@ -194,6 +194,16 @@ Resolve Q1-Q3 in `ARCHITECTURE.md` before claiming mobile support, enforcing ver
   - 构建产物扁平化至根目录（`./main.js`、`./styles.css`），完全符合 Obsidian 官方加载契约与社区插件发布要求。
   - `manifest.json` 明确标注 `isDesktopOnly: true` 与维护者主页。
   - 清理多余临时脚本及冗余构建输出，简化根目录层级。
+- **社区插件上架审查合规治理 (Review Compliance)**:
+  - 修复 API 版本契约：`manifest.json` 与 `versions.json` 将 `minAppVersion` 提升至 `1.7.2` 对齐 `workspace.revealLeaf`，并保留运行时向下降级容错。
+  - 移除 `window.confirm()`，全量替换为 Obsidian 原生 `Modal` 异步交互对话框 (`FullIndexConfirmModal`)。
+  - 规范设置项输入框 Placeholder，统一遵循 Obsidian UI Sentence Case 规范，移除所有行内 eslint-disable 指令。
+  - 清理生产代码中所有非必要的 `console.log` 调试日志，保留标准的 `console.warn` 与 `console.error`。
+  - 全面使用 `window.setTimeout` 代替全局 `setTimeout`，确保在 Obsidian 多窗口/分离窗口（Popout Windows）中的生命周期兼容性。
+  - 将 `@codemirror/view` 显式声明至 `package.json` 的生产依赖项中。
+  - 重构 `src/styles.css`，通过提升 CSS 选择器特异性全量移除 `!important` 规则。
+  - 重构 `README.md`，提供纯正规范的英文主文（涵盖功能、安装、本地引擎启动、索引与日常使用指南）并保留完整中文说明。
+  - 解决 Linux CI 运行 pytest 时 PyTorch 线程析构导致的 `SIGABRT` 退出码 134 异常。
 - **领域概念统一 (Radar Domain)**:
   - 核心模块全面从早期原型的 `Whisperer` 重构统一为 `Radar`（`RadarEngine`、`RadarView`），并维持原有工作区视图布局完全向后兼容。
   - 领域服务解耦：移除上帝外观，显式导出 `LanceDBStorage`、`IndexService`、`RadarPipeline` 单例。

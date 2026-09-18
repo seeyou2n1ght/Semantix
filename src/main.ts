@@ -1,4 +1,4 @@
-import { Plugin, Notice, WorkspaceLeaf, TAbstractFile, TFile, MarkdownView, Platform } from 'obsidian';
+import { Plugin, Notice, WorkspaceLeaf, TAbstractFile, TFile, MarkdownView, Platform, Modal, App } from 'obsidian';
 import { SemantixSettings, DEFAULT_SETTINGS, SemantixSettingTab } from "./settings";
 import { ApiClient } from './api/client';
 import { IndexDocument } from './api/types';
@@ -15,6 +15,43 @@ export type IndexingState = {
     total: number;
     label?: string;
 };
+
+class FullIndexConfirmModal extends Modal {
+    private onConfirm: () => void;
+    private fileCount: number;
+
+    constructor(app: App, fileCount: number, onConfirm: () => void) {
+        super(app);
+        this.fileCount = fileCount;
+        this.onConfirm = onConfirm;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.createEl('h3', { text: 'Semantix' });
+        contentEl.createEl('p', {
+            text: `将索引约 ${this.fileCount} 篇笔记，预计耗时数分钟。`
+        });
+        contentEl.createEl('p', {
+            text: '索引进度不会持久化，关闭窗口或重启将重置进度。是否继续？'
+        });
+
+        const btnContainer = contentEl.createDiv({ cls: 'modal-button-container' });
+        const cancelBtn = btnContainer.createEl('button', { text: '取消' });
+        cancelBtn.addEventListener('click', () => this.close());
+
+        const confirmBtn = btnContainer.createEl('button', { cls: 'mod-cta', text: '开始索引' });
+        confirmBtn.addEventListener('click', () => {
+            this.close();
+            this.onConfirm();
+        });
+    }
+
+    onClose() {
+        this.contentEl.empty();
+    }
+}
 
 export default class SemantixPlugin extends Plugin {
     settings: SemantixSettings;
@@ -80,7 +117,7 @@ export default class SemantixPlugin extends Plugin {
                 this.isStartupNoticeCompleted = true; // 锁定状态，禁止后续日志复现浮窗
                 const noticeToClose = this.startupNotice;
                 this.startupNotice = null; 
-                setTimeout(() => {
+                window.setTimeout(() => {
                     noticeToClose?.hide();
                 }, 4000);
             }
@@ -187,9 +224,6 @@ export default class SemantixPlugin extends Plugin {
                 }
             }));
         }
-
-        // eslint-disable-next-line no-console
-        console.log("Semantix Plugin loaded.");
     }
 
     /**
@@ -226,7 +260,11 @@ export default class SemantixPlugin extends Plugin {
         }
 
         if (leaf) {
-            workspace.revealLeaf(leaf);
+            if ('revealLeaf' in workspace && typeof workspace.revealLeaf === 'function') {
+                workspace.revealLeaf(leaf);
+            } else {
+                workspace.setActiveLeaf(leaf, { focus: true });
+            }
         }
     }
 
@@ -274,9 +312,6 @@ export default class SemantixPlugin extends Plugin {
                 new Notice(t('NOTICE_HEALTHY'));
             }
             
-            // eslint-disable-next-line no-console
-            console.log("Semantix: Backend connection successful.");
-            
             // 联动：如果此时启动浮窗还在，说明日志解析可能滞后，强制清理它
             if (this.startupNotice) {
                 this.isStartupNoticeCompleted = true;
@@ -305,9 +340,6 @@ export default class SemantixPlugin extends Plugin {
                 new Notice(t('NOTICE_DISCONNECTED'));
             }
             // 情况 E: 心跳周期内的持续断连 -> 保持静默
-            
-            // eslint-disable-next-line no-console
-            console.log("Semantix: Backend connection failed.");
         }
 
         // 4. 更新 UI 状态
@@ -423,16 +455,10 @@ export default class SemantixPlugin extends Plugin {
         }
 
         if (!options?.skipConfirm) {
-            const confirmMessage = [
-                `将索引约 ${files.length} 篇笔记，预计耗时数分钟。`,
-                "索引进度不会持久化，关闭窗口或重启将重置进度。",
-                "是否继续？"
-            ].join("\n");
-
-            // eslint-disable-next-line no-alert
-            if (!confirm(confirmMessage)) {
-                return;
-            }
+            new FullIndexConfirmModal(this.app, files.length, () => {
+                void this.startFullIndexing({ skipConfirm: true });
+            }).open();
+            return;
         }
 
         this.isFullIndexing = true;
@@ -452,10 +478,11 @@ export default class SemantixPlugin extends Plugin {
         // 微任务与帧间空闲让渡函数，确保 UI 60fps 平滑不卡顿
         const yieldToMain = (): Promise<void> => {
             return new Promise((resolve) => {
-                if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-                    window.requestIdleCallback(() => resolve(), { timeout: 30 });
+                const win = window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => void };
+                if (typeof win.requestIdleCallback === 'function') {
+                    win.requestIdleCallback(() => resolve(), { timeout: 30 });
                 } else {
-                    setTimeout(resolve, 16);
+                    window.setTimeout(resolve, 16);
                 }
             });
         };
@@ -475,9 +502,6 @@ export default class SemantixPlugin extends Plugin {
                 if (result.failed_paths && result.failed_paths.length > 0) {
                     failedPaths.push(...result.failed_paths);
                 }
-                currentBatchDocs = [];
-                currentBatchChars = 0;
-                await yieldToMain();
                 return true;
             };
 
@@ -487,39 +511,47 @@ export default class SemantixPlugin extends Plugin {
                     break;
                 }
 
-                const rawText = await this.app.vault.cachedRead(file);
-                const cleaned = cleanMarkdown(rawText);
-                processed += 1;
+                try {
+                    const rawText = await this.app.vault.cachedRead(file);
+                    const cleaned = cleanMarkdown(rawText);
+                    if (cleaned.length > 0) {
+                        const context = this.getFileContext(file);
+                        const docChars = cleaned.length;
 
-                if (cleaned.length > 0) {
-                    const context = this.getFileContext(file);
-                    currentBatchDocs.push({ 
-                        vault_id: this.vaultId, 
-                        path: file.path, 
-                        text: cleaned,
-                        tags: context.tags,
-                        links: context.links
-                    });
-                    currentBatchChars += cleaned.length;
-
-                    // 若达到单批篇数或字符上限，立即发射并让渡事件循环
-                    if (currentBatchDocs.length >= maxBatchDocs || currentBatchChars >= maxBatchChars) {
-                        const success = await flushBatch();
-                        if (!success) {
-                            canceled = true;
-                            break;
+                        // 超过单批上限时，先刷写上一批
+                        if (currentBatchDocs.length > 0 && (currentBatchDocs.length >= maxBatchDocs || currentBatchChars + docChars > maxBatchChars)) {
+                            const success = await flushBatch();
+                            if (!success) {
+                                canceled = true;
+                                break;
+                            }
+                            currentBatchDocs = [];
+                            currentBatchChars = 0;
                         }
+
+                        currentBatchDocs.push({
+                            vault_id: this.vaultId,
+                            path: file.path,
+                            text: cleaned,
+                            tags: context.tags,
+                            links: context.links
+                        });
+                        currentBatchChars += docChars;
                     }
+                } catch {
+                    failedPaths.push(file.path);
                 }
 
+                processed++;
                 this.updateIndexingProgress(processed, files.length, true, "full");
-                if (indexingNotice && (processed % 5 === 0 || processed === files.length)) {
-                    const pct = Math.min(100, Math.round((processed / files.length) * 100));
-                    indexingNotice.setMessage(`Semantix: 正在构建索引... ${pct}% (${processed}/${files.length})`);
+
+                // 每处理 5 个文件让渡一次主线程，避免界面顿挫
+                if (processed % 5 === 0) {
+                    await yieldToMain();
                 }
             }
 
-            // 发射最后一批残留文档
+            // 刷写剩余未提交文档
             if (!canceled && currentBatchDocs.length > 0) {
                 const success = await flushBatch();
                 if (!success) canceled = true;
@@ -527,7 +559,6 @@ export default class SemantixPlugin extends Plugin {
 
             completed = !canceled && processed >= files.length;
         } catch (error) {
-            // eslint-disable-next-line no-console
             console.error("Semantix: Full index failed.", error);
             new Notice("Semantix: 全量索引失败，请检查后端日志。");
         } finally {
@@ -566,8 +597,6 @@ export default class SemantixPlugin extends Plugin {
         this.syncManager.clearTimer();
         this.clearHealthTimer();
         this.serviceManager.stop();
-        // eslint-disable-next-line no-console
-        console.log("Semantix Plugin unloaded.");
     }
 
     async loadSettings() {
@@ -594,10 +623,6 @@ export default class SemantixPlugin extends Plugin {
 
     private updateMobileMode() {
         this.isMobileHibernating = Platform.isMobile && !this.settings.enableOnMobile;
-        if (this.isMobileHibernating) {
-            // eslint-disable-next-line no-console
-            console.log("Semantix: Hibernating on mobile.");
-        }
     }
 
     private startHealthTimer() {

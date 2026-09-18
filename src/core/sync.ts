@@ -75,8 +75,6 @@ export class SyncManager {
         // 如果文件同时在删除队列里，移除它 (意味着它被重建/覆盖了)
         this.pendingDeletes.delete(file.path);
 
-        // eslint-disable-next-line no-console
-        console.debug(`Semantix: Queued update for ${file.path} (rev ${nextRev})`);
         this.startTimerIfNeeded();
     }
 
@@ -91,8 +89,6 @@ export class SyncManager {
             // 如果正在等待更新，取消更新
             this.pendingUpdates.delete(file.path);
 
-            // eslint-disable-next-line no-console
-            console.debug(`Semantix: Queued delete for ${file.path}`);
             this.startTimerIfNeeded();
         } else if (file instanceof TFolder) {
             // 文件夹删除时，将该文件夹下的所有待更新项清理并标记删除
@@ -165,7 +161,6 @@ export class SyncManager {
                 try {
                     this.cachedMatchers.push(picomatch(globRule));
                 } catch (e) {
-                    // eslint-disable-next-line no-console
                     console.error(`Semantix: Invalid glob matching rule "${globRule}":`, e);
                 }
             }
@@ -230,9 +225,6 @@ export class SyncManager {
     }
 
     private async doFlush(): Promise<void> {
-        // eslint-disable-next-line no-console
-        console.log(`Semantix Sync: Flushing queue. Deletes: ${this.pendingDeletes.size}, Updates: ${this.pendingUpdates.size}`);
-
         try {
             // 提取当前待处理项快照及当前版本号，待服务端确认成功后再比对移除
             const inFlightUpdates = new Map(this.pendingUpdates);
@@ -292,7 +284,6 @@ export class SyncManager {
                     }
                 } else {
                     anyFailure = true;
-                    // eslint-disable-next-line no-console
                     console.warn("Semantix Sync: Delete batch failed, will retry.");
                 }
                 processed += allDeletes.length;
@@ -319,7 +310,6 @@ export class SyncManager {
                     }
                 } else {
                     anyFailure = true;
-                    // eslint-disable-next-line no-console
                     console.warn("Semantix Sync: Batch upsert failed, will retry.");
                 }
                 processed += documents.length;

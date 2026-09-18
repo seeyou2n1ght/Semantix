@@ -40,8 +40,6 @@ export class ServiceManager {
 
     private reportStatus(msg: string) {
         if (this.onStatusCallback) this.onStatusCallback(msg);
-        // eslint-disable-next-line no-console
-        console.log(`[Semantix Service]: ${msg}`);
     }
 
     /**
@@ -220,7 +218,7 @@ export class ServiceManager {
                 } else if (line.includes("Uvicorn running on")) {
                     this.reportStatus("服务已就绪 🚀");
                     // 只有当前进程成功触发时才执行一次健康检查更新
-                    setTimeout(() => this.plugin.checkConnection({ silent: true }), 500);
+                    window.setTimeout(() => this.plugin.checkConnection({ silent: true }), 500);
                 } else if (line.includes("Downloading:")) {
                     // 尝试提取下载进度
                     const match = line.match(/Downloading[:\s]+(\d+%)|(\d+\.?\d*[kM]B\/s)/);
@@ -266,7 +264,7 @@ export class ServiceManager {
             });
 
             // 给予一定时间再检查状态
-            setTimeout(() => this.plugin.checkConnection(), 3000);
+            window.setTimeout(() => this.plugin.checkConnection(), 3000);
 
         } catch {
             this.reportStatus("启动流程遭遇意外错误 ❌");
@@ -296,7 +294,7 @@ export class ServiceManager {
         this.reportStatus(options.isHeal ? "正在自愈重启引擎..." : `正在清理 ${port} 端口并重新尝试手动启动...`);
         await this.killPortConflict();
         // 给系统一点释放资源的时间
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => window.setTimeout(r, 1000));
         await this.start({ force: true, isHeal: options.isHeal });
     }
 
@@ -348,11 +346,9 @@ export class ServiceManager {
                                 }
                                 this.reportStatus(`已验证所有权并回收孤儿进程 (${orphanPid})`);
                             } else {
-                                // eslint-disable-next-line no-console
                                 console.warn(`[Semantix] Stale PID file found (${orphanPid}) but process does not match Semantix. Skipping kill.`);
                             }
                         } else if (orphanPid) {
-                            // eslint-disable-next-line no-console
                             console.warn('[Semantix] Invalid PID format in .semantix.pid, skipping kill:', orphanPid);
                         }
                         fs.unlinkSync(pidFile);

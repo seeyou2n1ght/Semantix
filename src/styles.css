@@ -355,11 +355,11 @@
 }
 
 .semantix-popover-preview.is-hidden {
-    display: none !important;
+    display: none;
 }
 
 .semantix-popover-preview.is-visible {
-    display: flex !important;
+    display: flex;
     position: fixed;
 }
 
@@ -603,9 +603,9 @@
 }
 
 /* --- 从属设置项层级树状缩进 --- */
-.semantix-setting-dependent {
-    padding-left: 16px !important;
-    border-left: 2px solid var(--interactive-accent) !important;
+.setting-item.semantix-setting-dependent {
+    padding-left: 16px;
+    border-left: 2px solid var(--interactive-accent);
     margin-left: 4px;
     transition: opacity 0.2s ease;
 }
@@ -624,13 +624,13 @@
     border-radius: 6px;
 }
 
-.semantix-danger-zone .setting-item {
-    border-bottom: none !important;
-    padding: 0 !important;
+.semantix-settings-card .semantix-danger-zone .setting-item {
+    border-bottom: none;
+    padding: 0;
 }
 
-.semantix-danger-title {
-    color: var(--color-red) !important;
+.setting-item-name.semantix-danger-title {
+    color: var(--color-red);
     font-weight: 600;
 }
 

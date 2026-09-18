@@ -805,8 +805,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                     .setName(t('BACKEND_PATH_NAME'))
                     .setDesc(t('BACKEND_PATH_DESC'))
                     .addText(text => text
-                        // eslint-disable-next-line obsidianmd/ui/sentence-case
-                        .setPlaceholder('D:\\Semantix\\engine')
+                        .setPlaceholder('Enter local engine path')
                         .setValue(this.plugin.settings.backendPath)
                         .onChange(async (val) => {
                             this.plugin.settings.backendPath = val;
@@ -823,8 +822,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                 .setName(t('BACKEND_URL_NAME'))
                 .setDesc(t('BACKEND_URL_DESC'))
                 .addText(text => text
-                    // eslint-disable-next-line obsidianmd/ui/sentence-case
-                    .setPlaceholder('http://localhost:8000')
+                    .setPlaceholder('Enter engine URL')
                     .setValue(this.plugin.settings.backendUrl)
                     .onChange(async (val) => {
                         this.plugin.settings.backendUrl = val;

@@ -53,7 +53,7 @@ export default tseslint.config(
 			"obsidianmd/validate-manifest": "warn",
 			"obsidianmd/validate-license": "warn",
 			"obsidianmd/ui/sentence-case": ["warn", { "enforceCamelCaseLower": true }],
-			"no-console": "warn",
+			"no-console": ["error", { "allow": ["warn", "error"] }],
 			"no-alert": "warn",
 			"no-useless-escape": "warn",
 			"@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
