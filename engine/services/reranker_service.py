@@ -1,3 +1,5 @@
+import os
+import sys
 import logging
 import threading
 import time
@@ -25,6 +27,9 @@ class RerankerService:
         self._lock = threading.Lock()
 
     def start_loading(self):
+        is_testing = os.getenv("SEMANTIX_TESTING", "").lower() in ("1", "true") or "pytest" in sys.modules
+        if is_testing:
+            return
         with self._lock:
             if self._model is not None or self._loading:
                 return

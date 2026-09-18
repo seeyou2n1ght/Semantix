@@ -1,3 +1,5 @@
+import os
+import sys
 import logging
 import threading
 import time
@@ -30,7 +32,9 @@ class EmbeddingService:
         self._load_error: Optional[Exception] = None
         self._lock = threading.Lock()
 
-        self._start_async_load()
+        is_testing = os.getenv("SEMANTIX_TESTING", "").lower() in ("1", "true") or "pytest" in sys.modules
+        if not is_testing:
+            self._start_async_load()
 
     def _start_async_load(self):
         self._loading = True

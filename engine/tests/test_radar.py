@@ -1,10 +1,10 @@
 import pytest
-from fastapi.testclient import TestClient
 import os
 import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from fastapi.testclient import TestClient
 from main import app
 from services.ranking.normalizer import ScoreNormalizer
 from services.ranking.mmr import select_by_mmr, cosine_similarity
@@ -13,7 +13,10 @@ from services.retrieval_service import RetrievalCandidate
 from services.ranking.related import RelatedRanker
 from services.ranking.discover import DiscoverRanker
 
-client = TestClient(app)
+
+@pytest.fixture
+def client():
+    return TestClient(app)
 
 
 def test_score_normalizer():
@@ -86,7 +89,7 @@ def test_related_and_discover_mutual_exclusivity():
     assert len(discover) <= 2
 
 
-def test_radar_search_empty_query():
+def test_radar_search_empty_query(client):
     payload = {
         "vault_id": "test_vault",
         "context_id": "ctx_123",

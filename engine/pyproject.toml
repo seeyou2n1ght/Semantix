@@ -35,4 +35,7 @@ torch = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = [
+    "ignore::SyntaxWarning:jieba.*",
+]
 

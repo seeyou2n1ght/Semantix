@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import time
 import logging
@@ -173,21 +174,21 @@ def maintenance_worker() -> None:
 
 @asynccontextmanager
 async def lifespan(app_instance: FastAPI):
-    """Õ║öþö¿Õà¿Õ▒ÇþöƒÕæ¢Õæ¿µ£ƒþ«íþÉåÕÖ¿ (µø┐õ╗úÕÀ▓Õ║ƒÕ╝âþÜä on_event)"""
-    # ÕÉ»Õè¿þ£ïÚù¿þïùþ║┐þ¿ï
-    thread = threading.Thread(target=watchdog, daemon=True)
-    thread.start()
-    # ÕÉ»Õè¿ÕÉÄÕÅ░þ╗┤µèñþ║┐þ¿ï
-    mt_thread = threading.Thread(target=maintenance_worker, daemon=True)
-    mt_thread.start()
-    # ÚóäÕèáÞ¢¢þ▓¥µÄÆµ¿íÕ×ï
-    reranker_service.start_loading()
-    write_pid_file()
-    logger.info("Semantix backend service started. Parent PID: %d", PARENT_PID)
+    """应用全局生命周期管理器 (替代已废弃的 on_event)"""
+    is_testing = os.getenv("SEMANTIX_TESTING", "").lower() in ("1", "true") or "pytest" in sys.modules
+    if not is_testing:
+        thread = threading.Thread(target=watchdog, daemon=True)
+        thread.start()
+        mt_thread = threading.Thread(target=maintenance_worker, daemon=True)
+        mt_thread.start()
+        reranker_service.start_loading()
+        write_pid_file()
+        logger.info("Semantix backend service started. Parent PID: %d", PARENT_PID)
     yield
-    logger.info("Semantix backend service is shutting down...")
-    cleanup_pid_file()
-    db_svc.close()
+    if not is_testing:
+        logger.info("Semantix backend service is shutting down...")
+        cleanup_pid_file()
+        db_svc.close()
 
 
 # Initialize FastAPI app
