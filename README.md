@@ -32,7 +32,7 @@ Semantix Engine (Python/FastAPI)
 
 插件与 Engine 是独立交付物：
 
-- Obsidian 插件：根目录 `manifest.json`、`versions.json`、`package.json`；构建产物：`dist/main.js`、`dist/styles.css`。
+- Obsidian 插件：根目录 `manifest.json`、`versions.json`、`package.json`；构建产物：`main.js`、`styles.css`。
 - Engine：Python 3.11+、FastAPI、LanceDB、Sentence Transformers，位于 `engine/` 目录。
 
 详细边界和真实协议来源见 [ARCHITECTURE](docs/ARCHITECTURE.md)。
@@ -65,7 +65,7 @@ npm ci
 npm run build
 ```
 
-将 `dist/main.js`、根目录 `manifest.json`、`dist/styles.css` 复制到：
+将根目录 `main.js`、`manifest.json`、`styles.css` 复制到：
 
 ```text
 <vault>/.obsidian/plugins/semantix/
@@ -100,15 +100,14 @@ Engine 连接成功后，在设置页启动全量索引。插件按文档数和�
 
 ## 开发与验证
 
-完整验证命令和验收门见 [TESTING](docs/TESTING.md)。发布前执行 `cd frontend; npm run version -- patch`，提交版本变更后使用与 manifest 完全一致且不带 `v` 的标签，例如 `0.8.1`。
+完整验证命令和验收门见 [TESTING](docs/TESTING.md)。发布前执行 `npm run version -- patch`，提交版本变更后使用与 manifest 完全一致且不带 `v` 的标签，例如 `0.8.1`。
 
 ## 文档
 
 - [ARCHITECTURE](docs/ARCHITECTURE.md)：范围、架构、数据流、协议、检索与不变量。
-- [PROGRESS](docs/PROGRESS.md)：当前状态、问题、阻塞和下一步。
+- [PROGRESS](docs/PROGRESS.md)：当前状态、版本履历、问题、阻塞和下一步。
 - [DECISION](docs/DECISION.md)：不可变 ADR 与取舍。
 - [TESTING](docs/TESTING.md)：验证层级、命令和行为门。
-- [CHANGELOG](CHANGELOG.md)：用户可见发布历史。
 
 ## License
 

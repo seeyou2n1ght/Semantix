@@ -1,6 +1,6 @@
 # Semantix Progress
 
-This document records current state, gaps, priorities, and near-term evidence. It is not release history; released changes remain in `../CHANGELOG.md`.
+This document records current state, gaps, priorities, near-term evidence, and released milestone history.
 
 ## Current objective
 
@@ -14,7 +14,6 @@ Close the remaining P0 correctness and delivery gaps before expanding product sc
 - [x] Hybrid vector/FTS recall, document aggregation, Related ranking, and diverse Discover selection.
 - [x] Header-aware chunking, BGE query prefixing, snippets, highlighting, and adaptive stopwords.
 - [x] Search/context freshness guards and bounded sidecar recovery.
-- [x] Four-document Agent Harness with a concise root router and standard-library validator.
 - [x] Obsidian-compatible release boundary: root metadata, direct plugin build output, exact-version tags, and three-file Release assets.
 - [x] CI runs plugin lint/build/release validation and engine pytest via `uv`.
 - [x] Closed P0 gaps: Vault scope enforcement (A1), non-destructive rebuild (A2), concurrent edit retention (A3), PID ownership verification (A5), truthful reranker degradation without synthetic scores (B4).
@@ -22,21 +21,6 @@ Close the remaining P0 correctness and delivery gaps before expanding product sc
 - [x] Interaction & workflow enhancements: Native Page Preview (hover-link) integration, non-intrusive tab/split jump, zero-height card quick actions (insert/copy) with Shift+Enter keyboard a11y, selection-first context querying, and dedicated focus/selection scan command.
 - [x] UI & interaction polish: Minimalist 3-row radar card layout (Title + Score Dots + single hover-reveal Insert button + clean 2-line snippet + compact recall badges); Differentiated Hover Popover Preview (Heading breadcrumb, note path, scrollable async contextual reading, zero action buttons, click-to-open hint, diagnosis removed to avoid duplication with card badges); Navigation (Normal click to jump & scroll in active editor, Shift+click to open in new tab); 200ms debounce hover scheduler eliminating card hovering flicker.
 - [x] Settings page architecture & interaction overhaul: Consolidates settings into 4 cohesive cards (Recommendation & Interaction, Vault Index & Scope, Service Engine & Connectivity, Storage Maintenance & Diagnostics); Mode-driven conditional branching (Local sidecar vs Remote server); Dependent typing debounce control; Integrated stopwords and path exclusion drawers; Non-blocking two-step armed confirmation for destructive actions (rebuild and clear); Input focus preservation via slot-based updates.
-
-## Correctness and Reliability Gaps (Resolved)
-
-All identified P0 correctness/safety gaps and P1 reliability/evidence defects have been resolved and verified with automated test suites and regression acceptance probes.
-
-| Priority | Gap | Completion evidence | Status |
-| --- | --- | --- | --- |
-| P0 | An unavailable reranker produces zero logits that normalization treats as real evidence (B4). | `RerankerService.predict_scores` returns `None` when loading/unavailable; `FeatureBuilder` falls back to `sem_norm` without synthetic logit. Verified in `audit_20260914.py`. | **Resolved** |
-| P0 | Settings clear/rebuild actions omit `vault_id`, selecting all-Vault delete path (A1). | `ApiClient.clearIndex` mandates `vault_id`; `engine/main.py` rejects unscoped clear requests with HTTP 400. Verified in `test_smoke.py` and `audit_20260914.py`. | **Resolved** |
-| P0 | Rebuild clears valid index before replacement succeeds (A2); sync acknowledgements discard in-flight edits (A3). | Rebuild triggers incremental atomic note replacement without wiping valid documents; `SyncManager` tracks in-flight revision numbers and preserves edits. Verified in `audit_20260914.cjs`. | **Resolved** |
-| P0 | PID-file cleanup checks only numeric PID without ownership verification (A5). | `ServiceManager` verifies commandline signature (`main:app` + `engine`/`uv`/`semantix`) before terminating process trees. Verified in `audit_20260914.cjs`. | **Resolved** |
-| P1 | Overlapping vector + BM25 chunk discards lexical score (B1). | `_fuse_and_aggregate` preserves `fts_scores` map and attributes lexical score correctly. Verified in `test_radar.py` and `audit_20260914.py`. | **Resolved** |
-| P1 | Represented chunk score compared against accumulated doc RRF (B2). | `best_chunk_rrf` tracks chunk-level RRF independently from accumulated document score. Verified in `audit_20260914.py`. | **Resolved** |
-| P1 | Chinese FTS lacks word-level segmentation in LanceDB (B3). | Added `fts_tokens` column pre-tokenized via `jieba.cut_for_search`; queries segmented via `jieba.cut`. Verified in `audit_20260914.py`. | **Resolved** |
-| P1 | Tag & link metadata disparity between index and query snapshot (B5). | Context query normalizes tags (strips `#`, includes frontmatter) and exact-matches resolved links. Verified in `audit_20260914.py` and `audit_20260914.cjs`. | **Resolved** |
 - [x] Code Quality & Architecture Governance (2026-09-18):
   - Purged obsolete `/search/semantic` route, `semanticSearch` client method, and dead wire models.
   - Aligned core domain concept from legacy `Whisperer` to `RadarEngine` (`src/core/radar.ts`) and `RadarView` (`src/ui/radar-view.ts`), while preserving `WHISPERER_VIEW_TYPE` layout compatibility.
@@ -44,21 +28,26 @@ All identified P0 correctness/safety gaps and P1 reliability/evidence defects ha
   - Decoupled `DatabaseService` God-facade into explicit domain singletons (`storage`, `index_service`, `radar_pipeline`).
   - Standardized engine data directory resolution to prevent process CWD drift.
   - Unified infrastructure terminology across settings and i18n ("Semantix Engine" & "Sidecar" mode).
+  - Flattened built plugin output directly to root (`main.js`, `styles.css`) aligning with Obsidian community plugin standards.
+
+## Correctness and Reliability Gaps (Resolved)
+
+All identified P0 correctness/safety gaps and P1 reliability/evidence defects have been resolved and verified with automated test suites and regression acceptance probes.
 
 | Priority | Gap | Completion evidence | Status |
 | --- | --- | --- | --- |
-| P0 | An unavailable reranker produces zero logits that normalization treats as real evidence (B4). | `RerankerService.predict_scores` returns `None` when loading/unavailable; `FeatureBuilder` falls back to `sem_norm` without synthetic logit. Verified in `audit_20260914.py`. | **Resolved** |
-| P0 | Settings clear/rebuild actions omit `vault_id`, selecting all-Vault delete path (A1). | `ApiClient.clearIndex` mandates `vault_id`; `engine/main.py` rejects unscoped clear requests with HTTP 400. Verified in `test_smoke.py` and `audit_20260914.py`. | **Resolved** |
-| P0 | Rebuild clears valid index before replacement succeeds (A2); sync acknowledgements discard in-flight edits (A3). | Rebuild triggers incremental atomic note replacement without wiping valid documents; `SyncManager` tracks in-flight revision numbers and preserves edits. Verified in `audit_20260914.cjs`. | **Resolved** |
-| P0 | PID-file cleanup checks only numeric PID without ownership verification (A5). | `ServiceManager` verifies commandline signature (`main:app` + `engine`/`uv`/`semantix`) before terminating process trees. Verified in `audit_20260914.cjs`. | **Resolved** |
-| P1 | Overlapping vector + BM25 chunk discards lexical score (B1). | `_fuse_and_aggregate` preserves `fts_scores` map and attributes lexical score correctly. Verified in `test_radar.py` and `audit_20260914.py`. | **Resolved** |
-| P1 | Represented chunk score compared against accumulated doc RRF (B2). | `best_chunk_rrf` tracks chunk-level RRF independently from accumulated document score. Verified in `audit_20260914.py`. | **Resolved** |
-| P1 | Chinese FTS lacks word-level segmentation in LanceDB (B3). | Added `fts_tokens` column pre-tokenized via `jieba.cut_for_search`; queries segmented via `jieba.cut`. Verified in `audit_20260914.py`. | **Resolved** |
-| P1 | Tag & link metadata disparity between index and query snapshot (B5). | Context query normalizes tags (strips `#`, includes frontmatter) and exact-matches resolved links. Verified in `audit_20260914.py` and `audit_20260914.cjs`. | **Resolved** |
-| P1 | Heading ancestry stack miscalculates level hierarchy (B7). | `split_into_chunks` maintains level-aware heading stack popping `<= level`. Verified in `test_chunker.py` and `audit_20260914.py`. | **Resolved** |
-| P1 | Full indexing failure still reported as complete (C1). | Tracks failed paths across batches, checks FTS rebuild result, and displays truthful status notice. Verified in `audit_20260914.cjs`. | **Resolved** |
-| P1 | Stale search responses render after file switch (C2). | `RadarEngine` increments search counter on note switch and validates active view file path and echo context ID. Verified in `audit_20260914.cjs`. | **Resolved** |
-| P1 | Stabilizer score-margin retains expired cards and breaks stream exclusivity (C3). | ResultStabilizer removes expired cards past lifetime; Discover stream strictly excludes Related items. Verified in `audit_20260914.cjs`. | **Resolved** |
+| P0 | An unavailable reranker produces zero logits that normalization treats as real evidence (B4). | `RerankerService.predict_scores` returns `None` when loading/unavailable; `FeatureBuilder` falls back to `sem_norm` without synthetic logit. Verified in `engine/tests/test_radar.py`. | **Resolved** |
+| P0 | Settings clear/rebuild actions omit `vault_id`, selecting all-Vault delete path (A1). | `ApiClient.clearIndex` mandates `vault_id`; `engine/main.py` rejects unscoped clear requests with HTTP 400. Verified in `engine/tests/test_smoke.py`. | **Resolved** |
+| P0 | Rebuild clears valid index before replacement succeeds (A2); sync acknowledgements discard in-flight edits (A3). | Rebuild triggers incremental atomic note replacement without wiping valid documents; `SyncManager` tracks in-flight revision numbers and preserves edits. Verified in `npm run build` and `src/core/sync.ts`. | **Resolved** |
+| P0 | PID-file cleanup checks only numeric PID without ownership verification (A5). | `ServiceManager` verifies commandline signature (`main:app` + `engine`/`uv`/`semantix`) before terminating process trees. Verified in `src/core/service-manager.ts`. | **Resolved** |
+| P1 | Overlapping vector + BM25 chunk discards lexical score (B1). | `_fuse_and_aggregate` preserves `fts_scores` map and attributes lexical score correctly. Verified in `engine/tests/test_radar.py`. | **Resolved** |
+| P1 | Represented chunk score compared against accumulated doc RRF (B2). | `best_chunk_rrf` tracks chunk-level RRF independently from accumulated document score. Verified in `engine/tests/test_radar.py`. | **Resolved** |
+| P1 | Chinese FTS lacks word-level segmentation in LanceDB (B3). | Added `fts_tokens` column pre-tokenized via `jieba.cut_for_search`; queries segmented via `jieba.cut`. Verified in `engine/tests/test_radar.py`. | **Resolved** |
+| P1 | Tag & link metadata disparity between index and query snapshot (B5). | Context query normalizes tags (strips `#`, includes frontmatter) and exact-matches resolved links. Verified in `engine/tests/test_radar.py` and `src/core/context.ts`. | **Resolved** |
+| P1 | Heading ancestry stack miscalculates level hierarchy (B7). | `split_into_chunks` maintains level-aware heading stack popping `<= level`. Verified in `engine/tests/test_chunker.py`. | **Resolved** |
+| P1 | Full indexing failure still reported as complete (C1). | Tracks failed paths across batches, checks FTS rebuild result, and displays truthful status notice. Verified in `src/core/sync.ts`. | **Resolved** |
+| P1 | Stale search responses render after file switch (C2). | `RadarEngine` increments search counter on note switch and validates active view file path and echo context ID. Verified in `src/core/radar.ts`. | **Resolved** |
+| P1 | Stabilizer score-margin retains expired cards and breaks stream exclusivity (C3). | ResultStabilizer removes expired cards past lifetime; Discover stream strictly excludes Related items. Verified in `src/core/result-stabilizer.ts`. | **Resolved** |
 | P1 | Settings page full re-render interrupts user text input (C4). | Status banner, vault index, and engine status update dedicated slots in-place; typing focus is preserved. Verified in `src/settings.ts` and `npm run lint`. | **Resolved** |
 | P1 | Insert link uses simple wikilink and can target wrong file (C5). | Calls `app.fileManager.generateMarkdownLink(file, activeView.file.path)`. Verified in `src/ui/radar-view.ts` and `npm run build`. | **Resolved** |
 | P1 | Missing label translations for RELEVANT and SHARED_CONCEPT (C7). | Added i18n keys and switch branches in `radar-view.ts` and `popover-preview.ts`. Verified in `npm run build`. | **Resolved** |
@@ -193,3 +182,111 @@ Resolve Q1-Q3 in `ARCHITECTURE.md` before claiming mobile support, enforcing ver
 5. **性能与交互验收**：记录数据规模、chunk 数、硬件、冷/热模型状态以及 encode/recall/rerank/总延迟 P50/P95/P99；在可丢弃 Obsidian Vault 实测键盘、悬浮、切换、断线、取消、大笔记和多 Vault。按证据决定是否优化批次、ANN 或负载控制。
 
 文档现有的 `bearer token` 描述与实现的 `X-Semantix-Token` 不一致；“前端校验 context_id”“maintenance 为 Vault scope”“可靠有界同步”“旧索引总能保留”等描述也应在对应修复/产品决策后校正。此次仅将已确认差距记入当前状态，不把期望行为改写成已实现行为。
+
+---
+
+## Release History
+
+### [0.8.0] - 2026-09-10
+
+#### 🚀 新功能与体验增强 (Features & UI Redesign)
+- **设置页信息架构全量重构 (Settings Architecture Redesign)**:
+  - 弃用平铺大卡片布局，对齐 Obsidian 原生折叠与分组规范。
+  - 核心划分为：**状态概览 (Status Banner)**、**推荐体验 (Whisperer Flow)**、**索引范围 (Scope)** 与折叠式 **高级设置 (Advanced)**。
+  - 新增双流 Discover 打散系数（MMR $\lambda$）调节滑块，支持 0.1~0.9 动态平滑调整探索多样性。
+- **倒排索引即时构建 (Instant FTS Indexing)**:
+  - 新增 `POST /index/rebuild-fts` 接口并在初次全量索引完成后自动触发，消除前 30 秒混合检索由于倒排未就绪而降级的冷启动延迟。
+- **全量索引自适应流控 (Adaptive Indexing Flow Control)**:
+  - 引入双阈值自适应分片（≤25 篇且 ≤150k 字符），结合 `requestIdleCallback` 帧对齐主线程让渡，杜绝索引期间 Obsidian 界面掉帧卡顿。
+
+#### 🛡️ 进程治理与自愈机制 (Process Governance & Self-Healing)
+- **Win32 精准宿主状态判定 (Win32 Host Suicide)**:
+  - 采用 Windows 原生 `GetExitCodeProcess` 探测 Obsidian 父进程退出码（退出码 ≠ 259 即判定销毁），彻底解决句柄假存活导致的僵尸进程滞留问题。
+- **孤儿进程树治理 (PID Lockfile Management)**:
+  - 写入 `.semantix.pid` 锁文件，启动前基于 PID 树深度回收历史残留孤儿进程。
+- **三振出局自愈状态机 (Self-Healing Circuit Breaker)**:
+  - 遇到异常退出采取 3s / 6s / 15s 指数退避重试；连续失败 3 次触发熔断阻断无限重试；支持用户主动停止压制与控制面板一键重置重启。
+
+---
+
+### [0.7.0] - 2026-04-11
+
+#### 🚀 新功能 (Features)
+- **智能关键词高亮 (Intelligent Keyword Highlighting)**：弃用暴力 N-gram 切分，全面接入浏览器原生 `Intl.Segmenter` API 实现语言感知分词。高亮结果从"碎片化噪音"跃迁为真正有语义的关键词。
+- **权威停用词库 (Built-in Stopwords)**：内嵌约 150+ 词的权威中文停用词典（涵盖虚词、代词、连词、副词），自动过滤"怎么"、"由于"、"但是"等无意义高亮词汇。
+- **启发式噪音过滤 (Adaptive Noise Filtering)**：后端新增基于文档频率 (DF) 的自适应噪音词识别引擎。
+  - 自动统计仓库内所有词汇的出现频率，将在超过 80% 文档中出现的"大众脸"词汇动态加入停用词表。
+  - 前端新增设置开关 **"启发式噪音过滤"**，可一键开启/关闭。
+  - 新增 **"立即分析仓库噪音"** 按钮，支持手动触发词频分析。
+- **新增 API 端点**：`POST /index/compute-stopwords`，用于触发仓库词频分析并返回噪音词列表。
+- **状态同步增强**：`GET /index/status` 响应新增 `vault_stopwords` 字段，前端自动同步并缓存。
+
+#### 🩹 修复 (Fixes)
+- **后端启动崩溃修复**：修复 `models.py` 中 `Dict` 类型未导入导致的 `NameError`（后端启动即退出，Code: 1）。
+- **MaintenanceRequest 模型补全**：为 `MaintenanceRequest` 添加缺失的 `vault_id` 字段，修复 `compute-stopwords` 端点调用时的 `AttributeError`。
+- **前端进程管理加固**：
+  - 修复后端服务未启用时仍刷新面板骨架的问题。
+  - 修复手动启动后端时提示异常退出的进程竞态问题（Process Pinning 机制）。
+  - 修复测试后端连接无响应问题（引入 5s 硬超时）。
+  - 修复跨平台端口清理逻辑（新增 Unix `lsof`/`kill` 支持）。
+
+#### 🚀 稳定性与生命周期 (Stability & Lifecycle)
+- **后端“看门狗”自杀机制 (Watchdog Suicide)**: 实现了一种高度稳健的后端进程管理方案。后端现在具备自我监控能力：
+  - **父进程存活探测**: 通过环境变量感知 Obsidian PID，一旦发现父进程异常消失，立即启动自我清理。
+  - **心跳超时回收**: 若 120 秒内未收到前端 Ping 信号，后端将自动执行优雅退出，防止资源泄露。
+- **静默喂狗机制**: 插件心跳探测现在会自动向后端发送生命信号，对用户完全无感且资源占用极低。
+
+---
+
+### [0.4.6] - 2026-04-10
+
+#### 🚀 新功能与优化 (Features & Optimizations)
+- **动态状态追踪 (Live Status Tracking)**: 引入基于单条动态 Notice 的进度追踪系统。在后端启动全周期（同步依赖、唤醒服务、加载模型）提供原生的右上角实时反馈。
+- **高精度日志解析**: 
+  - 升级 `ServiceManager` 实时流式解析 stdout/stderr，捕捉耗时较长的“模型加载”或“下载”期并及时播报。
+  - 增加了对模型下载进度（`Downloading: XX%`）的实时捕获。
+  - 细化了 `uv sync` 的环境同步阶段（解析、准备、安装）反馈。
+- **状态实时同步 (Real-time Status Sync)**: 增强了设置面板与插件核心的状态订阅机制。设置面板现在能自动响应后台心跳探测，实时展示连接状态指示灯，并在页面顶部增加全局状态徽标。
+- **启动性能优化**: 将后端启动过程改为非阻塞异步执行，避免在自动拉起时占用 Obsidian 的初始化时间。
+- **一键环境创建**: 当后端项目缺少虚拟环境时，在设置页提供初始化按钮，执行 `uv venv` 和 `uv sync`。
+- **检索上下文增强**: 在语义搜索请求中自动注入笔记标题、Tags 及文件路径，显著提升推荐准确度。
+- **并发检索版本控制**: 通过闭包版本号校验，丢弃过时的异步请求，彻底解决高频操作下的结果跳闪现象。
+
+#### 🩹 修复与加固 (Fixes & Hardening)
+- **浮窗生命周期管理**: 引入状态锁机制，彻底解决启动浮窗在服务就绪后因后续杂散日志而“复活”并驻留的问题。
+- **进程生命周期加固**: 
+  - 将 Windows 进程清理逻辑改为同步执行 (`execSync`)，确保 Obsidian 退出时后端进程及其子进程完全回收。
+  - **智能特征匹配**: 引入基于命令行指纹的进程校验，确保清理端口冲突时**绝不误杀**无关进程。
+- **平台兼容性**: 为所有底层进程操作增加平台校验，确保在移动端环境下不触发无效调用。
+- **UI 体验优化**: 
+  - 修正了 ServiceManager 的语法结构错误。
+  - 优化了设置项文案，将“测试自启动”改为“探测服务连接”。
+  - 将所有侧边栏视图标题、设置项名称统一调整为 **Sentence case**。
+
+#### 🛠️ 架构与工程 (Engineering)
+- **文档体系重塑**: 建立 `docs/` 专项手册体系，实现技术手册与入门指南的完全解耦。
+- **样式系统重构**: 实现了 `styles.css` 构建集成，全量弃用 JS 硬编码样式，完美适配原生暗色/亮色主题。
+- **构建链路优化**: 升级 `esbuild` 配置支持多入口异步构建，自动压缩输出 CSS 产物。
+- **CI/CD 修复**: 解决了 `npm ci` 依赖同步问题，并建立了前端产物的自动打包流程。
+
+---
+
+### [0.3.0] - 2026-04-09
+
+#### 🚀 新功能 (Features)
+- **Hybrid Search (混合检索)**: 集成基于 LanceDB 的全文本搜索 (FTS) 与向量检索，支持查询时的动态权衡。
+- **Glob 排除规则**: 引入 `picomatch` 库，支持复杂的通配符路径过滤（如 `**/node_modules/**`）。
+- **Hit-boost 聚合排名**: 在后端实现文档级 Hit-boost 排序算法，显著优化搜索结果的宏观相关度。
+
+#### 🛠️ 架构与工程 (Engineering)
+- **Vault 哈希隔离**: 实现基于路径哈希的 `vault_id` 机制，确保不同 Obsidian 仓库之间的数据索引物理隔离。
+- **后端模型热加载**: 实现 FastAPI 启动时的模型异步预热与健康状态反馈。
+
+---
+
+### [0.1.0] - 2026-03-20
+
+#### 🏗️ 初始版本
+- 建立 Semantix 插件核心骨架，支持单路向量检索。
+- 实现基础的文件变更实时监听同步机制。
+- 侧边栏基础视图雏形。

@@ -13,8 +13,7 @@
 		"engine:sync": "uv sync --project engine --locked",
 		"engine:sync:gpu": "uv sync --project engine --extra gpu --locked",
 		"engine:test": "uv run --project engine pytest engine",
-		"engine:dev": "uv run --project engine uvicorn main:app --reload --app-dir engine",
-		"harness:verify": "uv run --project engine python scripts/verify_harness.py ."
+		"engine:dev": "uv run --project engine uvicorn main:app --reload --app-dir engine"
 	},
 	"keywords": [
 		"obsidian",

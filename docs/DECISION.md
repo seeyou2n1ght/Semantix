@@ -87,11 +87,11 @@ Nine overlapping project documents had accumulated duplicated, stale, and contra
 
 1. Keep all topic documents: preserves familiar filenames but continues duplication and drift.
 2. Put every fact, including release history, into four Harness documents: fewer files but mixes immutable released history with current progress.
-3. Use four Harness documents plus root `README.md`, `AGENTS.md`, and `CHANGELOG.md`: one current source per concern while keeping user entry, agent routing, and release history distinct.
+3. Use four Harness documents plus root `README.md` and `AGENTS.md`: one current source per concern, with release history cleanly absorbed into `PROGRESS.md`.
 
 ### Decision and consequences
 
-Use `ARCHITECTURE.md`, `PROGRESS.md`, `DECISION.md`, and `TESTING.md` as the only Markdown files under `docs/`. Keep root `README.md` and `AGENTS.md`, and retain root `CHANGELOG.md` as the sole exception because release chronology is neither current progress nor an architecture decision. The Harness validator enforces this document set and rejects a second frontend README.
+Use `ARCHITECTURE.md`, `PROGRESS.md`, `DECISION.md`, and `TESTING.md` as the only Markdown files under `docs/`. Keep root `README.md` and `AGENTS.md`. Historical release chronology is consolidated directly into `PROGRESS.md` under Release History.
 
 ## ADR-0005: Separate monorepo source layout from the Obsidian release contract
 

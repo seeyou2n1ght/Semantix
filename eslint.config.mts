@@ -1,4 +1,4 @@
-﻿import tseslint from 'typescript-eslint';
+import tseslint from 'typescript-eslint';
 import obsidianmd from "eslint-plugin-obsidianmd";
 import globals from "globals";
 
@@ -8,7 +8,6 @@ export default tseslint.config(
 			"node_modules/**",
 			"dist/**",
 			"engine/**",
-			"scripts/**",
 			"esbuild.config.mjs",
 			"eslint.config.mts",
 			"version-bump.mjs",

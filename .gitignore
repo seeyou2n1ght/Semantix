@@ -22,7 +22,16 @@ dist/
 /main.js
 /styles.css
 *.map
+*.tsbuildinfo
+.eslintcache
 data.json
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
 
 # IDE
 .idea/

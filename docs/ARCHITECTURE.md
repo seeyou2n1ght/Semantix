@@ -1,6 +1,6 @@
 # Semantix Architecture
 
-This document is the durable source for product scope, system boundaries, contracts, and architecture invariants. Current gaps and priorities live in `PROGRESS.md`; released history lives in `../CHANGELOG.md`.
+This document is the durable source for product scope, system boundaries, contracts, and architecture invariants. Current gaps, priorities, and released history live in `PROGRESS.md`.
 
 ## 1. Scope
 

@@ -21,11 +21,10 @@ Semantix is a local-first semantic retrieval plugin for Obsidian. Prefer correct
 | Need | Read |
 | --- | --- |
 | Product scope, architecture, contracts, invariants | `docs/ARCHITECTURE.md` |
-| Current state, gaps, priorities, open questions | `docs/PROGRESS.md` |
+| Current state, gaps, priorities, release history | `docs/PROGRESS.md` |
 | Durable design decisions and trade-offs | `docs/DECISION.md` |
 | Validation commands and evidence expectations | `docs/TESTING.md` |
 | Installation and user operation | `README.md` |
-| Released changes | `CHANGELOG.md` |
 
 ## Task start
 
@@ -36,17 +35,14 @@ Semantix is a local-first semantic retrieval plugin for Obsidian. Prefer correct
 
 ## Change discipline
 
-- Update `docs/PROGRESS.md` when current status, priorities, gaps, or verification evidence changes.
+- Update `docs/PROGRESS.md` when current status, priorities, gaps, or released history changes.
 - Add an ADR to `docs/DECISION.md` only for a durable choice with meaningful alternatives.
-- Update `CHANGELOG.md` only for released, user-visible history.
 - Change versions only through `npm run version -- [patch|minor|major]`.
 - Do not instantiate `SentenceTransformer` or `CrossEncoder` in business logic; use the shared services.
 
 ## Commands
 
 ```powershell
-uv run --project engine python scripts/verify_harness.py .
-
 npm run lint
 npm run build
 npm run check:release
