@@ -19,7 +19,7 @@ def test_health_endpoint():
     data = response.json()
     assert data["status"] in ["ok", "loading"]
     assert data["api_version"] == "1"
-    assert data["engine_version"] == "0.9.0"
+    assert data["engine_version"] == "0.9.1"
     assert "embedding_model" in data
 
 

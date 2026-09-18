@@ -187,6 +187,14 @@ Resolve Q1-Q3 in `ARCHITECTURE.md` before claiming mobile support, enforcing ver
 
 ## Release History
 
+### [0.9.1] - 2026-09-18
+
+#### 🩹 依赖加固与审查发布 (Dependency Hardening & Review Release)
+- **对等依赖严格锁定与 CI 编译加固**:
+  - 精准锁定 `@codemirror/view` 版本为 `"6.38.6"`，完全契合 `obsidian@1.10.3` 的 strict peerDependency 约束，根治 GitHub Actions CI 在全新容器中执行 `npm ci` 时抛出的 `ERESOLVE` 对等依赖冲突。
+  - 同步全链路引擎版本标识（`ENGINE_VERSION`、`pyproject.toml`、`uv.lock`）至 `0.9.1`。
+  - 触发正式 Release 自动化构建以对接 Obsidian 官方插件市场审查。
+
 ### [0.9.0] - 2026-09-18
 
 #### 🚀 架构重构与规范化 (Architecture & Compliance)

@@ -1,6 +1,6 @@
 [project]
 name = "semantix-engine"
-version = "0.9.0"
+version = "0.9.1"
 description = "Semantix Engine - 本地语义检索与知识关联计算引擎"
 requires-python = ">=3.11"
 dependencies = [
