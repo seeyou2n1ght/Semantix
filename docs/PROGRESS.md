@@ -187,6 +187,21 @@ Resolve Q1-Q3 in `ARCHITECTURE.md` before claiming mobile support, enforcing ver
 
 ## Release History
 
+### [0.9.0] - 2026-09-18
+
+#### 🚀 架构重构与规范化 (Architecture & Compliance)
+- **代码库结构与 Obsidian 发布规范对齐**:
+  - 构建产物扁平化至根目录（`./main.js`、`./styles.css`），完全符合 Obsidian 官方加载契约与社区插件发布要求。
+  - `manifest.json` 明确标注 `isDesktopOnly: true` 与维护者主页。
+  - 清理多余临时脚本及冗余构建输出，简化根目录层级。
+- **领域概念统一 (Radar Domain)**:
+  - 核心模块全面从早期原型的 `Whisperer` 重构统一为 `Radar`（`RadarEngine`、`RadarView`），并维持原有工作区视图布局完全向后兼容。
+  - 领域服务解耦：移除上帝外观，显式导出 `LanceDBStorage`、`IndexService`、`RadarPipeline` 单例。
+  - 修复引擎存储路径解析，消除了运行目录（CWD）漂移缺陷。
+  - 统一配置单一真理源（SSOT）为 `RankingConfig`。
+
+---
+
 ### [0.8.0] - 2026-09-10
 
 #### 🚀 新功能与体验增强 (Features & UI Redesign)

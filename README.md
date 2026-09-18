@@ -2,7 +2,7 @@
 
 Semantix 是面向 Obsidian 的本地语义检索与灵感发现插件，在写作过程中提供强相关内容（Related）和跨主题关联（Discover）。
 
-当前版本：`v0.8.0`。桌面端本地 Sidecar 是主要工作流；代码中存在显式开启的移动端远程模式，其正式支持等级仍记录在 [PROGRESS](docs/PROGRESS.md) 中等待确认。
+当前版本：`v0.9.0`。桌面端本地 Sidecar 是主要工作流；代码中存在显式开启的移动端远程模式，其正式支持等级仍记录在 [PROGRESS](docs/PROGRESS.md) 中等待确认。
 
 ## 核心能力
 

@@ -372,7 +372,7 @@ export class SemantixSettingTab extends PluginSettingTab {
             const notesCount = this.dbMetrics?.total_indexed_docs ?? 0;
             const sizeStr = this.formatBytes(this.dbMetrics?.db_size_bytes);
             const modelName = health?.embedding_model ? health.embedding_model.split('/').pop() : 'bge-small-zh-v1.5';
-            descEl.setText(`Engine v${health?.engine_version || '0.8.0'} · ${modelName} · ${notesCount} 篇笔记已索引 · 占用 ${sizeStr}`);
+            descEl.setText(`Engine v${health?.engine_version || '0.9.0'} · ${modelName} · ${notesCount} 篇笔记已索引 · 占用 ${sizeStr}`);
         } else {
             dotEl.addClass('dot-disconnected');
             titleTextEl.setText(`Semantix · ${t('STATUS_BANNER_DISCONNECTED')}`);
@@ -918,7 +918,7 @@ export class SemantixSettingTab extends PluginSettingTab {
         if (health) {
             new Setting(card)
                 .setName(t('ENGINE_DIAGNOSTICS_NAME'))
-                .setDesc(`Engine: v${health.engine_version || '0.8.0'} · API: v${health.api_version || '1'} · Model: ${health.embedding_model || 'bge-small-zh-v1.5'}`);
+                .setDesc(`Engine: v${health.engine_version || '0.9.0'} · API: v${health.api_version || '1'} · Model: ${health.embedding_model || 'bge-small-zh-v1.5'}`);
         }
 
         // 危险操作区
