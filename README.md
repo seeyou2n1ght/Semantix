@@ -1,99 +1,115 @@
 # Semantix
 
-面向 Obsidian 的本地语义检索与灵感发现插件。核心能力：在写作过程中自动发现已有笔记中的高相关内容（Related）与意外跨主题关联（Discover）。
+Semantix 是面向 Obsidian 的本地语义检索与灵感发现插件，在写作过程中提供强相关内容（Related）和跨主题关联（Discover）。
 
-当前版本：`v0.8.0`（Desktop Only）
-
----
-
-## 🔒 隐私与网络通信披露 (Privacy & Network Disclosure)
-
-为符合 Obsidian 社区插件安全与开发者规范（Developer Policies），在此明确披露本插件的网络与数据处理行为：
-
-1. **Localhost 本地通信与私有部署模式**：
-   - **本地模式 (默认)**：插件仅通过 `localhost`（默认 `http://127.0.0.1:8000`）与用户在本地运行的 **Semantix Engine** 伴生服务通信。所有自然语言处理、文本切块与向量计算均 100% 在用户本地设备完成，**绝不将任何笔记内容或元数据发送给任何第三方云服务或未授权网络**。
-   - **私有远程模式**：若用户在插件设置中主动将后端地址修改为自建局域网或私有服务器端点，插件将仅与该显式配置的目标服务交互，绝不引入外部未经声明的遥测或第三方上报。
-2. **Vault 外部数据存储与只读安全**：
-   - 语义向量索引与全文检索引擎由本地 Semantix Engine 统一管理，默认持久化保存在 Vault 外部目录（如 `./semantix_lance/` 或用户配置的自定义路径），多 Vault 间停用词与词表物理隔离。
-   - 插件本身绝不会修改、重命名或静默删除 Vault 内的用户笔记原文。
-3. **独立发布与依赖隔离**：
-   - 本插件遵循社区规范，**绝不在运行时静默下载或执行未经审计的外部代码二进制包**。
-   - 插件仅作为 Obsidian 前端客户端发布；计算引擎（Semantix Engine）作为独立的后端服务由用户自主安装并部署。
-
----
+当前版本：`v0.8.0`。桌面端本地 Sidecar 是主要工作流；代码中存在显式开启的移动端远程模式，其正式支持等级仍记录在 [PROGRESS](docs/PROGRESS.md) 中等待确认。
 
 ## 核心能力
 
-1. **Related (强相关)**：检索与当前编辑光标或段落语义紧密相关的笔记片段，经由独立 Vector + FTS 双路召回及 Cross-Encoder 二次精排。
-2. **Discover (意料之外)**：通过 Relevance Gate (0.45) 门控、Related 强去重、MMR（最大边际相关）打散算法与二跳桥接知识挖掘，召回相关但不重复的跨主题灵感。
-3. **沉浸式交互 (Anti-Jitter)**：
-   - **离散热度指示**：采用三档离散热度符号（●●● / ●●○ / ●○○）呈现语义契合度，鼠标悬浮呈现真实归一化浮点数值，消除虚假百分比精度误导。
-   - **单侧边栏设计**：卡片固定高度，杜绝动态加载引起的布局抖动。
-   - **Popover 悬浮预览**：悬浮展示父块完整上下文与 Markdown 链接快捷复制。
-   - **原位段落定位**：点击卡片直接在主编辑区打开笔记并平滑滚动高亮对应命中块。
+- **Related**：Vector + FTS 双路召回，经可选 Cross-Encoder 精排输出高相关笔记。
+- **Discover**：在相关性门控后排除 Related，通过关系特征和 MMR 提供不重复的跨主题线索。
+- **实时编辑体验**：上下文门控、迟到响应丢弃、稳定卡片排序、悬浮预览与原文定位。
+- **可靠索引**：Vault 隔离、增量同步、失败文档保留旧索引、FTS 显式重建与有界重试。
 
----
+## 隐私与网络边界
 
-## 系统拓扑与双发布架构
+- 默认模式仅在本机插件与 `127.0.0.1` Sidecar 之间传输笔记内容；模型推理和索引存储在用户控制的环境中完成。
+- 首次运行可能从模型注册源下载 `BAAI/bge-small-zh-v1.5` 和 `BAAI/bge-reranker-base`。这不会上传笔记内容。
+- 只有用户显式配置私有远程 Engine 时，笔记数据才会发送至该地址。远程部署必须配置 API Token，并由操作者负责 TLS 或可信网络边界。
+- 插件不会修改、重命名或删除 Vault 内的 Markdown 原文；向量和 FTS 索引存储在 Vault 外部的 Engine 数据目录。
+- 项目不包含遥测或第三方笔记处理服务。
+
+## 架构
 
 ```text
-+──────────────────────────────────+           +─────────────────────────────────────────+
-|   Semantix Plugin (Obsidian)     |           |        Semantix Engine (Local Sidecar)  |
-|                                  |   HTTP    |                                         |
-|  - UI / Context Engine           | localhost |  - FastAPI / BGE Embeddings (512d)      |
-|  - Anti-Jitter State Machine     ├──────────►│  - BGE Reranker (Cross-Encoder)         |
-|  - API Client (v1 Protocol)      | 127.0.0.1 |  - LanceDB Hybrid Index (Vector + FTS)  |
-+──────────────────────────────────+           +─────────────────────────────────────────+
+Obsidian Plugin (TypeScript)
+  editor context -> query gate -> HTTP API -> result stabilizer -> sidebar
+                                      |
+                                      v
+Semantix Engine (Python/FastAPI)
+  embedding -> Vector + FTS -> rerank -> Related / Discover -> LanceDB
 ```
 
-- **Semantix Plugin**：提交至 Obsidian Community Plugins（产物：`main.js`, `manifest.json`, `styles.css`）。
-- **Semantix Engine**：独立的本地计算引擎（Python 3.11+, FastAPI, LanceDB, BGE）。
+插件与 Engine 是独立交付物：
 
----
+- Obsidian 插件：根目录 `manifest.json`、`versions.json`、`package.json`；构建产物：`dist/main.js`、`dist/styles.css`。
+- Engine：Python 3.11+、FastAPI、LanceDB、Sentence Transformers，位于 `engine/` 目录。
 
-## 快速安装与使用
+详细边界和真实协议来源见 [ARCHITECTURE](docs/ARCHITECTURE.md)。
 
-### 1. 运行本地计算引擎 (Semantix Engine)
+## 快速开始
 
-```bash
-cd backend
-uv sync
+### 1. 启动 Engine
+
+要求 Python 3.11+ 和 `uv`：
+
+```powershell
+cd engine
+uv sync --locked
 uv run uvicorn main:app --host 127.0.0.1 --port 8000
 ```
-首次启动时引擎会自动缓存 `BAAI/bge-small-zh-v1.5` 与 `BAAI/bge-reranker-base` 模型。
 
-### 2. 安装并启用插件 (Semantix Plugin)
+健康检查地址为 `http://127.0.0.1:8000/health`。首次加载模型需要可访问模型注册源；离线环境可提前执行：
 
-在 Obsidian 社区插件市场搜索 **Semantix** 并安装（或手动解压 `main.js`, `manifest.json`, `styles.css` 至 `.obsidian/plugins/semantix/`）。
-
-打开侧边栏，插件将自动检测并连接本地引擎（`● Local engine connected`），即可边写边发现已有知识。
-
----
-
-## 文档索引
-
-- **[部署与配置手册](docs/setup.md)**：引擎安装、Localhost 连接与排障
-- **[架构与抗抖设计](docs/architecture.md)**：分层设计、抗抖状态机与竞态控制
-- **[检索与算法详解](docs/retrieval.md)**：AST 切分、归一化、MMR 算法公式
-- **[API 接口契约](docs/api.md)**：`GET /health` 协议协商与 `POST /search/radar` 双流接口
-
----
-
-## 开发者工作流
-
-版本号由 `frontend/package.json` 单一真实源驱动 (SSOT)：
-
-```bash
-cd frontend
-npm run version [patch|minor|major]  # 自动同步版本至 manifest.json、versions.json 与 README.md
-git add -A && git commit -m "chore(release): bump version"
-git tag v<version> && git push --tags
+```powershell
+cd engine
+uv run python scripts/download_models.py
 ```
 
----
+### 2. 构建并安装插件
 
-## 开源协议
+要求 Node.js 22：
+
+```powershell
+npm ci
+npm run build
+```
+
+将 `dist/main.js`、根目录 `manifest.json`、`dist/styles.css` 复制到：
+
+```text
+<vault>/.obsidian/plugins/semantix/
+```
+
+启用插件后配置 Engine 地址。桌面本地模式可选择自动启动；该选项默认关闭。
+
+### 3. 建立索引
+
+Engine 连接成功后，在设置页启动全量索引。插件按文档数和字符数分批发送，并在批次间让出 UI 执行权。失败文档保留在增量队列中重试。
+
+## Engine 环境变量
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `SEMANTIX_API_TOKEN` | 空 | 设置后所有 API 请求都必须携带匹配 Token；远程部署必须设置 |
+| `SEMANTIX_DB_PATH` | `./semantix_lance` | LanceDB 数据目录 |
+| `SEMANTIX_ALLOWED_ORIGINS` | 本地及 Obsidian Origin | CORS 白名单，逗号分隔 |
+| `SEMANTIX_LOG_LEVEL` | `INFO` | 日志级别 |
+| `SEMANTIX_PARENT_PID` | `0` | 本地 Sidecar 监控的宿主进程 PID |
+| `SEMANTIX_WATCHDOG_TIMEOUT` | `600` | 无活动退出阈值；`0` 禁用 |
+| `SEMANTIX_HOST` | `127.0.0.1` | 直接执行 `main.py` 时的监听地址 |
+| `SEMANTIX_PORT` | `8000` | 直接执行 `main.py` 时的监听端口 |
+
+## 运维与排障
+
+- **无法连接**：确认 Engine 正在运行、地址和 Token 一致，并检查 `/health`。
+- **模型长期 loading**：检查模型缓存和下载网络；Engine 的 health 目前只表示 Embedding 模型状态，Reranker 降级语义仍在待办中。
+- **索引卡住**：查看 Engine 日志中的失败路径；失败项不会从同步队列静默消失。
+- **端口冲突或孤儿进程**：本地模式使用后端目录中的 `.semantix.pid` 识别受管进程，并通过父 PID、心跳和有界自愈处理异常退出。
+- **备份**：停止写入后备份 `SEMANTIX_DB_PATH`。Schema 不兼容时系统应显式失败，不会自动删除重建。
+
+## 开发与验证
+
+完整验证命令和验收门见 [TESTING](docs/TESTING.md)。发布前执行 `cd frontend; npm run version -- patch`，提交版本变更后使用与 manifest 完全一致且不带 `v` 的标签，例如 `0.8.1`。
+
+## 文档
+
+- [ARCHITECTURE](docs/ARCHITECTURE.md)：范围、架构、数据流、协议、检索与不变量。
+- [PROGRESS](docs/PROGRESS.md)：当前状态、问题、阻塞和下一步。
+- [DECISION](docs/DECISION.md)：不可变 ADR 与取舍。
+- [TESTING](docs/TESTING.md)：验证层级、命令和行为门。
+- [CHANGELOG](CHANGELOG.md)：用户可见发布历史。
+
+## License
 
 MIT
-
-

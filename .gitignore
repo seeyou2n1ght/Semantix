@@ -1,6 +1,7 @@
 # Environments
 .env
 .venv
+engine/.venv/
 env/
 venv/
 ENV/
@@ -9,20 +10,29 @@ venv.bak/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
+engine/**/__pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+engine/.pytest_cache/
 
-# Node
+# Node & Build artifacts
 node_modules/
+dist/
+/main.js
+/styles.css
+*.map
+data.json
 
 # IDE
 .idea/
 .vscode/
+*.iml
 
 # Vector Database & Storage
 semantix.db/
 semantix_lance/
+engine/semantix_lance/
 semantix_chroma.db/
 *.lance/
 *.db/
@@ -36,6 +46,9 @@ coverage/
 # Test residue
 test_lance_tmp*/
 test_version_check/
+engine/test_db/
+test_db/
 
-# macOS
+# macOS & OS
 .DS_Store
+Thumbs.db

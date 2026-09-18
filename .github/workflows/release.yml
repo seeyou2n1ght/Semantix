@@ -1,51 +1,50 @@
 name: Release
 
 on:
-    push:
-        tags:
-            - "v*"
+  push:
+    tags:
+      - "*.*.*"
 
 permissions:
-    contents: write
-    id-token: write
-    attestations: write
+  contents: write
+  id-token: write
+  attestations: write
 
 jobs:
-    build:
-        runs-on: ubuntu-latest
-
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
-
-            - name: Setup Node.js
-              uses: actions/setup-node@v4
-              with:
-                  node-version: "22"
-
-            - name: Install dependencies
-              working-directory: frontend
-              run: npm ci
-
-            - name: Build
-              working-directory: frontend
-              run: npm run build
-
-            - name: Attest Build Provenance
-              uses: actions/attest-build-provenance@v2
-              with:
-                  subject-path: |
-                      frontend/main.js
-                      frontend/manifest.json
-                      frontend/styles.css
-
-            - name: Create Release
-              uses: softprops/action-gh-release@v2
-              with:
-                  files: |
-                      frontend/main.js
-                      frontend/manifest.json
-                      frontend/styles.css
-                  generate_release_notes: true
-                  draft: false
-                  prerelease: false
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Verify tag
+        run: node -e "if (process.env.GITHUB_REF_NAME !== require('./manifest.json').version) process.exit(1)"
+      - run: npm ci
+      - run: npm run build
+      - run: npm run check:release
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install uv
+      - run: uv sync --locked
+        working-directory: engine
+      - run: uv run pytest
+        working-directory: engine
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            main.js
+            manifest.json
+            styles.css
+          generate_release_notes: true
+          draft: false
+          prerelease: false
