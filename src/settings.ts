@@ -110,6 +110,10 @@ export class SemantixSettingTab extends PluginSettingTab {
         this.plugin = plugin;
     }
 
+    getSettingDefinitions(): unknown[] {
+        return [];
+    }
+
     private updateStatus(type: 'python' | 'backend', status: string): void {
         if (type === 'python') this.pythonStatus = status;
         else this.backendStatus = status;

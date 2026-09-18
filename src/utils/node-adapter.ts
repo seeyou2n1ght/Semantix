@@ -25,3 +25,30 @@ export function getElectronNodeModule<T = unknown>(moduleName: string): T | null
 
     return null;
 }
+
+export interface ElectronProcess {
+    env?: Record<string, string | undefined>;
+    pid?: number;
+}
+
+export function getElectronProcess(): ElectronProcess | null {
+    if (!Platform.isDesktop) {
+        return null;
+    }
+
+    try {
+        const win = window as unknown as { process?: ElectronProcess };
+        if (win.process && typeof win.process.pid === 'number') {
+            return win.process;
+        }
+        const req = (window as unknown as WindowNode).require;
+        if (typeof req === 'function') {
+            return req('process') as ElectronProcess;
+        }
+    } catch {
+        return null;
+    }
+
+    return null;
+}
+

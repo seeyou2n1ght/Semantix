@@ -187,6 +187,22 @@ Resolve Q1-Q3 in `ARCHITECTURE.md` before claiming mobile support, enforcing ver
 
 ## Release History
 
+### [0.9.3] - 2026-09-18
+
+#### 🛡️ 进程模型类型去耦与审查全绿达成 (Pure Type Decoupling & Zero-Warning Review)
+- **Node 宿主进程模型完全解耦**:
+  - 针对审查环境缺少 Node.js 内置模块类型定义导致的 `'error'` 类型污染（`Buffer` 与 `ChildProcess` 级联引发 40 余项 unsafe member/call 告警），彻底移除对 `'child_process'` 的外部类型导入及全局 `Buffer` 引用。
+  - 在 `service-manager.ts` 中构建纯净原生的 `ManagedProcess`、`ProcessStream`、`ExecSyncResult` 接口，解耦宿主依赖。
+  - 在 `node-adapter.ts` 中新增强类型 `getElectronProcess()` 适配函数，彻底规避浏览器 DOM 库中未定义的全局 `process.env` 与 `process.pid` 访问。
+- **声明式设置 API 规范对齐**:
+  - 在 `SemantixSettingTab` 中声明 `getSettingDefinitions()`，完全消除 `obsidianmd/settings-tab/prefer-setting-definitions` 警告。
+- **代码收敛与冗余清理**:
+  - 修复 `radar-view.ts` 中 `Keymap.isModEvent` 多余的 `as UserEvent` 类型断言并移除无用导入。
+  - 全项目 `npm run lint` 达成 **0 错误、0 警告** 极致清洁状态。
+- **全链路版本与构建对齐**:
+  - 同步版本至 `0.9.3`（`package.json`、`package-lock.json`、`manifest.json`、`versions.json`、`README.md`、`engine/pyproject.toml`、`engine/main.py`、`engine/tests/test_smoke.py`、`uv.lock`）。
+  - 通过 `npm run lint`、`npm run build`、`npm run check:release` 以及全部 30 项 engine pytest 测试。
+
 ### [0.9.2] - 2026-09-18
 
 #### 🛡️ 官方审查合规与类型安全全量加固 (Review Compliance & Strict Type Safety)

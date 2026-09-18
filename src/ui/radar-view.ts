@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf, TFile, MarkdownView, Notice, HoverParent, HoverPopover, Keymap, UserEvent } from 'obsidian';
+import { ItemView, WorkspaceLeaf, TFile, MarkdownView, Notice, HoverParent, HoverPopover, Keymap } from 'obsidian';
 import SemantixPlugin, { IndexingState } from '../main';
 import { RadarCardItem } from '../api/types';
 import { t } from '../i18n/helpers';
@@ -419,7 +419,7 @@ export class RadarView extends ItemView implements HoverParent {
 
         // 根据修饰键、Shift 键或中键决策打开位置
         const isShift = event ? Boolean((event as MouseEvent).shiftKey) : false;
-        const paneType = Keymap.isModEvent(event as UserEvent);
+        const paneType = Keymap.isModEvent(event);
         let leaf: WorkspaceLeaf | null = null;
 
         if (isShift || paneType === 'tab') {

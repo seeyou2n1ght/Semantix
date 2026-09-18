@@ -1,6 +1,6 @@
 {
 	"name": "semantix",
-	"version": "0.9.2",
+	"version": "0.9.3",
 	"description": "Surface related notes and unexpected semantic connections as you write.",
 	"main": "main.js",
 	"type": "module",

@@ -1,13 +1,30 @@
 import { Notice, Platform } from 'obsidian';
 import SemantixPlugin from '../main';
-import type { ChildProcess } from 'child_process';
 import { HealthStatus } from '../api/client';
-import { getElectronNodeModule } from '../utils/node-adapter';
+import { getElectronNodeModule, getElectronProcess } from '../utils/node-adapter';
+
+interface ProcessStream {
+    on(event: 'data', listener: (chunk: unknown) => void): unknown;
+}
+
+interface ManagedProcess {
+    pid?: number;
+    stdout: ProcessStream | null;
+    stderr: ProcessStream | null;
+    on(event: 'close', listener: (code: number | null) => void): unknown;
+    on(event: 'error', listener: (err: Error) => void): unknown;
+    on(event: string, listener: (...args: unknown[]) => void): unknown;
+    kill(signal?: string): boolean;
+}
+
+interface ExecSyncResult {
+    toString(encoding?: string): string;
+}
 
 interface ChildProcessModule {
-    spawn: (command: string, args: string[], options: Record<string, unknown>) => ChildProcess;
+    spawn: (command: string, args: string[], options: Record<string, unknown>) => ManagedProcess;
     exec: (command: string, callback?: (error: Error | null, stdout: string, stderr: string) => void) => unknown;
-    execSync: (command: string) => Buffer | string;
+    execSync: (command: string) => ExecSyncResult;
 }
 
 function getChildProcess(): ChildProcessModule | null {
@@ -16,7 +33,7 @@ function getChildProcess(): ChildProcessModule | null {
 
 export class ServiceManager {
     private plugin: SemantixPlugin;
-    private process: ChildProcess | null = null;
+    private process: ManagedProcess | null = null;
     private isStarting: boolean = false;
     private onStatusCallback?: (msg: string) => void;
 
@@ -188,9 +205,11 @@ export class ServiceManager {
                 ? ['run', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', effectivePort.toString()]
                 : ['-m', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', effectivePort.toString()];
 
-            const env = { 
-                ...process.env, 
-                SEMANTIX_PARENT_PID: process.pid.toString() 
+            const electronProc = getElectronProcess();
+            const parentPid = electronProc?.pid ? String(electronProc.pid) : '';
+            const env: Record<string, string | undefined> = { 
+                ...(electronProc?.env ?? {}), 
+                SEMANTIX_PARENT_PID: parentPid 
             };
 
             const cp = getChildProcess();
