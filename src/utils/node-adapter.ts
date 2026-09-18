@@ -15,8 +15,7 @@ export function getElectronNodeModule<T = unknown>(moduleName: string): T | null
 
     try {
         const win = window as unknown as WindowNode;
-        const glob = globalThis as unknown as WindowNode;
-        const req = win.require || glob.require;
+        const req = win.require;
         if (typeof req === 'function') {
             return req(moduleName) as T;
         }

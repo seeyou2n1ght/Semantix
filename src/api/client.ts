@@ -9,6 +9,7 @@ import {
     RadarSearchRequest,
     RadarSearchResponse,
     HealthResponse,
+    ClearIndexRequestResponse,
 } from './types';
 
 export enum HealthStatus {
@@ -73,12 +74,13 @@ export class ApiClient {
                 const res: RequestUrlResponse = await requestUrl(req);
                 
                 if (res.status === 200 && res.json) {
-                    if (res.json.status === 'ok') {
-                        this.lastHealthResponse = res.json as HealthResponse;
+                    const healthData = res.json as HealthResponse;
+                    if (healthData.status === 'ok') {
+                        this.lastHealthResponse = healthData;
                         return HealthStatus.READY;
                     }
-                    if (res.json.status === 'loading') {
-                        this.lastHealthResponse = res.json as HealthResponse;
+                    if (healthData.status === 'loading') {
+                        this.lastHealthResponse = healthData;
                         return HealthStatus.LOADING;
                     }
                 }
@@ -117,7 +119,7 @@ export class ApiClient {
                 body: JSON.stringify(payload) // requestUrl requires body string
             });
             if (res.status === 200 && res.json) {
-                return res.json;
+                return res.json as BatchIndexResponse;
             }
             return null;
         } catch (error) {
@@ -144,7 +146,7 @@ export class ApiClient {
                 body: JSON.stringify(payload)
             });
             if (res.status === 200 && res.json) {
-                return res.json;
+                return res.json as DeleteIndexResponse;
             }
             return null;
         } catch (error) {
@@ -173,7 +175,7 @@ export class ApiClient {
                 body: JSON.stringify(payload)
             });
             if (res.status === 200 && res.json) {
-                return res.json;
+                return res.json as RadarSearchResponse;
             }
             return null;
         } catch (error) {
@@ -193,7 +195,7 @@ export class ApiClient {
                 headers: this.getAuthHeaders()
             });
             if (res.status === 200 && res.json) {
-                return res.json;
+                return res.json as IndexStatusResponse;
             }
             return null;
         } catch (error) {
@@ -226,7 +228,8 @@ export class ApiClient {
                 return false;
             }
             
-            const token = requestRes.json.confirmation_token;
+            const clearData = requestRes.json as ClearIndexRequestResponse;
+            const token = clearData.confirmation_token;
             if (!token) {
                 return false;
             }
@@ -284,7 +287,7 @@ export class ApiClient {
                 headers: this.getAuthHeaders()
             });
             if (res.status === 200 && res.json) {
-                return res.json;
+                return res.json as Record<string, unknown>;
             }
             return null;
         } catch {
@@ -293,7 +296,7 @@ export class ApiClient {
     }
 
     /**
-     * µëïÕè¿ÞºªÕÅæþúüþøÿþ╗┤µèñ
+     * 手动触发磁盘维护
      */
     async runMaintenance(retentionDays: number): Promise<boolean> {
         try {
@@ -311,7 +314,7 @@ export class ApiClient {
     }
 
     /**
-     * ÞºªÕÅæÕÉ»ÕÅæÕ╝ÅÕÖ¬Úƒ│Þ»ìÞ«íþ«ù (µû╣µíêõ║î)
+     * 触发启发式噪音词计算 (方案二)
      */
     async computeStopwords(): Promise<{status: string, count: number, words: string[]} | null> {
         try {
@@ -323,7 +326,7 @@ export class ApiClient {
                 body: JSON.stringify({ vault_id: this.vaultId })
             });
             if (res.status === 200 && res.json) {
-                return res.json;
+                return res.json as {status: string, count: number, words: string[]};
             }
             return null;
         } catch {

@@ -187,6 +187,20 @@ Resolve Q1-Q3 in `ARCHITECTURE.md` before claiming mobile support, enforcing ver
 
 ## Release History
 
+### [0.9.2] - 2026-09-18
+
+#### 🛡️ 官方审查合规与类型安全全量加固 (Review Compliance & Strict Type Safety)
+- **Obsidian 审查规则全量合规**:
+  - 本地 ESLint 规范升级至 `eslint-plugin-obsidianmd@^0.4.2` 并启用 `obsidianmd.configs.recommended`，100% 本地复现 Obsidian 官方审查机器人的严格规则集。
+  - **DOM 规范**: 全量迁移 DOM 构建至 Obsidian 推荐的原生 DOM 辅助方法（`createDiv`、`createSpan`、`createEl`），彻底消除 `document.createElement` 审查警告。
+  - **全局上下文隔离**: 彻底移除 `globalThis` 使用，严格通过 Electron Node 适配器安全调用。
+  - **严格类型安全与空安全**: 全面修复 `@typescript-eslint/no-unsafe-*` 系列报错（`service-manager.ts` 进程流数据、`client.ts` 响应模型转换、Frontmatter 标签提取、JSON 解析与 PID 校验），无任何忽略指令。
+  - **Promise 生命周期防护**: 全面修复 `@typescript-eslint/no-floating-promises` 与 `@typescript-eslint/no-misused-promises`，对所有非阻塞异步调用显式标记 `void` 忽略，对 `setTimeout` 回调安全包裹，杜绝浮动 Promise 与竞态异常。
+  - **对等依赖与类型声明**: 安装 `@types/picomatch` 补齐类型，移除非必要类型断言与 `@ts-expect-error` 指令。
+- **全链路版本与构建对齐**:
+  - 同步版本至 `0.9.2`（`package.json`、`package-lock.json`、`manifest.json`、`versions.json`、`README.md`、`engine/pyproject.toml`、`engine/main.py`、`engine/tests/test_smoke.py`、`uv.lock`）。
+  - 通过 `npm run lint`、`npm run build`、`npm run check:release`、`npm ci` 以及全部 30 项 engine pytest 测试。
+
 ### [0.9.1] - 2026-09-18
 
 #### 🩹 依赖加固与审查发布 (Dependency Hardening & Review Release)

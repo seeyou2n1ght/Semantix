@@ -102,24 +102,26 @@ export class ServiceManager {
         const backoffDelay = this.healAttempts === 1 ? 3000 : this.healAttempts === 2 ? 6000 : 15000;
         this.reportStatus(`服务异常 (${reason})，${backoffDelay / 1000}s 后尝试自动自愈 (${this.healAttempts}/${this.maxHealAttempts})...`);
 
-        this.healTimer = window.setTimeout(async () => {
-            this.healTimer = null;
-            if (this.userIntentStopped || this.isRunning() || this.isStarting) return;
+        this.healTimer = window.setTimeout(() => {
+            void (async () => {
+                this.healTimer = null;
+                if (this.userIntentStopped || this.isRunning() || this.isStarting) return;
 
-            // 自愈前检查外部是否已恢复或手动拉起服务
-            const status = await this.plugin.apiClient.checkFullHealth();
-            if (status === HealthStatus.READY) {
-                this.onHealthyStable();
-                this.reportStatus("后端连接已恢复 ✅");
-                this.plugin.checkConnection({ silent: true });
-                return;
-            }
-            if (status === HealthStatus.LOADING) {
-                this.reportStatus("后端正在载入模型，等待就绪... ⏳");
-                return;
-            }
+                // 自愈前检查外部是否已恢复或手动拉起服务
+                const status = await this.plugin.apiClient.checkFullHealth();
+                if (status === HealthStatus.READY) {
+                    this.onHealthyStable();
+                    this.reportStatus("后端连接已恢复 ✅");
+                    void this.plugin.checkConnection({ silent: true });
+                    return;
+                }
+                if (status === HealthStatus.LOADING) {
+                    this.reportStatus("后端正在载入模型，等待就绪... ⏳");
+                    return;
+                }
 
-            await this.forceKillAndStart({ isHeal: true });
+                await this.forceKillAndStart({ isHeal: true });
+            })();
         }, backoffDelay);
     }
 
@@ -171,7 +173,7 @@ export class ServiceManager {
                 this.reportStatus("后端已在运行中 ✅");
                 this.isStarting = false;
                 this.onHealthyStable();
-                this.plugin.checkConnection({ silent: !force });
+                void this.plugin.checkConnection({ silent: !force });
                 return;
             }
             if (status === HealthStatus.LOADING) {
@@ -210,36 +212,37 @@ export class ServiceManager {
             this.process = proc;
 
             // 实时监听日志流
-            proc.stdout?.on('data', (data) => {
+            proc.stdout?.on('data', (chunk: unknown) => {
                 if (this.process !== proc) return; // 关键：丢弃非当前活跃进程的日志
-                const line = data.toString();
+                const line = String(chunk);
                 if (line.includes("Model loaded")) {
                     this.reportStatus("模型加载完成 🧠");
                 } else if (line.includes("Uvicorn running on")) {
                     this.reportStatus("服务已就绪 🚀");
                     // 只有当前进程成功触发时才执行一次健康检查更新
-                    window.setTimeout(() => this.plugin.checkConnection({ silent: true }), 500);
+                    window.setTimeout(() => { void this.plugin.checkConnection({ silent: true }); }, 500);
                 } else if (line.includes("Downloading:")) {
                     // 尝试提取下载进度
                     const match = line.match(/Downloading[:\s]+(\d+%)|(\d+\.?\d*[kM]B\/s)/);
                     if (match) {
-                        this.reportStatus(`模型下载中: ${match[0]}...`);
+                        this.reportStatus(`模型下载中: ${match[0] ?? ''}...`);
                     } else {
                         this.reportStatus("正在下载语义模型 (首次运行耗时较长)...");
                     }
                 }
             });
 
-            proc.stderr?.on('data', (data) => {
+            proc.stderr?.on('data', (chunk: unknown) => {
                 if (this.process !== proc) return; 
-                const line = data.toString();
+                const line = String(chunk);
                 // 识别一些常见的加载提示或错误
                 if (line.includes("Loading model") || line.includes("Loading embedding model")) {
                     this.reportStatus("正在加载语义引擎 (约需 10-30s)...");
                 } else if (line.includes("Downloading")) {
                     this.reportStatus("正在从 HuggingFace/ModelScope 下载模型数据...");
                 } else if (line.includes("ERROR")) {
-                    this.reportStatus(`出错了: ${line.split('\n')[0].substring(0, 50)}...`);
+                    const firstLine = line.split('\n')[0] ?? '';
+                    this.reportStatus(`出错了: ${firstLine.substring(0, 50)}...`);
                 }
             });
 
@@ -248,14 +251,14 @@ export class ServiceManager {
                 
                 this.process = null;
                 this.isStarting = false;
-                this.plugin.checkConnection();
+                void this.plugin.checkConnection();
                 if (code !== 0 && code !== null) {
                     this.reportStatus(`服务异常退出 (Code: ${code}) ❌`);
                     this.triggerSelfHealing(`进程意外退出 (Code: ${code})`);
                 }
             });
 
-            proc.on('error', (err) => {
+            proc.on('error', (err: Error) => {
                 if (this.process !== proc) return;
                 this.reportStatus(`启动失败: ${err.message} ❌`);
                 this.process = null;
@@ -264,7 +267,7 @@ export class ServiceManager {
             });
 
             // 给予一定时间再检查状态
-            window.setTimeout(() => this.plugin.checkConnection(), 3000);
+            window.setTimeout(() => { void this.plugin.checkConnection(); }, 3000);
 
         } catch {
             this.reportStatus("启动流程遭遇意外错误 ❌");
@@ -314,7 +317,7 @@ export class ServiceManager {
                 if (fs && pathMod && this.plugin.settings.backendPath) {
                     const pidFile = pathMod.join(this.plugin.settings.backendPath, '.semantix.pid');
                     if (fs.existsSync(pidFile)) {
-                        const content = JSON.parse(fs.readFileSync(pidFile, 'utf-8'));
+                        const content = JSON.parse(fs.readFileSync(pidFile, 'utf-8')) as { pid?: string | number };
                         const orphanPid = String(content?.pid ?? '');
                         // 安全校验：PID 必须为纯数字，防止命令注入
                         if (orphanPid && /^\d+$/.test(orphanPid)) {

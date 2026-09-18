@@ -2,7 +2,6 @@ import { TFile, TFolder, TAbstractFile } from 'obsidian';
 import SemantixPlugin from '../main';
 import { IndexDocument } from '../api/types';
 import { cleanMarkdown } from '../utils/markdown';
-// @ts-expect-error No type declarations for picomatch
 import picomatch from 'picomatch';
 
 export class SyncManager {
@@ -189,9 +188,9 @@ export class SyncManager {
         const defaultIntervalMs = this.plugin.settings.syncBatchInterval * 1000;
         const intervalMs = delayMs !== undefined ? delayMs : defaultIntervalMs;
         
-        this.syncTimer = window.setTimeout(async () => {
+        this.syncTimer = window.setTimeout(() => {
             this.syncTimer = null;
-            await this.flushQueue();
+            void this.flushQueue();
         }, intervalMs);
     }
 
@@ -327,7 +326,7 @@ export class SyncManager {
             this.isFlushing = false;
 
             // 同步完成后刷新侧边栏索引计数
-            this.plugin.checkConnection();
+            void this.plugin.checkConnection();
             const state = this.plugin.getIndexingState();
             if (!(state.active && state.label === "full")) {
                 this.plugin.clearIndexingProgress();

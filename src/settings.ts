@@ -253,14 +253,14 @@ export class SemantixSettingTab extends PluginSettingTab {
         const uvLock = pathMod.join(backendPath, 'uv.lock');
         if (fsMod.existsSync(uvLock)) {
             this.plugin.settings.pythonPath = 'uv';
-            this.plugin.saveSettings();
+            void this.plugin.saveSettings();
             this.updateStatus('python', t('UV_DETECTED'));
             return;
         }
 
         if (fsMod.existsSync(venvPython)) {
             this.plugin.settings.pythonPath = venvPython;
-            this.plugin.saveSettings();
+            void this.plugin.saveSettings();
             this.updateStatus('python', t('VENV_DETECTED') + venvPython);
         } else {
             this.updateStatus('python', t('VENV_NOT_FOUND'));
@@ -318,7 +318,7 @@ export class SemantixSettingTab extends PluginSettingTab {
         this.debounceSettingEl = null;
 
         // 1. 顶部状态看板 Dashboard
-        this.statusBannerSlotEl = containerEl.createEl('div', { cls: 'semantix-status-slot' });
+        this.statusBannerSlotEl = containerEl.createDiv({ cls: 'semantix-status-slot' });
         this.renderStatusHeader(this.statusBannerSlotEl);
 
         // 2. 模块 1: 推荐体验与交互策略
@@ -340,24 +340,24 @@ export class SemantixSettingTab extends PluginSettingTab {
      * 1. 顶部紧凑状态概览 (System Status Banner)
      */
     private renderStatusHeader(containerEl: HTMLElement): void {
-        const bannerEl = containerEl.createEl('div', { cls: 'semantix-status-banner' });
-        const infoEl = bannerEl.createEl('div', { cls: 'semantix-status-info' });
+        const bannerEl = containerEl.createDiv({ cls: 'semantix-status-banner' });
+        const infoEl = bannerEl.createDiv({ cls: 'semantix-status-info' });
 
         const status = this.plugin.getConnectionStatus();
         const indexingState = this.plugin.getIndexingState();
         const health = this.plugin.apiClient.lastHealthResponse;
         const isLocal = this.plugin.settings.backendMode === 'local';
 
-        const titleRow = infoEl.createEl('div', { cls: 'semantix-status-title-row' });
-        const dotEl = titleRow.createEl('span', { cls: 'semantix-status-dot' });
-        const titleTextEl = titleRow.createEl('span', { cls: 'semantix-status-badge' });
+        const titleRow = infoEl.createDiv({ cls: 'semantix-status-title-row' });
+        const dotEl = titleRow.createSpan({ cls: 'semantix-status-dot' });
+        const titleTextEl = titleRow.createSpan({ cls: 'semantix-status-badge' });
 
-        titleRow.createEl('span', {
+        titleRow.createSpan({
             cls: 'semantix-mode-pill',
             text: isLocal ? t('MODE_LOCAL_BADGE') : t('MODE_REMOTE_BADGE')
         });
 
-        const descEl = infoEl.createEl('div', { cls: 'semantix-status-desc' });
+        const descEl = infoEl.createDiv({ cls: 'semantix-status-desc' });
 
         if (indexingState && indexingState.active) {
             dotEl.addClass('dot-indexing');
@@ -396,9 +396,9 @@ export class SemantixSettingTab extends PluginSettingTab {
      * 2. 模块 1: 推荐体验与交互策略 (Recommendation)
      */
     private renderRecommendationCard(containerEl: HTMLElement): void {
-        const card = containerEl.createEl('div', { cls: 'semantix-settings-card' });
-        const header = card.createEl('div', { cls: 'semantix-settings-card-header' });
-        header.createEl('div', { cls: 'semantix-settings-card-title', text: t('SEC_RECOMMENDATION_GROUP') });
+        const card = containerEl.createDiv({ cls: 'semantix-settings-card' });
+        const header = card.createDiv({ cls: 'semantix-settings-card-header' });
+        header.createDiv({ cls: 'semantix-settings-card-title', text: t('SEC_RECOMMENDATION_GROUP') });
 
         // 2.1 推荐质量策略
         new Setting(card)
@@ -482,12 +482,12 @@ export class SemantixSettingTab extends PluginSettingTab {
      * 3. 模块 2: 知识库索引与内容范围 (Vault Index)
      */
     private renderVaultIndexCard(containerEl: HTMLElement): void {
-        const card = containerEl.createEl('div', { cls: 'semantix-settings-card' });
-        const header = card.createEl('div', { cls: 'semantix-settings-card-header' });
-        header.createEl('div', { cls: 'semantix-settings-card-title', text: t('SEC_INDEX_GROUP') });
+        const card = containerEl.createDiv({ cls: 'semantix-settings-card' });
+        const header = card.createDiv({ cls: 'semantix-settings-card-header' });
+        header.createDiv({ cls: 'semantix-settings-card-title', text: t('SEC_INDEX_GROUP') });
 
         // 3.1 索引健康度与全量重建 (Slot 局部刷新)
-        this.vaultIndexSlotEl = card.createEl('div', { cls: 'semantix-vault-index-slot' });
+        this.vaultIndexSlotEl = card.createDiv({ cls: 'semantix-vault-index-slot' });
         this.renderVaultIndexStatus(this.vaultIndexSlotEl);
 
         // 3.2 笔记保存增量同步缓冲
@@ -515,7 +515,7 @@ export class SemantixSettingTab extends PluginSettingTab {
         const isIndexing = this.plugin.isFullIndexingActive();
         const indexingState = this.plugin.getIndexingState();
         const docsCount = this.dbMetrics?.total_indexed_docs ?? 0;
-        const relativeTime = this.formatRelativeTime(this.dbMetrics?.last_index_at as string | undefined);
+        const relativeTime = this.formatRelativeTime(this.dbMetrics?.last_index_at);
         const isConnected = this.plugin.getConnectionStatus() === 'connected';
 
         const indexSetting = new Setting(slotEl).setName(t('INDEX_STATUS_NAME'));
@@ -550,13 +550,13 @@ export class SemantixSettingTab extends PluginSettingTab {
                         btn.setButtonText(t('REBUILDING'));
                         btn.setDisabled(true);
                         new Notice(t('CLEAR_SUCCESS_REBUILDING'));
-                        this.plugin.checkConnection({ silent: true });
+                        void this.plugin.checkConnection({ silent: true });
                         try {
                             (this.app as unknown as { setting?: { close: () => void } }).setting?.close();
                         } catch {
                             // ignore
                         }
-                        this.plugin.startFullIndexing({ skipConfirm: true });
+                        void this.plugin.startFullIndexing({ skipConfirm: true });
                     });
                 });
             });
@@ -570,7 +570,7 @@ export class SemantixSettingTab extends PluginSettingTab {
             .filter(Boolean);
         const rulesCountText = t('RULES_COUNT', { count: rules.length });
 
-        const exclusionSlotEl = containerEl.createEl('div', { cls: 'semantix-exclusion-slot' });
+        const exclusionSlotEl = containerEl.createDiv({ cls: 'semantix-exclusion-slot' });
 
         const renderDrawer = () => {
             exclusionSlotEl.empty();
@@ -585,7 +585,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                     }));
 
             if (this.isEditingExclusions) {
-                const drawerEl = exclusionSlotEl.createEl('div', { cls: 'semantix-exclusion-drawer' });
+                const drawerEl = exclusionSlotEl.createDiv({ cls: 'semantix-exclusion-drawer' });
                 const textarea = drawerEl.createEl('textarea', {
                     cls: 'semantix-exclusion-textarea',
                     attr: { placeholder: t('EXCLUSION_PLACEHOLDER') }
@@ -602,7 +602,7 @@ export class SemantixSettingTab extends PluginSettingTab {
     }
 
     private renderStopwordsFilter(containerEl: HTMLElement): void {
-        const slotEl = containerEl.createEl('div', { cls: 'semantix-stopwords-slot' });
+        const slotEl = containerEl.createDiv({ cls: 'semantix-stopwords-slot' });
 
         const renderDrawer = () => {
             slotEl.empty();
@@ -620,7 +620,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                     }));
 
             if (this.isStopwordsOpen) {
-                const drawerEl = slotEl.createEl('div', { cls: 'semantix-exclusion-drawer' });
+                const drawerEl = slotEl.createDiv({ cls: 'semantix-exclusion-drawer' });
 
                 new Setting(drawerEl)
                     .setName(t('ADAPTIVE_FILTERING_NAME'))
@@ -636,9 +636,9 @@ export class SemantixSettingTab extends PluginSettingTab {
                                     this.plugin.vaultStopwords = res.words;
                                     renderStopwordsChips();
                                 }
-                                this.plugin.checkConnection({ silent: true });
+                                void this.plugin.checkConnection({ silent: true });
                                 if (this.plugin.radar) {
-                                    this.plugin.radar.triggerNoteScan();
+                                    void this.plugin.radar.triggerNoteScan();
                                 }
                             }
                         }))
@@ -658,7 +658,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                                     renderStopwordsChips();
                                     await this.plugin.checkConnection({ silent: true });
                                     if (this.plugin.radar) {
-                                        this.plugin.radar.triggerNoteScan();
+                                        void this.plugin.radar.triggerNoteScan();
                                     }
                                 } else {
                                     new Notice(t('STOPWORDS_FAILED'));
@@ -669,21 +669,21 @@ export class SemantixSettingTab extends PluginSettingTab {
                             }
                         }));
 
-                const chipsContainer = drawerEl.createEl('div', { cls: 'semantix-stopwords-container' });
+                const chipsContainer = drawerEl.createDiv({ cls: 'semantix-stopwords-container' });
                 const renderStopwordsChips = () => {
                     chipsContainer.empty();
-                    const header = chipsContainer.createEl('div', { cls: 'semantix-stopwords-header' });
-                    header.createEl('span', { 
+                    const header = chipsContainer.createDiv({ cls: 'semantix-stopwords-header' });
+                    header.createSpan({ 
                         cls: 'semantix-stopwords-title', 
                         text: `${t('ADAPTIVE_STOPWORDS_TITLE')} (${this.plugin.vaultStopwords?.length || 0}):` 
                     });
-                    const listEl = chipsContainer.createEl('div', { cls: 'semantix-stopwords-chips' });
+                    const listEl = chipsContainer.createDiv({ cls: 'semantix-stopwords-chips' });
                     if (this.plugin.vaultStopwords && this.plugin.vaultStopwords.length > 0) {
                         for (const word of this.plugin.vaultStopwords) {
-                            listEl.createEl('span', { cls: 'semantix-stopword-chip', text: word });
+                            listEl.createSpan({ cls: 'semantix-stopword-chip', text: word });
                         }
                     } else {
-                        listEl.createEl('span', { 
+                        listEl.createSpan({ 
                             cls: 'semantix-stopwords-empty', 
                             text: t('ADAPTIVE_STOPWORDS_EMPTY') 
                         });
@@ -711,11 +711,11 @@ export class SemantixSettingTab extends PluginSettingTab {
      * 4. 模块 3: 服务引擎与连接模式 (Engine)
      */
     private renderEngineCard(containerEl: HTMLElement): void {
-        const card = containerEl.createEl('div', { cls: 'semantix-settings-card' });
-        const header = card.createEl('div', { cls: 'semantix-settings-card-header' });
-        header.createEl('div', { cls: 'semantix-settings-card-title', text: t('SEC_ENGINE_GROUP') });
+        const card = containerEl.createDiv({ cls: 'semantix-settings-card' });
+        const header = card.createDiv({ cls: 'semantix-settings-card-header' });
+        header.createDiv({ cls: 'semantix-settings-card-title', text: t('SEC_ENGINE_GROUP') });
 
-        const branchSlotEl = card.createEl('div', { cls: 'semantix-engine-branch-slot' });
+        const branchSlotEl = card.createDiv({ cls: 'semantix-engine-branch-slot' });
         this.engineManageSlotEl = branchSlotEl;
 
         new Setting(card)
@@ -814,7 +814,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                             this.debounceTimer = window.setTimeout(() => this.validateBackend(val), 800);
                         }));
 
-                this.backendStatusTextEl = slotEl.createEl('div', { cls: 'semantix-path-indicator' });
+                this.backendStatusTextEl = slotEl.createDiv({ cls: 'semantix-path-indicator' });
                 this.updateBackendStatusEl();
             }
         } else {
@@ -859,12 +859,12 @@ export class SemantixSettingTab extends PluginSettingTab {
      * 5. 模块 4: 存储维护与系统诊断 (Maintenance & Diagnostics)
      */
     private renderMaintenanceCard(containerEl: HTMLElement): void {
-        const card = containerEl.createEl('div', { cls: 'semantix-settings-card' });
-        const header = card.createEl('div', { cls: 'semantix-settings-card-header' });
-        header.createEl('div', { cls: 'semantix-settings-card-title', text: t('SEC_MAINTENANCE_GROUP') });
+        const card = containerEl.createDiv({ cls: 'semantix-settings-card' });
+        const header = card.createDiv({ cls: 'semantix-settings-card-header' });
+        header.createDiv({ cls: 'semantix-settings-card-title', text: t('SEC_MAINTENANCE_GROUP') });
 
         const sizeStr = this.formatBytes(this.dbMetrics?.db_size_bytes);
-        const lastOpt = this.formatRelativeTime(this.dbMetrics?.last_maintenance_at as string | undefined);
+        const lastOpt = this.formatRelativeTime(this.dbMetrics?.last_maintenance_at);
         const optDesc = lastOpt ? ` · 上次优化: ${lastOpt}` : "";
 
         new Setting(card)
@@ -920,7 +920,7 @@ export class SemantixSettingTab extends PluginSettingTab {
         }
 
         // 危险操作区
-        const dangerZone = card.createEl('div', { cls: 'semantix-danger-zone' });
+        const dangerZone = card.createDiv({ cls: 'semantix-danger-zone' });
         const clearSetting = new Setting(dangerZone)
             .setName(t('DANGER_ZONE_CLEAR_TITLE'))
             .setDesc(t('DANGER_ZONE_CLEAR_DESC'));
@@ -934,7 +934,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                     const success = await this.plugin.apiClient.clearIndex(this.plugin.vaultId);
                     if (success) {
                         new Notice(t('CLEAR_SUCCESS'));
-                        this.plugin.checkConnection({ silent: true });
+                        await this.plugin.checkConnection({ silent: true });
                         this.dbMetrics = await this.plugin.apiClient.getMetrics();
                         this.refreshStatusDisplay();
                     } else {

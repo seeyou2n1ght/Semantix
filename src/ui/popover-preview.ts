@@ -21,7 +21,7 @@ export class PopoverPreview {
 
     private createPopoverElement() {
         if (this.popoverEl) return;
-        this.popoverEl = document.body.createEl("div", { cls: "semantix-popover-preview is-hidden" });
+        this.popoverEl = document.body.createDiv({ cls: "semantix-popover-preview is-hidden" });
 
         // 鼠标移入 Popover 本身时取消隐藏
         this.popoverEl.addEventListener("mouseenter", () => {
@@ -64,15 +64,15 @@ export class PopoverPreview {
         this.popoverEl.empty();
 
         // 1. 顶部标题栏与定位层级
-        const header = this.popoverEl.createEl("div", { cls: "semantix-popover-header" });
+        const header = this.popoverEl.createDiv({ cls: "semantix-popover-header" });
 
-        const titleRow = header.createEl("div", { cls: "semantix-popover-title-row" });
+        const titleRow = header.createDiv({ cls: "semantix-popover-title-row" });
         const cleanTitle = item.title ? item.title.replace(/\.md$/i, '') : item.path.split('/').pop()?.replace(/\.md$/i, '') || '';
         
-        const titleLeft = titleRow.createEl("div", { cls: "semantix-popover-title-group" });
-        titleLeft.createEl("span", { cls: "semantix-popover-icon", text: "📄" });
-        titleLeft.createEl("span", { cls: "semantix-popover-title", text: cleanTitle });
-        const headingEl = titleLeft.createEl("span", { cls: "semantix-popover-heading", text: "" });
+        const titleLeft = titleRow.createDiv({ cls: "semantix-popover-title-group" });
+        titleLeft.createSpan({ cls: "semantix-popover-icon", text: "📄" });
+        titleLeft.createSpan({ cls: "semantix-popover-title", text: cleanTitle });
+        const headingEl = titleLeft.createSpan({ cls: "semantix-popover-heading", text: "" });
 
         // 红绿灯分数徽标
         if (typeof item.score === 'number' && !isNaN(item.score)) {
@@ -86,7 +86,7 @@ export class PopoverPreview {
                 tierText = "●○○";
                 tierCls = "low";
             }
-            titleRow.createEl("span", { 
+            titleRow.createSpan({ 
                 cls: `semantix-card-score mod-${tierCls} semantix-popover-score-badge`, 
                 text: `${tierText} ${scoreVal}`,
                 attr: { "title": `${t('POPOVER_MATCH')}: ${scoreVal}` }
@@ -95,8 +95,8 @@ export class PopoverPreview {
 
         // 文件物理路径
         if (item.path) {
-            const metaBar = header.createEl("div", { cls: "semantix-popover-meta" });
-            const pathEl = metaBar.createEl("span", { cls: "semantix-popover-path", text: `📁 ${item.path}` });
+            const metaBar = header.createDiv({ cls: "semantix-popover-meta" });
+            const pathEl = metaBar.createSpan({ cls: "semantix-popover-path", text: `📁 ${item.path}` });
             pathEl.setAttribute("title", t('CARD_CLICK_OPEN'));
             pathEl.addEventListener("mouseover", (e: MouseEvent) => {
                 if (Keymap.isModifier(e, 'Mod') && app) {
@@ -113,7 +113,7 @@ export class PopoverPreview {
         }
 
         // 2. 完整段落上下文内容阅读区 (异步扩展，支持滚动)
-        const body = this.popoverEl.createEl("div", { cls: "semantix-popover-body" });
+        const body = this.popoverEl.createDiv({ cls: "semantix-popover-body" });
         const textEl = body.createEl("p", { text: item.snippet, cls: "semantix-popover-text" });
 
         if (app && item.path) {
@@ -163,7 +163,7 @@ export class PopoverPreview {
         }
 
         // 4. 底部微提示 (不设按钮，仅提供纯粹操作指引)
-        this.popoverEl.createEl("div", { 
+        this.popoverEl.createDiv({ 
             cls: "semantix-popover-footer-hint",
             text: t('POPOVER_CLICK_HINT')
         });

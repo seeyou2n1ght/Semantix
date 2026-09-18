@@ -101,7 +101,7 @@ export default class SemantixPlugin extends Plugin {
 
             // 联动：当检测到后端已成功拉起，立即触发一次非阻塞探活，消除 3s 盲等
             if (msg.includes("Uvicorn running on") || msg.includes("服务已就绪")) {
-                this.checkConnection({ silent: true });
+                void this.checkConnection({ silent: true });
             }
 
             if (!this.startupNotice) {
@@ -149,7 +149,7 @@ export default class SemantixPlugin extends Plugin {
 
         // 5. Ribbon Icon —— 打开 Semantix Radar 视图
         this.addRibbonIcon('radar', `${t('PLUGIN_NAME')}: Radar`, () => {
-            this.activateRadarView();
+            void this.activateRadarView();
         });
 
         // 6. 全局命令
@@ -157,30 +157,30 @@ export default class SemantixPlugin extends Plugin {
             id: 'open-sidebar',
             name: `${t('PLUGIN_NAME')}: Open sidebar`,
             callback: () => {
-                this.activateRadarView();
+                void this.activateRadarView();
             }
         });
         this.addCommand({
             id: 'scan-note',
             name: `${t('PLUGIN_NAME')}: Scan whole note`,
             callback: () => {
-                this.activateRadarView();
-                this.radar.triggerNoteScan();
+                void this.activateRadarView();
+                void this.radar.triggerNoteScan();
             }
         });
         this.addCommand({
             id: 'scan-focus',
             name: `${t('PLUGIN_NAME')}: ${t('CMD_SCAN_FOCUS')}`,
             callback: () => {
-                this.activateRadarView();
-                this.radar.triggerFocusScan();
+                void this.activateRadarView();
+                void this.radar.triggerFocusScan();
             }
         });
 
         // 7. 工作区就绪后打开视图、探活并注册文件增量监听
-        this.app.workspace.onLayoutReady(async () => {
+        this.app.workspace.onLayoutReady(() => {
             if (!this.isMobileHibernating) {
-                this.activateRadarView();
+                void this.activateRadarView();
 
                 // 清空初始队列，防止应用启动扫描期间累积幽灵事件
                 this.syncManager.clearQueue();
@@ -204,10 +204,10 @@ export default class SemantixPlugin extends Plugin {
 
                 // 如果开启了本地自建边车模式，则尝试启动（仅桌面端支持）
                 if (Platform.isDesktop && this.settings.backendMode === 'local' && this.settings.autoStartServer) {
-                    this.serviceManager.start();
+                    void this.serviceManager.start();
                 }
                 // 初次自检设为静默，避免启动瞬间的竞态导致误报
-                this.checkConnection({ silent: true });
+                void this.checkConnection({ silent: true });
                 this.startHealthTimer();
             }
         });
@@ -261,7 +261,7 @@ export default class SemantixPlugin extends Plugin {
 
         if (leaf) {
             if ('revealLeaf' in workspace && typeof workspace.revealLeaf === 'function') {
-                workspace.revealLeaf(leaf);
+                void workspace.revealLeaf(leaf);
             } else {
                 workspace.setActiveLeaf(leaf, { focus: true });
             }
@@ -291,7 +291,7 @@ export default class SemantixPlugin extends Plugin {
         // 2. 探活心跳检测（解耦进程归属与连接可用性，支持外部手动启动的本地引擎）
         const isConnected = await this.apiClient.checkHealth();
         if (isConnected) {
-            this.apiClient.ping(); // 同时发送后端存活心跳（异步执行，不阻塞 UI）
+            void this.apiClient.ping(); // 同时发送后端存活心跳（异步执行，不阻塞 UI）
             this.serviceManager.onHealthyStable(); // 重置连续失败熔断计数
         } else if (Platform.isDesktop && this.settings.backendMode === 'local') {
             // 本地未连通且开启自启，触发自愈
@@ -353,7 +353,7 @@ export default class SemantixPlugin extends Plugin {
         this.lastConnectionStatus = status; // 同步内部状态标签
         for (const leaf of this.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE)) {
             if (leaf.view instanceof RadarView) {
-                (leaf.view as RadarView).updateStatus(status);
+                (leaf.view).updateStatus(status);
             }
         }
 
@@ -369,7 +369,7 @@ export default class SemantixPlugin extends Plugin {
     private updateAllViewIndexStatus(totalNotes: number, lastUpdated?: string) {
         for (const leaf of this.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE)) {
             if (leaf.view instanceof RadarView) {
-                (leaf.view as RadarView).updateIndexStatus(totalNotes, lastUpdated);
+                (leaf.view).updateIndexStatus(totalNotes, lastUpdated);
             }
         }
     }
@@ -413,7 +413,7 @@ export default class SemantixPlugin extends Plugin {
     private updateAllViewIndexingProgress(state: IndexingState) {
         for (const leaf of this.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE)) {
             if (leaf.view instanceof RadarView) {
-                (leaf.view as RadarView).updateIndexingProgress(state);
+                (leaf.view).updateIndexingProgress(state);
             }
         }
     }
@@ -585,7 +585,7 @@ export default class SemantixPlugin extends Plugin {
                     new Notice(`Semantix: 全量索引完成 ✅ (共 ${files.length} 篇笔记，全文索引已就绪)`);
                 }
                 if (this.whisperer) {
-                    this.whisperer.triggerNoteScan();
+                    void this.whisperer.triggerNoteScan();
                 }
             } else if (canceled) {
                 new Notice("Semantix: 索引已取消。");
@@ -600,7 +600,7 @@ export default class SemantixPlugin extends Plugin {
     }
 
     async loadSettings() {
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, (await this.loadData()) as Partial<SemantixSettings>);
     }
 
     async saveSettings() {
@@ -610,7 +610,7 @@ export default class SemantixPlugin extends Plugin {
         this.apiClient.updateSettings(this.settings, this.vaultId);
         // 配置更新后立即重新探活
         if (!this.isMobileHibernating) {
-            this.checkConnection();
+            void this.checkConnection();
             this.startHealthTimer();
         } else {
             this.clearHealthTimer();
@@ -628,7 +628,7 @@ export default class SemantixPlugin extends Plugin {
     private startHealthTimer() {
         if (this.healthTimer !== null) return;
         this.healthTimer = window.setInterval(() => {
-            this.checkConnection({ silent: true });
+            void this.checkConnection({ silent: true });
         }, 30000);
     }
 
@@ -683,9 +683,9 @@ export default class SemantixPlugin extends Plugin {
                     cache.tags.forEach(t => tags.push(t.tag.replace(/^#/, '')));
                 }
                 if (cache.frontmatter?.tags) {
-                    const fTags = cache.frontmatter.tags;
+                    const fTags: unknown = cache.frontmatter.tags;
                     if (Array.isArray(fTags)) {
-                        fTags.forEach(t => tags.push(String(t).replace(/^#/, '')));
+                        (fTags as unknown[]).forEach(t => tags.push(String(t).replace(/^#/, '')));
                     } else if (typeof fTags === 'string') {
                         fTags.split(',').forEach(t => tags.push(t.trim().replace(/^#/, '')));
                     }

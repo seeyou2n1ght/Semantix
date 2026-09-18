@@ -29,7 +29,7 @@ export class RadarView extends ItemView implements HoverParent {
         this.popoverPreview = new PopoverPreview();
         this.popoverPreview.setCallbacks(
             (item) => this.handleInsertLink(item),
-            (item, event) => this.handleJumpToNote(item, event)
+            (item, event) => { void this.handleJumpToNote(item, event); }
         );
     }
 
@@ -52,21 +52,21 @@ export class RadarView extends ItemView implements HoverParent {
         container.empty();
 
         if (this.plugin.isMobileHibernating) {
-            container.createEl("div", { cls: "semantix-hibernating" }).createEl("p", {
+            container.createDiv({ cls: "semantix-hibernating" }).createEl("p", {
                 text: t('MOBILE_HIBERNATING'),
                 cls: "semantix-empty-text"
             });
             return;
         }
 
-        const wrapper = container.createEl("div", { cls: "semantix-sidebar-wrapper" });
+        const wrapper = container.createDiv({ cls: "semantix-sidebar-wrapper" });
 
         // --- 顶部状态与上下文信息栏 ---
-        const topBar = wrapper.createEl("div", { cls: "semantix-top-bar" });
+        const topBar = wrapper.createDiv({ cls: "semantix-top-bar" });
 
-        const statusGroup = topBar.createEl("div", { cls: "semantix-status-group" });
-        this.indicatorEl = statusGroup.createEl("div", { cls: "semantix-status-indicator" });
-        this.statusTextEl = statusGroup.createEl("span", {
+        const statusGroup = topBar.createDiv({ cls: "semantix-status-group" });
+        this.indicatorEl = statusGroup.createDiv({ cls: "semantix-status-indicator" });
+        this.statusTextEl = statusGroup.createSpan({
             text: t('TESTING'),
             cls: "semantix-status-text"
         });
@@ -78,52 +78,52 @@ export class RadarView extends ItemView implements HoverParent {
             attr: { "title": t('BTN_SCAN_NOTE_TOOLTIP'), "aria-label": t('BTN_SCAN_NOTE') }
         });
         this.scanNoteBtnEl.addEventListener("click", () => {
-            this.plugin.radar.triggerNoteScan();
+            void this.plugin.radar.triggerNoteScan();
         });
 
         // 实时检索微光扫描条 (常驻顶栏下方，检索时优雅渐显，无 DOM 重排跳动)
-        this.scanBarEl = wrapper.createEl("div", { cls: "semantix-scan-bar" });
+        this.scanBarEl = wrapper.createDiv({ cls: "semantix-scan-bar" });
 
         // --- 动态进度反馈条 (全量索引与增量同步，仅展示分数/计数，不展示百分比) ---
-        this.progressContainerEl = wrapper.createEl("div", { 
+        this.progressContainerEl = wrapper.createDiv({ 
             cls: "semantix-indexing-progress-container is-hidden" 
         });
-        const progressHeader = this.progressContainerEl.createEl("div", { cls: "semantix-progress-header" });
-        this.progressTextEl = progressHeader.createEl("span", { 
+        const progressHeader = this.progressContainerEl.createDiv({ cls: "semantix-progress-header" });
+        this.progressTextEl = progressHeader.createSpan({ 
             cls: "semantix-progress-text",
             text: "" 
         });
-        this.progressCountEl = progressHeader.createEl("span", { 
+        this.progressCountEl = progressHeader.createSpan({ 
             cls: "semantix-progress-count", 
             text: "" 
         });
-        const progressTrack = this.progressContainerEl.createEl("div", { cls: "semantix-progress-track" });
-        this.progressBarEl = progressTrack.createEl("div", { cls: "semantix-progress-bar" });
+        const progressTrack = this.progressContainerEl.createDiv({ cls: "semantix-progress-track" });
+        this.progressBarEl = progressTrack.createDiv({ cls: "semantix-progress-bar" });
 
         // --- 主双流卡片区 ---
-        const contentArea = wrapper.createEl("div", { cls: "semantix-content-area" });
+        const contentArea = wrapper.createDiv({ cls: "semantix-content-area" });
 
         // 1. Related 区域
-        const relatedSection = contentArea.createEl("div", { cls: "semantix-section" });
-        relatedSection.createEl("div", { 
+        const relatedSection = contentArea.createDiv({ cls: "semantix-section" });
+        relatedSection.createDiv({ 
             cls: "semantix-section-header", 
             text: t('STREAM_RELATED_TITLE'),
             attr: { "title": t('STREAM_RELATED_TOOLTIP') }
         });
-        this.relatedContainerEl = relatedSection.createEl("div", { cls: "semantix-card-list" });
+        this.relatedContainerEl = relatedSection.createDiv({ cls: "semantix-card-list" });
         this.relatedContainerEl.createEl("p", {
             text: t('WAITING_INPUT'),
             cls: "semantix-empty-text"
         });
 
         // 2. Discover 区域
-        const discoverSection = contentArea.createEl("div", { cls: "semantix-section" });
-        discoverSection.createEl("div", { 
+        const discoverSection = contentArea.createDiv({ cls: "semantix-section" });
+        discoverSection.createDiv({ 
             cls: "semantix-section-header", 
             text: t('STREAM_DISCOVER_TITLE'),
             attr: { "title": t('STREAM_DISCOVER_TOOLTIP') }
         });
-        this.discoverContainerEl = discoverSection.createEl("div", { cls: "semantix-card-list" });
+        this.discoverContainerEl = discoverSection.createDiv({ cls: "semantix-card-list" });
         this.discoverContainerEl.createEl("p", {
             text: t('DISCOVER_INITIAL'),
             cls: "semantix-empty-text"
@@ -259,22 +259,22 @@ export class RadarView extends ItemView implements HoverParent {
         }
 
         for (const item of items) {
-            const card = container.createEl("div", { cls: "semantix-radar-card" });
+            const card = container.createDiv({ cls: "semantix-radar-card" });
             card.setAttribute("title", t('CARD_CLICK_OPEN'));
             // A11y: 支持键盘导航与屏幕阅读器
             card.setAttribute("tabindex", "0");
             card.setAttribute("role", "button");
 
             // 顶行：左侧笔记名称，右侧快捷操作（单个引用按钮）+ 红绿灯分值点
-            const headerRow = card.createEl("div", { cls: "semantix-card-header-row" });
+            const headerRow = card.createDiv({ cls: "semantix-card-header-row" });
             const titleText = item.title ? item.title.replace(/\.md$/i, '') : item.path.split('/').pop()?.replace(/\.md$/i, '') || '';
-            headerRow.createEl("span", {
+            headerRow.createSpan({
                 cls: "semantix-card-title",
                 text: titleText,
                 attr: { "title": `${item.title} (${item.path})` }
             });
 
-            const rightGroup = headerRow.createEl("div", { cls: "semantix-card-header-right" });
+            const rightGroup = headerRow.createDiv({ cls: "semantix-card-header-right" });
 
             // 悬浮淡现的唯一“引用”按钮
             const insertBtn = rightGroup.createEl("button", {
@@ -302,7 +302,7 @@ export class RadarView extends ItemView implements HoverParent {
                     tierText = "●○○";
                     tierCls = "low";
                 }
-                rightGroup.createEl("span", {
+                rightGroup.createSpan({
                     cls: `semantix-card-score mod-${tierCls}`,
                     text: tierText,
                     attr: { "title": `${t('POPOVER_MATCH')}: ${scoreVal}` }
@@ -314,10 +314,10 @@ export class RadarView extends ItemView implements HoverParent {
 
             // 底部行 (召回原因标签行：严格限制至多展示 1 个高熵徽章)
             if (item.labels && item.labels.length > 0) {
-                const labelRow = card.createEl("div", { cls: "semantix-badge-row" });
+                const labelRow = card.createDiv({ cls: "semantix-badge-row" });
                 for (const code of item.labels.slice(0, 1)) {
                     const baseCode = (code.split(':')[0] || '').toLowerCase();
-                    labelRow.createEl("span", {
+                    labelRow.createSpan({
                         cls: `semantix-badge badge-${baseCode}`,
                         text: this.translateLabel(code)
                     });
@@ -360,13 +360,13 @@ export class RadarView extends ItemView implements HoverParent {
 
             // 点击卡片直接打开笔记并定位段落（支持普通点击当前窗口，Shift+点击新标签页）
             card.addEventListener("click", (e: MouseEvent) => {
-                this.handleJumpToNote(item, e);
+                void this.handleJumpToNote(item, e);
             });
             // 鼠标中键直接在新标签页打开
             card.addEventListener("auxclick", (e: MouseEvent) => {
                 if (e.button === 1) {
                     e.preventDefault();
-                    this.handleJumpToNote(item, e);
+                    void this.handleJumpToNote(item, e);
                 }
             });
             // A11y: 键盘 Enter/Space 打开；Mod+Enter 快捷插入双向链接
@@ -379,7 +379,7 @@ export class RadarView extends ItemView implements HoverParent {
                 }
                 if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
-                    this.handleJumpToNote(item, e);
+                    void this.handleJumpToNote(item, e);
                 }
             });
         }

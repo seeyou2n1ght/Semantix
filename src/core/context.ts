@@ -162,7 +162,7 @@ export class ContextEngine {
             metadata.tags.forEach((t: TagCache) => tags.push(t.tag.replace(/^#/, '')));
         }
         if (metadata?.frontmatter?.tags) {
-            const fTags = metadata.frontmatter.tags;
+            const fTags: unknown = metadata.frontmatter.tags;
             if (Array.isArray(fTags)) {
                 fTags.forEach((t: unknown) => tags.push(String(t).replace(/^#/, '')));
             } else if (typeof fTags === 'string') {

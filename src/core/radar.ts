@@ -64,7 +64,7 @@ export class RadarEngine {
         window.setTimeout(() => {
             const activeView = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
             if (activeView && activeView.file && activeView.file.path === file.path) {
-                this.handleFocusTrigger(true);
+                void this.handleFocusTrigger(true);
             }
         }, 120);
     }
@@ -83,7 +83,7 @@ export class RadarEngine {
 
         // 光标位移轻量 300ms 防抖
         this.cursorActivityTimer = window.setTimeout(() => {
-            this.handleFocusTrigger(false);
+            void this.handleFocusTrigger(false);
         }, 300);
     }
 
@@ -217,7 +217,7 @@ export class RadarEngine {
         if (leaves.length === 0) return;
         const leaf = leaves[0];
         if (leaf && leaf.view instanceof RadarView) {
-            (leaf.view as RadarView).renderRadarResults(
+            leaf.view.renderRadarResults(
                 related,
                 discover,
                 contextPath,
@@ -232,7 +232,7 @@ export class RadarEngine {
         if (leaves.length === 0) return;
         const leaf = leaves[0];
         if (leaf && leaf.view instanceof RadarView) {
-            (leaf.view as RadarView).showLoading();
+            leaf.view.showLoading();
         }
     }
 
@@ -241,7 +241,7 @@ export class RadarEngine {
         if (leaves.length === 0) return;
         const leaf = leaves[0];
         if (leaf && leaf.view instanceof RadarView) {
-            (leaf.view as RadarView).clearLoading();
+            leaf.view.clearLoading();
         }
     }
 }

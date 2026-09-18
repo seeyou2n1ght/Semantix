@@ -19,9 +19,9 @@ export function cleanMarkdown(text: string): string {
     cleaned = cleaned.replace(/!\[.*?\]\(.*?\)/g, "");
 
     // 4. Convert wikilinks and normal links to visible text
-    cleaned = cleaned.replace(/\[\[(.*?)\]\]/g, (_match, target) => {
+    cleaned = cleaned.replace(/\[\[(.*?)\]\]/g, (_match: string, target: string): string => {
         const parts = target.split("|");
-        return parts.length > 1 ? parts[1] : parts[0];
+        return (parts.length > 1 ? parts[1] : parts[0]) ?? "";
     });
     cleaned = cleaned.replace(/\[(.*?)\]\(.*?\)/g, "$1");
 
