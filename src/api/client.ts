@@ -75,11 +75,12 @@ export class ApiClient {
                 
                 if (res.status === 200 && res.json) {
                     const healthData = res.json as HealthResponse;
-                    if (healthData.status === 'ok') {
+                    const isSemantix = typeof healthData.engine_version === 'string' && typeof healthData.api_version === 'string';
+                    if (isSemantix && healthData.status === 'ok') {
                         this.lastHealthResponse = healthData;
                         return HealthStatus.READY;
                     }
-                    if (healthData.status === 'loading') {
+                    if (isSemantix && healthData.status === 'loading') {
                         this.lastHealthResponse = healthData;
                         return HealthStatus.LOADING;
                     }

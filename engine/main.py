@@ -1,6 +1,5 @@
 import os
 import sys
-import json
 import time
 import logging
 import secrets
@@ -64,7 +63,6 @@ LAST_ACTIVITY = time.time()
 PARENT_PID = int(os.getenv("SEMANTIX_PARENT_PID", "0"))
 WATCHDOG_INTERVAL = 10  # µúÇµƒÑÚóæþÄç (þºÆ´╝îµø┤Õ┐½ÕôìÕ║ö Obsidian ÚÇÇÕç║)
 ACTIVITY_TIMEOUT = int(os.getenv("SEMANTIX_WATCHDOG_TIMEOUT", "600"))  # µùáÕôìÕ║öÞç¬µØÇÚÿêÕÇ╝ (þºÆ, <=0 ÕêÖþªüþö¿)
-PID_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".semantix.pid")
 
 def is_process_running(pid: int) -> bool:
     """ÞÀ¿Õ╣│ÕÅ░µúÇµƒÑÞ┐øþ¿ïµÿ»ÕÉªõ╗ìÕ£¿Þ┐ÉÞíî (þ▓¥ÕçåÕêñÕ«ÜÕ¡ÿµ┤╗µÇü)"""
@@ -110,37 +108,14 @@ def watchdog():
         if PARENT_PID > 0:
             if not is_process_running(PARENT_PID):
                 logger.warning("Parent process (PID %d) terminated. Sidecar initiating graceful self-shutdown...", PARENT_PID)
-                cleanup_pid_file()
                 os.kill(os.getpid(), signal.SIGTERM)
                 break
 
         # 2. µúÇµƒÑÕ┐âÞÀ│ÞÂàµùÂ (ÞïÑÚàìþ¢«õ║åµ£ëµòêµ¡úµò░ÞÂàµùÂ)
         if ACTIVITY_TIMEOUT > 0 and (now - LAST_ACTIVITY > ACTIVITY_TIMEOUT):
             logger.warning("Heartbeat timeout (%ds). Sidecar initiating self-shutdown...", ACTIVITY_TIMEOUT)
-            cleanup_pid_file()
             os.kill(os.getpid(), signal.SIGTERM)
             break
-
-def write_pid_file():
-    """ÕåÖÕàÑÕ¢ôÕëìÞ┐øþ¿ï PID Úöüµûçõ╗Âõ¥øÕëìþ½»þ▓¥ÕçåÞ»åÕê½õ©ÄÕø×µöÂ"""
-    try:
-        with open(PID_FILE_PATH, "w", encoding="utf-8") as f:
-            f.write(json.dumps({
-                "pid": os.getpid(),
-                "parent_pid": PARENT_PID,
-                "started_at": datetime.now().isoformat()
-            }))
-    except Exception as e:
-        logger.warning("Failed to write PID file: %s", e)
-
-def cleanup_pid_file():
-    """µ©àþÉå PID Úöüµûçõ╗Â"""
-    try:
-        if os.path.exists(PID_FILE_PATH):
-            os.remove(PID_FILE_PATH)
-    except Exception:
-        pass
-
 
 def verify_token(x_semantix_token: str | None = Header(default=None)):
     if API_TOKEN and x_semantix_token != API_TOKEN:
@@ -182,12 +157,10 @@ async def lifespan(app_instance: FastAPI):
         mt_thread = threading.Thread(target=maintenance_worker, daemon=True)
         mt_thread.start()
         reranker_service.start_loading()
-        write_pid_file()
         logger.info("Semantix backend service started. Parent PID: %d", PARENT_PID)
     yield
     if not is_testing:
         logger.info("Semantix backend service is shutting down...")
-        cleanup_pid_file()
         db_svc.close()
 
 

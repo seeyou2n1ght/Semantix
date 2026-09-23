@@ -109,7 +109,7 @@ Current labels are generated from actual evidence: Related uses `KEYWORD_MATCH`,
 
 ### Sidecar lifecycle
 
-1. Desktop auto-start validates or removes a recorded orphan process before spawning the configured Python backend.
+1. Desktop auto-start uses the engine virtual environment when present, then spawns the configured Python backend. Force restart only stops the process held by the current plugin instance; the parent watchdog handles processes left by a previous session.
 2. Health polling uses bounded retry/backoff and a circuit breaker after repeated launch failure.
 3. The backend watches `SEMANTIX_PARENT_PID`; on Windows, a parent exit code other than `259` means the host is no longer active.
 4. User-initiated stop suppresses auto-restart. The watchdog and shutdown path release process and database resources.

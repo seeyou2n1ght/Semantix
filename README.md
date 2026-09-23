@@ -109,7 +109,7 @@ You can also enable **Auto-start Local Engine** in the plugin settings to have O
 
 - **Engine Not Connected**: Verify the engine is running and accessible at `http://127.0.0.1:8000/health`. Check that the port in plugin settings matches.
 - **Model downloading takes long**: Check network access to HuggingFace or ModelScope. Pre-run `scripts/download_models.py` if needed.
-- **Port Conflict**: The service manager automatically cleans up stale `.semantix.pid` locks. You can also click **Force Restart Engine** in settings.
+- **Port Conflict**: If the configured local port is occupied, the plugin selects a free loopback port and saves the new Engine URL. **Force Restart Engine** only restarts its own process. Disable the older `obsidian-semantix` plugin before enabling this `semantix` plugin: both register the same legacy view type and cannot run together.
 
 ---
 

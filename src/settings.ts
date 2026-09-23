@@ -255,17 +255,14 @@ export class SemantixSettingTab extends PluginSettingTab {
             : pathMod.join(backendPath, '.venv', 'bin', 'python');
 
         const uvLock = pathMod.join(backendPath, 'uv.lock');
-        if (fsMod.existsSync(uvLock)) {
-            this.plugin.settings.pythonPath = 'uv';
-            void this.plugin.saveSettings();
-            this.updateStatus('python', t('UV_DETECTED'));
-            return;
-        }
-
         if (fsMod.existsSync(venvPython)) {
             this.plugin.settings.pythonPath = venvPython;
             void this.plugin.saveSettings();
             this.updateStatus('python', t('VENV_DETECTED') + venvPython);
+        } else if (fsMod.existsSync(uvLock)) {
+            this.plugin.settings.pythonPath = 'uv';
+            void this.plugin.saveSettings();
+            this.updateStatus('python', t('UV_DETECTED'));
         } else {
             this.updateStatus('python', t('VENV_NOT_FOUND'));
         }
@@ -750,7 +747,7 @@ export class SemantixSettingTab extends PluginSettingTab {
         new Setting(slotEl)
             .setName(t('ENGINE_STATUS_NAME'))
             .setDesc(isLocal
-                ? (isConnected ? t('ENGINE_LOCAL_CONNECTED') : t('STATUS_BANNER_DISCONNECTED'))
+                ? `${isConnected ? t('ENGINE_LOCAL_CONNECTED') : t('STATUS_BANNER_DISCONNECTED')} · ${this.plugin.settings.backendUrl}`
                 : (isConnected ? t('ENGINE_REMOTE_CONNECTED') : t('STATUS_BANNER_DISCONNECTED'))
             );
 
@@ -769,7 +766,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                 const isRunning = this.plugin.serviceManager.isRunning();
                 const manageSetting = new Setting(slotEl)
                     .setName(t('ENGINE_MANAGE_NAME'))
-                    .setDesc(isRunning ? t('ENGINE_MANAGE_DESC_RUNNING') : t('ENGINE_MANAGE_DESC_STOPPED'));
+                    .setDesc(this.plugin.serviceManager.getLastStatus() || (isRunning ? t('ENGINE_MANAGE_DESC_RUNNING') : t('ENGINE_MANAGE_DESC_STOPPED')));
 
                 if (isRunning) {
                     manageSetting.addButton(btn => btn

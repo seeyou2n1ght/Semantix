@@ -15,6 +15,7 @@ This document defines the smallest reliable checks for frontend, backend, Harnes
 | --- | --- | --- | --- |
 | 0 | Harness and Markdown | `uv run --project engine python scripts/verify_harness.py .` | Harness or documentation changes |
 | 1 | Plugin static checks | `npm run lint`; `npm exec tsc -- --noEmit --skipLibCheck` | Any plugin TypeScript change |
+| 1 | Service process regression | `node tests/service-manager.cjs`; `node tests/api-health.cjs` | Sidecar startup, port handling, restart, or shutdown changes |
 | 1 | Engine focused tests | `cd engine`; `uv run pytest tests/test_<area>.py` | An engine module changes |
 | 2 | Full plugin | `npm run build`; `npm run lint` | Before completing plugin work |
 | 2 | Full engine | `cd engine`; `uv sync --locked`; `uv run pytest` | Before completing engine work |

@@ -35,7 +35,9 @@ export class ServiceManager {
     private plugin: SemantixPlugin;
     private process: ManagedProcess | null = null;
     private isStarting: boolean = false;
+    private startGeneration = 0;
     private onStatusCallback?: (msg: string) => void;
+    private lastStatus = '';
 
     // 自愈与熔断状态机 (Self-Healing & Circuit Breaker)
     private healAttempts: number = 0;
@@ -56,8 +58,11 @@ export class ServiceManager {
     }
 
     private reportStatus(msg: string) {
+        this.lastStatus = msg;
         if (this.onStatusCallback) this.onStatusCallback(msg);
     }
+
+    public getLastStatus(): string { return this.lastStatus; }
 
     /**
      * 重置自愈计数器与用户主动停止标记
@@ -147,6 +152,7 @@ export class ServiceManager {
      */
     public onHealthyStable() {
         this.healAttempts = 0;
+        this.lastStatus = '后端已就绪 ✅';
     }
 
     /**
@@ -181,11 +187,13 @@ export class ServiceManager {
         }
 
         this.isStarting = true;
+        const generation = ++this.startGeneration;
         this.plugin.updateAllViewStatus('syncing');
 
         try {
             // 在真正尝试拉起进程前，无条件检查后端是否已经在外部正常运行（如用户手动启动）
             const status = await this.plugin.apiClient.checkFullHealth();
+            if (generation !== this.startGeneration) return;
             if (status === HealthStatus.READY) {
                 this.reportStatus("后端已在运行中 ✅");
                 this.isStarting = false;
@@ -199,9 +207,35 @@ export class ServiceManager {
                 return;
             }
 
-            const effectivePort = this.getEffectivePort();
+            let effectivePort = this.getEffectivePort();
+            const net = getElectronNodeModule<typeof import('net')>('net');
+            if (net) {
+                const probe = (port: number) => new Promise<number>((resolve, reject) => {
+                    const server = net.createServer();
+                    server.once('error', reject);
+                    server.listen(port, '127.0.0.1', () => {
+                        const address = server.address();
+                        server.close(() => resolve(typeof address === 'object' && address ? address.port : port));
+                    });
+                });
+                try {
+                    await probe(effectivePort);
+                } catch (error) {
+                    if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw error;
+                    effectivePort = await probe(0);
+                    settings.backendUrl = `http://127.0.0.1:${effectivePort}`;
+                    await this.plugin.saveSettings();
+                    this.reportStatus(`默认端口被占用，改用 ${effectivePort} 端口`);
+                }
+            }
+            if (generation !== this.startGeneration) return;
             // 构造启动命令
-            const args = settings.pythonPath === 'uv' 
+            const fs = getElectronNodeModule<{ existsSync: (path: string) => boolean }>('fs');
+            const path = getElectronNodeModule<{ join: (...parts: string[]) => string }>('path');
+            const venvPython = path?.join(settings.backendPath, '.venv', Platform.isWin ? 'Scripts' : 'bin', Platform.isWin ? 'python.exe' : 'python');
+            const command = settings.pythonPath === 'uv' && venvPython && fs?.existsSync(venvPython)
+                ? venvPython : settings.pythonPath;
+            const args = command === 'uv'
                 ? ['run', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', effectivePort.toString()]
                 : ['-m', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', effectivePort.toString()];
 
@@ -222,13 +256,14 @@ export class ServiceManager {
             this.reportStatus("正在唤醒后端服务...");
             // 安全：禁用 shell 模式防止 pythonPath 注入攻击
             // spawn 在非 shell 模式下原生支持含空格路径
-            const proc = cp.spawn(settings.pythonPath, args, {
+            const proc = cp.spawn(command, args, {
                 cwd: settings.backendPath,
                 shell: false,
-                detached: false,
+                detached: !Platform.isWin,
                 env
             });
             this.process = proc;
+            let lastStderr = '';
 
             // 实时监听日志流
             proc.stdout?.on('data', (chunk: unknown) => {
@@ -237,7 +272,7 @@ export class ServiceManager {
                 if (line.includes("Model loaded")) {
                     this.reportStatus("模型加载完成 🧠");
                 } else if (line.includes("Uvicorn running on")) {
-                    this.reportStatus("服务已就绪 🚀");
+                    this.reportStatus("HTTP 服务已启动，等待模型就绪...");
                     // 只有当前进程成功触发时才执行一次健康检查更新
                     window.setTimeout(() => { void this.plugin.checkConnection({ silent: true }); }, 500);
                 } else if (line.includes("Downloading:")) {
@@ -254,6 +289,11 @@ export class ServiceManager {
             proc.stderr?.on('data', (chunk: unknown) => {
                 if (this.process !== proc) return; 
                 const line = String(chunk);
+                lastStderr = line.trim().split(/\r?\n/).filter(Boolean).pop() || lastStderr;
+                if (line.includes("Uvicorn running on")) {
+                    this.reportStatus("HTTP 服务已启动，等待模型就绪...");
+                    window.setTimeout(() => { void this.plugin.checkConnection({ silent: true }); }, 500);
+                }
                 // 识别一些常见的加载提示或错误
                 if (line.includes("Loading model") || line.includes("Loading embedding model")) {
                     this.reportStatus("正在加载语义引擎 (约需 10-30s)...");
@@ -272,7 +312,7 @@ export class ServiceManager {
                 this.isStarting = false;
                 void this.plugin.checkConnection();
                 if (code !== 0 && code !== null) {
-                    this.reportStatus(`服务异常退出 (Code: ${code}) ❌`);
+                    this.reportStatus(`服务异常退出 (Code: ${code})${lastStderr ? `: ${lastStderr.slice(0, 160)}` : ''} ❌`);
                     this.triggerSelfHealing(`进程意外退出 (Code: ${code})`);
                 }
             });
@@ -288,10 +328,10 @@ export class ServiceManager {
             // 给予一定时间再检查状态
             window.setTimeout(() => { void this.plugin.checkConnection(); }, 3000);
 
-        } catch {
-            this.reportStatus("启动流程遭遇意外错误 ❌");
+        } catch (error) {
+            this.reportStatus(`启动失败: ${error instanceof Error ? error.message : String(error)} ❌`);
             this.isStarting = false;
-            this.triggerSelfHealing("启动流程抛出未捕获异常");
+            this.triggerSelfHealing("启动流程抛出异常");
         }
     }
 
@@ -313,131 +353,11 @@ export class ServiceManager {
      */
     public async forceKillAndStart(options: { isHeal?: boolean } = {}) {
         const port = this.getEffectivePort();
-        this.reportStatus(options.isHeal ? "正在自愈重启引擎..." : `正在清理 ${port} 端口并重新尝试手动启动...`);
-        await this.killPortConflict();
+        this.reportStatus(options.isHeal ? "正在自愈重启引擎..." : `正在重新启动 ${port} 端口上的受管引擎...`);
+        this.stop();
         // 给系统一点释放资源的时间
         await new Promise(r => window.setTimeout(r, 1000));
         await this.start({ force: true, isHeal: options.isHeal });
-    }
-
-    /**
-     * 扫描并结束目标端口上的非本插件进程 (优先使用 PID 锁文件精准回收)
-     */
-    private async killPortConflict(): Promise<void> {
-        return new Promise((resolve) => {
-            const cp = getChildProcess();
-            if (!cp) { resolve(); return; }
-
-            // 1. 优先尝试读取并回收 .semantix.pid
-            try {
-                // 动态获取 Electron/Node fs 和 path 模块
-                const fs = getElectronNodeModule<{ existsSync: (p: string) => boolean; readFileSync: (p: string, enc: string) => string; unlinkSync: (p: string) => void }>('fs');
-                const pathMod = getElectronNodeModule<{ join: (...args: string[]) => string }>('path');
-                if (fs && pathMod && this.plugin.settings.backendPath) {
-                    const pidFile = pathMod.join(this.plugin.settings.backendPath, '.semantix.pid');
-                    if (fs.existsSync(pidFile)) {
-                        const content = JSON.parse(fs.readFileSync(pidFile, 'utf-8')) as { pid?: string | number };
-                        const orphanPid = String(content?.pid ?? '');
-                        // 安全校验：PID 必须为纯数字，防止命令注入
-                        if (orphanPid && /^\d+$/.test(orphanPid)) {
-                            // 进程所有权核验：确保该 PID 确实对应我们的服务，防止 PID 复用击杀无关进程
-                            let isOwnedProcess = false;
-                            const backendKey = this.plugin.settings.backendPath.split(/[\\/]/).pop() || "engine";
-                            try {
-                                if (Platform.isWin) {
-                                    const cmdInfo = cp.execSync(`wmic process where processid=${orphanPid} get commandline`).toString();
-                                    if (cmdInfo.includes("main:app") && (cmdInfo.includes(backendKey) || cmdInfo.includes("uv") || cmdInfo.includes("semantix"))) {
-                                        isOwnedProcess = true;
-                                    }
-                                } else {
-                                    const cmdLine = cp.execSync(`ps -p ${orphanPid} -o args=`).toString();
-                                    if (cmdLine.includes("main:app") && (cmdLine.includes(backendKey) || cmdLine.includes("uv") || cmdLine.includes("semantix"))) {
-                                        isOwnedProcess = true;
-                                    }
-                                }
-                            } catch {
-                                // 进程可能已经不存在
-                                isOwnedProcess = false;
-                            }
-
-                            if (isOwnedProcess) {
-                                if (Platform.isWin) {
-                                    cp.execSync(`taskkill /F /T /PID "${orphanPid}"`);
-                                } else {
-                                    cp.execSync(`kill -9 ${orphanPid}`);
-                                }
-                                this.reportStatus(`已验证所有权并回收孤儿进程 (${orphanPid})`);
-                            } else {
-                                console.warn(`[Semantix] Stale PID file found (${orphanPid}) but process does not match Semantix. Skipping kill.`);
-                            }
-                        } else if (orphanPid) {
-                            console.warn('[Semantix] Invalid PID format in .semantix.pid, skipping kill:', orphanPid);
-                        }
-                        fs.unlinkSync(pidFile);
-                    }
-                }
-            } catch {
-                // 忽略锁文件回收中的异常，继续执行端口扫描降级兜底
-            }
-
-            // 2. 降级方案：端口占用探测与清理
-            const port = this.getEffectivePort();
-            if (Platform.isWin) {
-                // Windows 实现
-                cp.exec(`netstat -ano | findstr :${port}`, (error, stdout) => {
-                    if (error || !stdout) { resolve(); return; }
-                    const lines = stdout.split('\n');
-                    const pids = new Set<string>();
-                    lines.forEach((line: string) => {
-                        const parts = line.trim().split(/\s+/);
-                        const pid = parts[parts.length - 1];
-                        if (pid && !isNaN(parseInt(pid)) && pid !== '0') pids.add(pid);
-                    });
-                    if (pids.size === 0) { resolve(); return; }
-
-                    const targetPids: string[] = [];
-                    const backendPathKey = this.plugin.settings.backendPath.split(/[\\/]/).pop() || "";
-                    
-                    try {
-                        for (const pid of pids) {
-                            const cmdInfo = cp.execSync(`wmic process where processid=${pid} get commandline`).toString();
-                            if (cmdInfo.includes("main:app") && (cmdInfo.includes(backendPathKey) || cmdInfo.includes("uv"))) {
-                                targetPids.push(pid);
-                            }
-                        }
-                    } catch { /* ignore */ }
-
-                    if (targetPids.length === 0) { resolve(); return; }
-                    const pidStr = targetPids.join(' /PID ');
-                    cp.exec(`taskkill /F /PID ${pidStr}`, () => resolve());
-                });
-            } else {
-                // Unix (macOS/Linux) 实现
-                cp.exec(`lsof -t -i :${port}`, (error, stdout) => {
-                    if (error || !stdout) { resolve(); return; }
-                    
-                    const pids = stdout.trim().split('\n');
-                    const targetPids: string[] = [];
-                    const backendPathKey = this.plugin.settings.backendPath.split(/[\\/]/).pop() || "";
-
-                    pids.forEach((pid: string) => {
-                        try {
-                            const cmdLine = cp.execSync(`ps -p ${pid} -o args=`).toString();
-                            if (cmdLine.includes("main:app") && (cmdLine.includes(backendPathKey) || cmdLine.includes("uv"))) {
-                                targetPids.push(pid);
-                            }
-                        } catch { /* ignore */ }
-                    });
-
-                    if (targetPids.length === 0) { resolve(); return; }
-
-                    cp.exec(`kill -9 ${targetPids.join(' ')}`, () => {
-                        this.reportStatus("已清理旧的后端进程");
-                        resolve();
-                    });
-                });
-            }
-        });
     }
 
     /**
@@ -447,10 +367,12 @@ export class ServiceManager {
         if (!Platform.isDesktop) return;
 
         // 停止任何正在排队的自愈定时器
+        this.startGeneration++;
+        this.isStarting = false;
         this.cancelSelfHealing();
 
-        if (this.process && this.process.pid) {
-            const targetPid = this.process.pid;
+        const targetPid = this.process?.pid;
+        if (this.process && targetPid) {
             this.reportStatus("正在停止服务并回收资源...");
             const cp = getChildProcess();
             
@@ -464,25 +386,18 @@ export class ServiceManager {
                     // 忽略进程可能已经自行退出的报错
                 }
             } else {
-                this.process.kill('SIGTERM');
+                try {
+                    const nodeProcess = getElectronNodeModule<{ kill: (pid: number, signal: string) => void }>('process');
+                    if (!nodeProcess) throw new Error('Node process module unavailable');
+                    nodeProcess.kill(-targetPid, 'SIGTERM');
+                } catch {
+                    this.process.kill('SIGTERM');
+                }
             }
             
             this.process = null;
         }
 
-        // 清理 PID 锁文件
-        try {
-            const fs = getElectronNodeModule<{ existsSync: (p: string) => boolean; unlinkSync: (p: string) => void }>('fs');
-            const pathMod = getElectronNodeModule<{ join: (...args: string[]) => string }>('path');
-            if (fs && pathMod && this.plugin.settings.backendPath) {
-                const pidFile = pathMod.join(this.plugin.settings.backendPath, '.semantix.pid');
-                if (fs.existsSync(pidFile)) {
-                    fs.unlinkSync(pidFile);
-                }
-            }
-        } catch {
-            // 忽略文件移除异常
-        }
     }
 
     public isRunning(): boolean {
