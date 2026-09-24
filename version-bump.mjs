@@ -11,6 +11,12 @@ const paths = {
 	versions: join(rootDir, "versions.json"),
 	readme: join(rootDir, "README.md"),
 };
+const engineVersionFiles = [
+	[join(rootDir, "engine/pyproject.toml"), /^(version = ")([^"]+)(")/m],
+	[join(rootDir, "engine/uv.lock"), /^(name = "semantix-engine"\r?\nversion = ")([^"]+)(")/m],
+	[join(rootDir, "engine/main.py"), /^(ENGINE_VERSION = ")([^"]+)(")/m],
+	[join(rootDir, "engine/tests/test_smoke.py"), /^(    assert data\["engine_version"\] == ")([^"]+)(")/m],
+];
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 const writeJson = (path, value) => writeFileSync(path, `${JSON.stringify(value, null, "\t")}\n`);
 
@@ -31,6 +37,9 @@ function checkRelease() {
 	if (lock.version !== pkg.version || lock.packages?.[""]?.version !== pkg.version) errors.push("package-lock.json version differs");
 	if (versions[pkg.version] !== manifest.minAppVersion) errors.push("versions.json is missing the current compatibility entry");
 	if (!readme.includes(`当前版本：\`v${pkg.version}\``)) errors.push("README.md current version differs");
+	for (const [path, pattern] of engineVersionFiles) {
+		if (readFileSync(path, "utf8").match(pattern)?.[2] !== pkg.version) errors.push(`${path} version differs`);
+	}
 	for (const asset of ["main.js", "styles.css"]) {
 		if (!existsSync(join(rootDir, asset))) errors.push(`missing ${asset}`);
 	}
@@ -74,6 +83,11 @@ const versions = readJson(paths.versions);
 const readme = readFileSync(paths.readme, "utf8");
 const versionPattern = /(当前版本：`v)(\d+\.\d+\.\d+)(`)/;
 if (!versionPattern.test(readme)) throw new Error("README.md current version marker not found");
+const engineContents = engineVersionFiles.map(([path, pattern]) => {
+	const content = readFileSync(path, "utf8");
+	if (content.match(pattern)?.[2] !== pkg.version) throw new Error(`${path} version differs from ${pkg.version}`);
+	return [path, pattern, content];
+});
 
 pkg.version = targetVersion;
 lock.version = targetVersion;
@@ -85,5 +99,8 @@ writeJson(paths.package, pkg);
 writeJson(paths.lock, lock);
 writeJson(paths.manifest, manifest);
 writeJson(paths.versions, versions);
-writeFileSync(paths.readme, readme.replace(versionPattern, `$1${targetVersion}$3`));
+writeFileSync(paths.readme, readme.replace(versionPattern, (_match, prefix, _old, suffix) => `${prefix}${targetVersion}${suffix}`));
+for (const [path, pattern, content] of engineContents) {
+	writeFileSync(path, content.replace(pattern, (_match, prefix, _old, suffix) => `${prefix}${targetVersion}${suffix}`));
+}
 console.log(`Updated release version to ${targetVersion}.`);

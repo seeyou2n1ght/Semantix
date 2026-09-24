@@ -27,13 +27,6 @@ class LanceDBStorage:
             return ""
         return " ".join(jieba.cut_for_search(text))
 
-    @staticmethod
-    def prepare_fts_query(query: str) -> str:
-        """使用 jieba.cut 对查询字符串进行分词"""
-        if not query:
-            return ""
-        return " ".join(jieba.cut(query))
-
     def __init__(self, db_path: str = "./semantix_lance", dim: int = 512):
         logger.info("Initializing LanceDBStorage at %s (dim=%d, schema_version=%d)...", db_path, dim, INDEX_SCHEMA_VERSION)
         self.db_path = db_path

@@ -24,6 +24,7 @@ jobs:
         run: node -e "if (process.env.GITHUB_REF_NAME !== require('./manifest.json').version) process.exit(1)"
       - run: npm ci
       - run: npm run build
+      - run: node tests/radar-state.cjs
       - run: npm run check:release
       - uses: actions/setup-python@v5
         with:

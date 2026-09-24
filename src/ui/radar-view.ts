@@ -13,8 +13,9 @@ export class RadarView extends ItemView implements HoverParent {
     private indicatorEl!: HTMLElement;
     private statusTextEl!: HTMLElement;
     private contextBreadcrumbEl!: HTMLElement;
-    private scanNoteBtnEl!: HTMLElement;
+    private scanNoteBtnEl!: HTMLButtonElement;
     private scanBarEl!: HTMLElement;
+    private searchErrorEl!: HTMLElement;
     private progressContainerEl!: HTMLElement;
     private progressTextEl!: HTMLElement;
     private progressCountEl!: HTMLElement;
@@ -83,6 +84,7 @@ export class RadarView extends ItemView implements HoverParent {
 
         // 实时检索微光扫描条 (常驻顶栏下方，检索时优雅渐显，无 DOM 重排跳动)
         this.scanBarEl = wrapper.createDiv({ cls: "semantix-scan-bar" });
+        this.searchErrorEl = wrapper.createDiv({ cls: "semantix-search-error is-hidden", attr: { role: "alert" } });
 
         // --- 动态进度反馈条 (全量索引与增量同步，仅展示分数/计数，不展示百分比) ---
         this.progressContainerEl = wrapper.createDiv({ 
@@ -153,6 +155,9 @@ export class RadarView extends ItemView implements HoverParent {
         queryText?: string
     ) {
         this.clearLoading();
+        this.searchErrorEl?.addClass("is-hidden");
+        this.relatedContainerEl?.removeClass("is-stale");
+        this.discoverContainerEl?.removeClass("is-stale");
         this.updateContextBreadcrumb(contextPath, contextHeading);
 
         const keywords = queryText ? this.extractKeywords(queryText) : [];
@@ -162,6 +167,27 @@ export class RadarView extends ItemView implements HoverParent {
 
         // 渲染 Discover
         this.renderCardList(this.discoverContainerEl, discover, t('STREAM_DISCOVER_EMPTY'), keywords);
+    }
+
+    public showSearchError(retry: () => void) {
+        if (!this.searchErrorEl) return;
+        this.searchErrorEl.empty();
+        this.searchErrorEl.createSpan({ text: t('SEARCH_FAILED') });
+        const button = this.searchErrorEl.createEl('button', { text: t('SEARCH_RETRY') });
+        button.addEventListener('click', retry);
+        this.searchErrorEl.removeClass('is-hidden');
+        this.relatedContainerEl.addClass('is-stale');
+        this.discoverContainerEl.addClass('is-stale');
+    }
+
+    public resetForContext() {
+        this.searchErrorEl?.addClass('is-hidden');
+        this.relatedContainerEl?.removeClass('is-stale');
+        this.discoverContainerEl?.removeClass('is-stale');
+        this.relatedContainerEl?.empty();
+        this.discoverContainerEl?.empty();
+        this.relatedContainerEl?.createEl('p', { text: t('WAITING_INPUT'), cls: 'semantix-empty-text' });
+        this.discoverContainerEl?.createEl('p', { text: t('DISCOVER_INITIAL'), cls: 'semantix-empty-text' });
     }
 
     /**
@@ -239,9 +265,9 @@ export class RadarView extends ItemView implements HoverParent {
         const regex = new RegExp(`(${escaped.join('|')})`, 'gi');
         const parts = snippet.split(regex);
 
-        for (const part of parts) {
+        for (const [index, part] of parts.entries()) {
             if (!part) continue;
-            if (regex.test(part)) {
+            if (index % 2 === 1) {
                 p.createEl("mark", { cls: "semantix-highlight", text: part });
             } else {
                 p.appendText(part);
@@ -292,20 +318,22 @@ export class RadarView extends ItemView implements HoverParent {
 
             // 红绿灯分数 Badge
             if (typeof item.score === 'number' && !isNaN(item.score)) {
-                const scoreVal = (Math.round(item.score * 100) / 100).toFixed(2);
                 let tierText = "●●○";
                 let tierCls = "mid";
+                let tierLabel = t('SCORE_LEVEL_MID');
                 if (item.score >= 0.75) {
                     tierText = "●●●";
                     tierCls = "high";
+                    tierLabel = t('SCORE_LEVEL_HIGH');
                 } else if (item.score < 0.50) {
                     tierText = "●○○";
                     tierCls = "low";
+                    tierLabel = t('SCORE_LEVEL_LOW');
                 }
                 rightGroup.createSpan({
                     cls: `semantix-card-score mod-${tierCls}`,
                     text: tierText,
-                    attr: { "title": `${t('POPOVER_MATCH')}: ${scoreVal}` }
+                    attr: { "title": `${tierLabel} · ${t('SCORE_RELATIVE_HINT')}`, "aria-label": tierLabel }
                 });
             }
 
@@ -357,6 +385,13 @@ export class RadarView extends ItemView implements HoverParent {
                 this.popoverPreview.cancelShow();
                 this.popoverPreview.scheduleHide();
             });
+            card.addEventListener("focus", () => {
+                this.popoverPreview.scheduleShow(card, item, this.plugin.app, 150);
+            });
+            card.addEventListener("blur", () => {
+                this.popoverPreview.cancelShow();
+                this.popoverPreview.scheduleHide();
+            });
 
             // 点击卡片直接打开笔记并定位段落（支持普通点击当前窗口，Shift+点击新标签页）
             card.addEventListener("click", (e: MouseEvent) => {
@@ -371,6 +406,10 @@ export class RadarView extends ItemView implements HoverParent {
             });
             // A11y: 键盘 Enter/Space 打开；Mod+Enter 快捷插入双向链接
             card.addEventListener("keydown", (e: KeyboardEvent) => {
+                if (e.key === "Escape") {
+                    this.popoverPreview.hide();
+                    return;
+                }
                 if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                     e.preventDefault();
                     e.stopPropagation();
@@ -489,6 +528,8 @@ export class RadarView extends ItemView implements HoverParent {
     }
 
     public showLoading() {
+        this.searchErrorEl?.addClass('is-hidden');
+        if (this.scanNoteBtnEl) this.scanNoteBtnEl.disabled = false;
         if (this.scanBarEl) {
             this.scanBarEl.addClass("is-scanning");
         }
@@ -498,7 +539,13 @@ export class RadarView extends ItemView implements HoverParent {
         }
     }
 
+    public updateNoteScanProgress(current: number, total: number) {
+        this.statusTextEl?.setText(t('SCAN_NOTE_PROGRESS', { current, total }));
+        if (this.scanNoteBtnEl) this.scanNoteBtnEl.disabled = true;
+    }
+
     public clearLoading() {
+        if (this.scanNoteBtnEl) this.scanNoteBtnEl.disabled = false;
         if (this.scanBarEl) {
             this.scanBarEl.removeClass("is-scanning");
         }

@@ -13,8 +13,8 @@ This document defines the smallest reliable checks for frontend, backend, Harnes
 
 | Tier | Scope | Commands | Required when |
 | --- | --- | --- | --- |
-| 0 | Harness and Markdown | `uv run --project engine python scripts/verify_harness.py .` | Harness or documentation changes |
-| 1 | Plugin static checks | `npm run lint`; `npm exec tsc -- --noEmit --skipLibCheck` | Any plugin TypeScript change |
+| 0 | Documentation and whitespace | `git diff --check` | Documentation changes |
+| 1 | Plugin static and radar behavior | `npm run lint`; `npm exec tsc -- --noEmit --skipLibCheck`; `node tests/radar-state.cjs` | Plugin UI or search flow changes |
 | 1 | Service process regression | `node tests/service-manager.cjs`; `node tests/api-health.cjs` | Sidecar startup, port handling, restart, or shutdown changes |
 | 1 | Engine focused tests | `cd engine`; `uv run pytest tests/test_<area>.py` | An engine module changes |
 | 2 | Full plugin | `npm run build`; `npm run lint` | Before completing plugin work |
@@ -22,7 +22,8 @@ This document defines the smallest reliable checks for frontend, backend, Harnes
 | 3 | Release | Full checks, then `npm run check:release`; verify the tag equals the manifest version | Before tagging a release |
 | 4 | Obsidian vertical slice | Manual test with a disposable Vault and controlled engine | Lifecycle, editor, or end-to-end behavior changes |
 
-Generated `dist/main.js` and `dist/styles.css` are build outputs. Do not edit them directly. Root `manifest.json` and `versions.json` are release metadata and must remain synchronized with `package.json`.
+Generated root `main.js` and `styles.css` are build outputs. Do not edit them directly. Root `manifest.json` and `versions.json` are release metadata and must remain synchronized with `package.json`.
+Use `npm run version -- minor` for a minor release; the script also synchronizes the engine package, health version, smoke assertion, and lockfile.
 
 ## 3. Behavioral acceptance gates
 

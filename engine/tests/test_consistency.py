@@ -46,6 +46,26 @@ def test_upsert_documents_partial_failure_isolation():
     assert call_args[1] == {"v1": {"doc1.md"}}
 
 
+def test_title_only_fts_recall(tmp_path):
+    from storage.lancedb_storage import LanceDBStorage
+
+    storage = LanceDBStorage(db_path=str(tmp_path / "title_recall"))
+    embedding = MagicMock()
+    embedding.encode.return_value = [[0.1] * storage.dim]
+    IndexService(storage, embedding).upsert_documents([
+        {"vault_id": "v1", "path": "QuartzPlanet.md", "text": "Unrelated body text."}
+    ])
+    storage.rebuild_fts_index()
+    storage.set_vault_stopwords("v1", ["unrelated"])
+
+    candidates = RetrievalService(storage).retrieve_candidates(
+        vault_id="v1", query_vector=[0.1] * storage.dim, query_text="unrelated QuartzPlanet"
+    )
+    assert len(candidates) == 1
+    assert candidates[0].lexical_score > 0
+    assert candidates[0].semantic_score > 0
+
+
 def test_multi_vault_stopwords_isolation(tmp_path):
     """测试多 Vault 停用词在存储层按 vault_id 物理隔离，互不串词"""
     from storage.lancedb_storage import LanceDBStorage

@@ -31,7 +31,6 @@ class ScoreNormalizer:
         if not scores:
             return []
         max_s = max(scores)
-        min_s = min(scores)
-        if max_s <= 0 or max_s == min_s:
+        if max_s <= 0:
             return [0.0] * len(scores)
-        return [(s - min_s) / (max_s - min_s) for s in scores]
+        return [max(0.0, s) / max_s for s in scores]

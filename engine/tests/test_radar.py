@@ -24,7 +24,9 @@ def test_score_normalizer():
     assert ScoreNormalizer.normalize_cosine(-0.5) == 0.0
     assert 0.0 <= ScoreNormalizer.normalize_rerank_logit(0.0) <= 1.0
     lex = ScoreNormalizer.normalize_batch_lexical([10.0, 20.0, 30.0])
-    assert lex == [0.0, 0.5, 1.0]
+    assert lex == pytest.approx([1 / 3, 2 / 3, 1.0])
+    assert ScoreNormalizer.normalize_batch_lexical([12.0]) == [1.0]
+    assert ScoreNormalizer.normalize_batch_lexical([12.0, 12.0]) == [1.0, 1.0]
 
 
 def test_mmr_selection():

@@ -4,7 +4,13 @@ This document records current state, gaps, priorities, near-term evidence, and r
 
 ## Current objective
 
-Close the remaining P0 correctness and delivery gaps before expanding product scope.
+Measure real-Vault relevance and latency for the retrieval changes before further ranking or performance tuning.
+
+2026-09-24 0.10.0 scope: publish the sidecar lifecycle repair, lexical recall fixes, and sidebar/whole-note interaction work together. Plugin and engine versions are synchronized by `npm run version -- minor`; release checks verify both. Controlled Obsidian UI and automated checks support the interaction changes, while real-model relevance, end-to-end speed, touch interaction, and large-note latency remain follow-up evidence work.
+
+2026-09-24 retrieval and interaction refinement: FTS tokens now include note title and heading ancestry as well as chunk text, so title-only queries can enter lexical recall after the affected notes are reindexed. Lexical normalization now retains positive evidence for a single hit or tied scores. Query stopword filtering now segments once instead of twice. The sidebar highlights every matched keyword consistently and rejects a response when no matching active Markdown view remains. Synthetic LanceDB regression, engine tests, plugin lint/build pass; real-Vault relevance and end-to-end latency gains are still unmeasured. A 300-note synthetic projection benchmark found no query speedup and surfaced future score-column compatibility warnings, so the column projection was reverted.
+
+2026-09-24 sidebar follow-up: failed searches now show a retry action and mark retained cards stale; changing notes resets that state. Keyboard focus opens the contextual preview, touch pointers expose the link action, focus outlines and reduced-motion styles are present, and score dots are described as ranking strength rather than probability. Settings connection checks restore the button on failure and avoid hardcoded engine version/language. Whole-note scans search bounded text parts with progress, reject results if the note changes during scanning, and merge results after all parts succeed. A cached-model probe reproduced the old tail omission (512-token maximum; two long inputs differing only at the end had cosine 1.0). Controlled frontend tests cover tail inclusion, result merging and failure state. In a disposable Vault on Obsidian 1.13.7, a loopback synthetic service verified the visible failure/retry flow, keyboard focus preview, score explanation, scan progress, and seven distinct note queries including the tail marker; the result merged to one card. This is UI/contract evidence, not model relevance evidence. Real-model ranking, touch/mobile interaction, and large-note latency remain open.
 
 2026-09-23 lifecycle repair and live diagnosis: the Vault had both `obsidian-semantix` 0.7.0 and `semantix` 0.9.3 enabled. Both register `semantix-whisperer-view`; the older plugin won and the current plugin failed during `onload` before engine startup. The older plugin also pointed to a missing `D:\code\Semantix\backend`. After disabling the old plugin and reloading the current one, the managed process listened on port 8000 and `/health` returned `ok` with engine 0.9.3 on CUDA. Disabling the current plugin removed the listener and process; enabling it restored them. The current plugin also now prefers the existing engine virtual environment over bare `uv`, reports startup errors, and only stops its own process on force restart. Previous-session orphans rely on the engine parent watchdog; old PID-file and broad port-kill code was removed.
 
@@ -79,14 +85,13 @@ Resolve Q1-Q3 in `ARCHITECTURE.md` before claiming mobile support, enforcing ver
 - Full indexing is frontend-driven; closing Obsidian resets in-memory progress.
 - First model load and large Vault indexing depend on local hardware and model cache state.
 - CI configuration has local validation; the first GitHub-hosted run remains external evidence.
-- Existing history has only the legacy `v0.8.0` tag. Community submission requires a new exact-version Release tag (for example `0.8.1`) produced after this layout is merged.
+- Release tags use the exact numeric manifest version; GitHub Actions builds the three Obsidian assets from that tag.
 
 ## Next order
 
-1. Close destructive scope, rebuild preservation, sync ordering, and process-ownership gaps from the review below.
-2. Implement truthful failure/degradation and frontend freshness across the complete request lifecycle.
-3. Repair lexical fusion, Chinese recall, and metadata consistency before tuning weights.
-4. Build the fixed-corpus relevance/performance baseline and Obsidian interaction acceptance slice.
+1. Build a fixed real-Vault query corpus and measure relevance plus encode, recall, rerank, and total latency.
+2. Verify large-note scan latency and touch/mobile interaction on supported devices.
+3. Resolve the open mobile, version-compatibility, and reranker-degradation product decisions before broadening support claims.
 
 ## 2026-09-14–15 深度评估：架构、算法与交互
 

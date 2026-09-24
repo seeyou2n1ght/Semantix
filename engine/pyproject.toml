@@ -1,6 +1,6 @@
 [project]
 name = "semantix-engine"
-version = "0.9.3"
+version = "0.10.0"
 description = "Local semantic retrieval engine for Semantix Obsidian plugin"
 requires-python = ">=3.11"
 dependencies = [

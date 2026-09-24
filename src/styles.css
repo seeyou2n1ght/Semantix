@@ -65,6 +65,22 @@
     background: var(--interactive-hover);
 }
 
+.semantix-search-error {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+    padding: 8px;
+    border: 1px solid var(--background-modifier-error);
+    border-radius: 6px;
+    color: var(--text-error);
+    font-size: 0.8em;
+}
+
+.semantix-search-error.is-hidden { display: none; }
+.semantix-card-list.is-stale { opacity: 0.6; }
+
 /* 索引/同步动态进度面板 */
 .semantix-indexing-progress-container {
     margin-bottom: 12px;
@@ -175,6 +191,13 @@
     border-color: var(--interactive-accent);
 }
 
+.semantix-radar-card:focus-visible,
+.semantix-card-action-btn:focus-visible,
+.semantix-search-error button:focus-visible {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: 2px;
+}
+
 .semantix-card-header-row {
     display: flex;
     align-items: center;
@@ -232,6 +255,17 @@
     background: var(--interactive-accent);
     color: var(--text-on-accent);
     border-color: var(--interactive-accent);
+}
+
+@media (hover: none) {
+    .semantix-card-action-btn { opacity: 1; min-width: 32px; min-height: 32px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .semantix-scan-bar.is-scanning::after,
+    .semantix-status-indicator.status-syncing,
+    .semantix-status-indicator.status-scanning,
+    .semantix-popover-preview { animation: none; }
 }
 
 .semantix-card-score {

@@ -56,7 +56,7 @@ The plugin owns editor context and response freshness. The companion engine owns
 
 ### Release boundary
 
-The repository is organized with the Obsidian plugin as the root primary product and the companion calculation engine under `engine/`. Obsidian metadata (`manifest.json`, `versions.json`) lives at the repository root alongside `package.json`. esbuild writes ignored assets to `dist/`; GitHub Release publishes only `main.js`, `manifest.json`, and `styles.css`. Release tags exactly match the manifest version without a `v` prefix.
+The repository is organized with the Obsidian plugin as the root primary product and the companion calculation engine under `engine/`. Obsidian metadata (`manifest.json`, `versions.json`) lives at the repository root alongside `package.json`. esbuild writes ignored `main.js` and `styles.css` to the repository root; GitHub Release publishes only those files and `manifest.json`. Release tags exactly match the manifest version without a `v` prefix.
 
 ## 3. Module boundaries
 
@@ -98,10 +98,12 @@ The repository is organized with the Obsidian plugin as the root primary product
 1. The frontend creates a `context_id` and monotonically increasing local search ID.
 2. The backend embeds the query with `为这个句子生成表示以用于检索相关文章：`.
 3. Vector and FTS results are fused and aggregated by document. Radar requests use the configured 45-candidate recall limit.
-4. `fast` skips CrossEncoder; `balanced` reranks up to 24 candidates; `high_quality` reranks up to 30.
+4. `fast` skips CrossEncoder; `balanced` reranks up to 16 candidates; `high_quality` reranks up to 20.
 5. Related combines normalized semantic, reranker, and lexical evidence, with bounded folder/tag bonuses.
 6. Discover applies a relevance gate, excludes near-duplicates and Related results, applies diversity penalties/bridges, then selects with MMR.
 7. The response echoes `context_id`; the frontend discards stale IDs before rendering.
+
+Explicit whole-note scans split the cleaned note into bounded text parts, search each part with its own echoed context ID, show completed-part progress, and merge the highest-scoring card per path. A failed part leaves the previous cards marked stale instead of presenting partial results as complete.
 
 Ranking constants are defined in `engine/config/ranking_config.py`. Current notable defaults are Related weights `0.50/0.35/0.15`, Discover gate `0.45`, duplicate threshold `0.88`, and MMR lambda `0.65`. Do not duplicate these numbers in implementation.
 

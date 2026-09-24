@@ -76,20 +76,22 @@ export class PopoverPreview {
 
         // 红绿灯分数徽标
         if (typeof item.score === 'number' && !isNaN(item.score)) {
-            const scoreVal = (Math.round(item.score * 100) / 100).toFixed(2);
             let tierText = "●●○";
             let tierCls = "mid";
+            let tierLabel = t('SCORE_LEVEL_MID');
             if (item.score >= 0.75) {
                 tierText = "●●●";
                 tierCls = "high";
+                tierLabel = t('SCORE_LEVEL_HIGH');
             } else if (item.score < 0.50) {
                 tierText = "●○○";
                 tierCls = "low";
+                tierLabel = t('SCORE_LEVEL_LOW');
             }
             titleRow.createSpan({ 
                 cls: `semantix-card-score mod-${tierCls} semantix-popover-score-badge`, 
-                text: `${tierText} ${scoreVal}`,
-                attr: { "title": `${t('POPOVER_MATCH')}: ${scoreVal}` }
+                text: tierText,
+                attr: { "title": `${tierLabel} · ${t('SCORE_RELATIVE_HINT')}`, "aria-label": tierLabel }
             });
         }
 

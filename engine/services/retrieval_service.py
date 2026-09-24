@@ -147,12 +147,10 @@ class RetrievalService:
             clean_query = query_text.strip() if query_text else ""
             if clean_query:
                 vault_stops = self.storage.get_vault_stopwords(vault_id)
-                if vault_stops:
-                    tokens = [t for t in jieba.cut(clean_query) if t.strip() and t.lower() not in vault_stops]
-                    if tokens:
-                        clean_query = " ".join(tokens)
+                tokens = [t for t in jieba.cut(clean_query) if t.strip()]
+                filtered = [t for t in tokens if t.lower() not in vault_stops]
                 try:
-                    fts_search_str = self.storage.prepare_fts_query(clean_query)
+                    fts_search_str = " ".join(filtered or tokens)
                     fts_query = self.storage.table.search(fts_search_str, query_type="fts").limit(fetch_limit)
                     fts_rows = fts_query.where(filter_expr).to_list()
                 except Exception as e:

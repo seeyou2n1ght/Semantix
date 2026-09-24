@@ -370,10 +370,14 @@ export class SemantixSettingTab extends PluginSettingTab {
         } else if (status === 'connected') {
             dotEl.addClass('dot-ready');
             titleTextEl.setText(`Semantix · ${t('STATUS_BANNER_READY')}`);
-            const notesCount = this.dbMetrics?.total_indexed_docs ?? 0;
-            const sizeStr = this.formatBytes(this.dbMetrics?.db_size_bytes);
-            const modelName = health?.embedding_model ? health.embedding_model.split('/').pop() : 'bge-small-zh-v1.5';
-            descEl.setText(`Engine v${health?.engine_version || '0.9.1'} · ${modelName} · ${notesCount} 篇笔记已索引 · 占用 ${sizeStr}`);
+            const notesCount = this.dbMetrics?.total_indexed_docs ?? t('STATUS_UNKNOWN');
+            const sizeStr = this.dbMetrics?.db_size_bytes === undefined
+                ? t('STATUS_UNKNOWN') : this.formatBytes(this.dbMetrics.db_size_bytes);
+            const modelName = health?.embedding_model?.split('/').pop() || t('STATUS_UNKNOWN');
+            descEl.setText(t('STATUS_BANNER_DETAILS', {
+                version: health?.engine_version || t('STATUS_UNKNOWN'), model: modelName,
+                count: notesCount, size: sizeStr
+            }));
         } else {
             dotEl.addClass('dot-disconnected');
             titleTextEl.setText(`Semantix · ${t('STATUS_BANNER_DISCONNECTED')}`);
@@ -387,9 +391,17 @@ export class SemantixSettingTab extends PluginSettingTab {
         checkBtn.onclick = async () => {
             checkBtn.setText(t('TESTING'));
             checkBtn.disabled = true;
-            await this.plugin.checkConnection({ manual: true });
-            this.dbMetrics = await this.plugin.apiClient.getMetrics();
-            this.refreshStatusDisplay();
+            try {
+                await this.plugin.checkConnection({ manual: true });
+                this.dbMetrics = await this.plugin.apiClient.getMetrics();
+            } catch (error) {
+                console.error('Semantix: Connection check failed.', error);
+                new Notice(t('CONNECTION_CHECK_FAILED'));
+            } finally {
+                checkBtn.disabled = false;
+                checkBtn.setText(t('BTN_CHECK_CONNECTION'));
+                this.refreshStatusDisplay();
+            }
         };
     }
 

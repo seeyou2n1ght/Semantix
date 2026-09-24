@@ -91,7 +91,9 @@ class IndexService:
                         "full_path": full_semantic_path,
                         "tags": tags,
                         "links": links,
-                        "fts_tokens": self.storage.tokenize_for_fts(child_text),
+                        "fts_tokens": self.storage.tokenize_for_fts(
+                            f"{file_basename} {h_str} {child_text}"
+                        ),
                     }
                 )
 
