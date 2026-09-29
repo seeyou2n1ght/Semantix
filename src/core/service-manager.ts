@@ -17,14 +17,20 @@ interface ManagedProcess {
     kill(signal?: string): boolean;
 }
 
-interface ExecSyncResult {
-    toString(encoding?: string): string;
+interface PortProbeServer {
+    once(event: 'error', listener: (error: unknown) => void): unknown;
+    listen(port: number, host: string, listener: () => void): unknown;
+    address(): { port: number } | string | null;
+    close(callback: (error?: Error) => void): unknown;
+}
+
+interface NetModule {
+    createServer(): PortProbeServer;
 }
 
 interface ChildProcessModule {
     spawn: (command: string, args: string[], options: Record<string, unknown>) => ManagedProcess;
-    exec: (command: string, callback?: (error: Error | null, stdout: string, stderr: string) => void) => unknown;
-    execSync: (command: string) => ExecSyncResult;
+    execFileSync: (file: string, args: string[], options: { shell: false; windowsHide: boolean }) => unknown;
 }
 
 function getChildProcess(): ChildProcessModule | null {
@@ -208,20 +214,23 @@ export class ServiceManager {
             }
 
             let effectivePort = this.getEffectivePort();
-            const net = getElectronNodeModule<typeof import('net')>('net');
+            const net = getElectronNodeModule<NetModule>('net');
             if (net) {
                 const probe = (port: number) => new Promise<number>((resolve, reject) => {
                     const server = net.createServer();
                     server.once('error', reject);
                     server.listen(port, '127.0.0.1', () => {
                         const address = server.address();
-                        server.close(() => resolve(typeof address === 'object' && address ? address.port : port));
+                        server.close(error => {
+                            if (error) reject(error);
+                            else resolve(typeof address === 'object' && address ? address.port : port);
+                        });
                     });
                 });
                 try {
                     await probe(effectivePort);
                 } catch (error) {
-                    if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw error;
+                    if (typeof error !== 'object' || error === null || !('code' in error) || error.code !== 'EADDRINUSE') throw error;
                     effectivePort = await probe(0);
                     settings.backendUrl = `http://127.0.0.1:${effectivePort}`;
                     await this.plugin.saveSettings();
@@ -259,6 +268,7 @@ export class ServiceManager {
             const proc = cp.spawn(command, args, {
                 cwd: settings.backendPath,
                 shell: false,
+                windowsHide: true,
                 detached: !Platform.isWin,
                 env
             });
@@ -377,11 +387,12 @@ export class ServiceManager {
             const cp = getChildProcess();
             
             if (Platform.isWin) {
-                // Windows 下必须使用 taskkill /T (Tree) 才能杀死通过 shell 启动的子进程
-                // 使用 execSync 确保在插件 onunload 完成前同步结束进程
+                // Stop the owned process tree synchronously before plugin unload.
                 try {
-                    // 对 PID 使用引号包裹增加安全性
-                    if (cp) cp.execSync(`taskkill /F /T /PID "${targetPid}"`);
+                    if (cp) cp.execFileSync('taskkill', ['/F', '/T', '/PID', String(targetPid)], {
+                        shell: false,
+                        windowsHide: true
+                    });
                 } catch {
                     // 忽略进程可能已经自行退出的报错
                 }

@@ -12,20 +12,12 @@ interface PathModule {
     join: (...paths: string[]) => string;
 }
 
-interface ChildProcessModule {
-    exec: (command: string, callback?: (error: Error | null, stdout: string, stderr: string) => void) => unknown;
-}
-
 function getFs(): FsModule | null {
     return getElectronNodeModule<FsModule>('fs');
 }
 
 function getPath(): PathModule | null {
     return getElectronNodeModule<PathModule>('path');
-}
-
-function getChildProcess(): ChildProcessModule | null {
-    return getElectronNodeModule<ChildProcessModule>('child_process');
 }
 
 export interface SemantixSettings {
@@ -185,27 +177,6 @@ export class SemantixSettingTab extends PluginSettingTab {
         } catch {
             return isoString;
         }
-    }
-
-    private async validatePython(pythonPath: string): Promise<void> {
-        if (!Platform.isDesktop || !pythonPath) {
-            this.updateStatus('python', "");
-            return;
-        }
-        const cp = getChildProcess();
-        if (!cp) return;
-
-        this.pythonStatus = t('VALIDATING_PYTHON');
-        this.updateBackendStatusEl();
-
-        cp.exec(`"${pythonPath}" --version`, (error, stdout, stderr) => {
-            if (error) {
-                this.updateStatus('python', t('PYTHON_INVALID') + ` (${error.message.split('\n')[0]})`);
-            } else {
-                const version = (stdout?.trim() || stderr?.trim() || "");
-                this.updateStatus('python', t('PYTHON_IDENTIFIED') + version);
-            }
-        });
     }
 
     private validateBackend(backendPath: string): void {

@@ -14,7 +14,7 @@ This document defines the smallest reliable checks for frontend, backend, Harnes
 | Tier | Scope | Commands | Required when |
 | --- | --- | --- | --- |
 | 0 | Documentation and whitespace | `git diff --check` | Documentation changes |
-| 1 | Plugin static and radar behavior | `npm run lint`; `npm exec tsc -- --noEmit --skipLibCheck`; `node tests/radar-state.cjs` | Plugin UI or search flow changes |
+| 1 | Plugin static and radar behavior | `npm run lint`; `npm exec tsc -- --noEmit --skipLibCheck --types obsidian`; `node tests/radar-state.cjs` | Plugin UI or search flow changes |
 | 1 | Service process regression | `node tests/service-manager.cjs`; `node tests/api-health.cjs` | Sidecar startup, port handling, restart, or shutdown changes |
 | 1 | Engine focused tests | `cd engine`; `uv run pytest tests/test_<area>.py` | An engine module changes |
 | 2 | Full plugin | `npm run build`; `npm run lint` | Before completing plugin work |
@@ -56,7 +56,7 @@ Use `npm run version -- minor` for a minor release; the script also synchronizes
 
 ## 4. CI baseline and known gap
 
-CI runs frontend lint/build/release-contract checks and backend pytest. Release tags must exactly equal the root manifest version and must not use a `v` prefix.
+CI and release builds run frontend lint with zero warnings, plugin type checking without ambient Node types, radar/process/health regressions, release-contract checks, and backend pytest. Port-probe interfaces must remain typed when Node declarations are unavailable in the community review environment. Owned-process and port-conflict tests use controlled process handles and a real loopback listener; startup and Windows shutdown must disable shell execution and pass arguments separately. Release tags must exactly equal the root manifest version and must not use a `v` prefix.
 
 ## 5. Minimal vertical slice
 

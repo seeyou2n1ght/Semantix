@@ -18,8 +18,11 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm ci
       - run: npm run lint
+      - run: npx tsc --noEmit --skipLibCheck --types obsidian
       - run: npm run build
       - run: node tests/radar-state.cjs
+      - run: node tests/service-manager.cjs
+      - run: node tests/api-health.cjs
       - run: npm run check:release
 
   engine:

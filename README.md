@@ -85,6 +85,8 @@ You can also enable **Auto-start Local Engine** in the plugin settings to have O
 
 - **Local-first by default**: All note embeddings, indexing (LanceDB), and search run locally on `127.0.0.1`.
 - **Zero telemetry**: Semantix contains no trackers, telemetry, or third-party cloud LLM/AI services.
+- **Desktop process access**: Local mode runs the configured Python/uv executable and stops the plugin-owned process tree. These operations pass arguments directly with shell execution disabled. Remote mode does not start local processes.
+- **Vault and clipboard access**: Full indexing enumerates Markdown notes and applies your exclusion rules before reading them. The Vault ID copy button writes that ID to the clipboard only when clicked; the plugin does not read clipboard contents.
 - **Vault safety**: The plugin never modifies, renames, or deletes your Markdown notes. Vector and FTS indexes are stored in the engine's external data directory.
 - **Optional Remote Mode**: If you explicitly configure a remote engine URL, note contents will be sent to that address. Remote deployments require setting a `SEMANTIX_API_TOKEN` and managing TLS/network security.
 
@@ -117,7 +119,7 @@ You can also enable **Auto-start Local Engine** in the plugin settings to have O
 
 Semantix 是面向 Obsidian 的本地语义检索与灵感发现插件，在写作过程中提供强相关内容（Related）和跨主题关联（Discover）。
 
-当前版本：`v0.11.0`。桌面端本地 Sidecar 是主要工作流；代码中存在显式开启的移动端远程模式，其正式支持等级仍记录在 [PROGRESS](docs/PROGRESS.md) 中等待确认。
+当前版本：`v0.11.1`。桌面端本地 Sidecar 是主要工作流；代码中存在显式开启的移动端远程模式，其正式支持等级仍记录在 [PROGRESS](docs/PROGRESS.md) 中等待确认。
 
 ### 核心能力
 
@@ -133,6 +135,8 @@ Semantix 是面向 Obsidian 的本地语义检索与灵感发现插件，在写�
 - 只有用户显式配置私有远程 Engine 时，笔记数据才会发送至该地址。远程部署必须配置 API Token，并由操作者负责 TLS 或可信网络边界。
 - 插件不会修改、重命名或删除 Vault 内的 Markdown 原文；向量和 FTS 索引存储在 Vault 外部的 Engine 数据目录。
 - 项目不包含遥测或第三方笔记处理服务。
+- 桌面本地模式会运行配置的 Python/uv 程序并停止插件自己启动的进程树；这些操作直接传递参数并禁用 shell。远程模式不会启动本地进程。
+- 全量索引会枚举 Markdown 笔记，并在读取前应用排除规则。Vault ID 的复制按钮仅在点击时写入该 ID，插件不读取剪贴板内容。
 
 ### 架构
 
