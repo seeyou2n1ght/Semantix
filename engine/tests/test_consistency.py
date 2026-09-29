@@ -136,6 +136,9 @@ def test_stopword_threshold_uses_ceiling_document_frequency():
     assert result == ["beta"]
     storage.set_vault_stopwords.assert_called_once_with("vault", ["beta"])
 
+    details = index_svc.compute_vault_stopword_details("vault")
+    assert details == {"words": ["beta"], "total_docs": 7, "min_doc_freq": 3, "threshold": 0.3}
+
 
 def test_manual_database_optimization_prunes_all_old_versions():
     """存储优化必须通过 LanceDB 原生参数立即清理历史版本和未校验碎片。"""

@@ -143,6 +143,11 @@ export class ResultStabilizer {
         if (currentList.length === 0) {
             return this.createDisplayedCards(incomingList, now);
         }
+        // Retained cards without evidence in this response must not keep old highlights.
+        const incomingIds = new Set(incomingList.map(item => item.id));
+        currentList = currentList.map(card => incomingIds.has(card.item.id) ? card : {
+            ...card, item: { ...card.item, matched_terms: [] }
+        });
         // 当 incoming 为空时，超过最低展示寿命后允许清空淡出，避免旧卡片永久常驻
         if (!incomingList || incomingList.length === 0) {
             const hasYoungCard = currentList.some(c => (now - c.enteredAt) < policy.minimumLifetimeMs);

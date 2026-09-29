@@ -41,6 +41,12 @@ Use `npm run version -- minor` for a minor release; the script also synchronizes
 - Fast mode avoids reranking.
 - An unavailable reranker does not create a synthetic normalized reranker score.
 
+- Lexical filters honor request settings and Vault isolation; empty effective queries skip FTS without restoring noise or changing semantic input.
+- Card highlight terms occur in the displayed snippet; English substrings, missing evidence, and retained stale cards do not produce misleading highlights.
+- Display-only filtering leaves FTS terms intact; compound Chinese terms appear only when the whole span occurs in both query and snippet, and the UI receives no more than six terms per card.
+- Stopword recalculation reports the actual number of notes with text, threshold and minimum document frequency used for that Vault.
+- `engine/tests/test_lexical.py` exercises real temporary LanceDB/FTS with deterministic vectors plus API wiring. `node tests/radar-state.cjs` also runs `tests/highlights.cjs` for rendering, request settings, stabilization, and whole-note evidence merging.
+
 ### Frontend and lifecycle
 
 - A stale search ID or `context_id` cannot replace current sidebar results.

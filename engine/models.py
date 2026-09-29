@@ -47,6 +47,8 @@ class RadarSearchRequest(BaseModel):
     top_k_discover: Optional[int] = Field(4, description="Count of discover items to return")
     ranking_mode: Optional[str] = Field("balanced", description="fast, balanced, or high_quality")
     exclude_paths: Optional[List[str]] = Field(default_factory=list, description="Paths to exclude")
+    enable_adaptive_filtering: bool = True
+    custom_stopwords: List[str] = Field(default_factory=list)
     mmr_lambda: Optional[float] = Field(0.65, ge=0.1, le=0.9, description="MMR diversity trade-off (lower = more diverse)")
 
 
@@ -58,6 +60,7 @@ class RadarCardItem(BaseModel):
     score: float = Field(..., description="Normalized score [0, 1]")
     labels: List[str] = Field(default_factory=list, description="Machine label codes (e.g. UNLINKED, CROSS_TOPIC)")
     matched_chunk_index: Optional[int] = None
+    matched_terms: List[str] = Field(default_factory=list, description="Filtered query terms present in this snippet; not semantic attribution")
 
 
 class RadarSearchResponse(BaseModel):

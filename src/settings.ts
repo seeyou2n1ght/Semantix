@@ -104,6 +104,7 @@ export class SemantixSettingTab extends PluginSettingTab {
         last_index_at?: string;
         [key: string]: unknown;
     } | null = null;
+    private stopwordDetails: { total_docs: number; min_doc_freq: number; threshold: number } | null = null;
 
     constructor(app: App, plugin: SemantixPlugin) {
         super(app, plugin);
@@ -647,6 +648,9 @@ export class SemantixSettingTab extends PluginSettingTab {
                                 const res = await this.plugin.apiClient.computeStopwords();
                                 if (res?.words) {
                                     this.plugin.vaultStopwords = res.words;
+                                    if (res.total_docs !== undefined && res.min_doc_freq !== undefined && res.threshold !== undefined) {
+                                        this.stopwordDetails = { total_docs: res.total_docs, min_doc_freq: res.min_doc_freq, threshold: res.threshold };
+                                    }
                                     renderStopwordsChips();
                                 }
                                 void this.plugin.checkConnection({ silent: true });
@@ -665,6 +669,9 @@ export class SemantixSettingTab extends PluginSettingTab {
                                 if (res) {
                                     if (res.words) {
                                         this.plugin.vaultStopwords = res.words;
+                                    }
+                                    if (res.total_docs !== undefined && res.min_doc_freq !== undefined && res.threshold !== undefined) {
+                                        this.stopwordDetails = { total_docs: res.total_docs, min_doc_freq: res.min_doc_freq, threshold: res.threshold };
                                     }
                                     const wordsPreview = res.words && res.words.length > 0 ? ` (${res.words.join(', ')})` : "";
                                     new Notice(t('ADAPTIVE_SUCCESS', { count: res.count }) + wordsPreview);
@@ -689,6 +696,16 @@ export class SemantixSettingTab extends PluginSettingTab {
                     header.createSpan({ 
                         cls: 'semantix-stopwords-title', 
                         text: `${t('ADAPTIVE_STOPWORDS_TITLE')} (${this.plugin.vaultStopwords?.length || 0}):` 
+                    });
+                    const stats = this.stopwordDetails;
+                    const indexedDocs = this.dbMetrics?.total_indexed_docs;
+                    chipsContainer.createDiv({
+                        cls: 'semantix-stopwords-empty',
+                        text: stats
+                            ? t('ADAPTIVE_STATS_EXACT', { docs: stats.total_docs, cutoff: stats.min_doc_freq, percent: Math.round(stats.threshold * 100) })
+                            : indexedDocs !== undefined
+                                ? t('ADAPTIVE_STATS_ESTIMATE', { docs: indexedDocs, cutoff: Math.max(2, Math.ceil(indexedDocs * 0.3)) })
+                                : t('ADAPTIVE_STATS_RULE')
                     });
                     const listEl = chipsContainer.createDiv({ cls: 'semantix-stopwords-chips' });
                     if (this.plugin.vaultStopwords && this.plugin.vaultStopwords.length > 0) {

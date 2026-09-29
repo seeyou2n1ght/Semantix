@@ -152,7 +152,7 @@ export class RadarView extends ItemView implements HoverParent {
         discover: RadarCardItem[],
         contextPath?: string,
         contextHeading?: string,
-        queryText?: string
+        _queryText?: string
     ) {
         this.clearLoading();
         this.searchErrorEl?.addClass("is-hidden");
@@ -160,13 +160,11 @@ export class RadarView extends ItemView implements HoverParent {
         this.discoverContainerEl?.removeClass("is-stale");
         this.updateContextBreadcrumb(contextPath, contextHeading);
 
-        const keywords = queryText ? this.extractKeywords(queryText) : [];
-
         // 渲染 Related
-        this.renderCardList(this.relatedContainerEl, related, t('STREAM_RELATED_EMPTY'), keywords);
+        this.renderCardList(this.relatedContainerEl, related, t('STREAM_RELATED_EMPTY'));
 
         // 渲染 Discover
-        this.renderCardList(this.discoverContainerEl, discover, t('STREAM_DISCOVER_EMPTY'), keywords);
+        this.renderCardList(this.discoverContainerEl, discover, t('STREAM_DISCOVER_EMPTY'));
     }
 
     public showSearchError(retry: () => void) {
@@ -190,70 +188,6 @@ export class RadarView extends ItemView implements HoverParent {
         this.discoverContainerEl?.createEl('p', { text: t('DISCOVER_INITIAL'), cls: 'semantix-empty-text' });
     }
 
-    /**
-     * 语言感知分词并提取关键词（结合权威停用词与自适应停用词）
-     */
-    public extractKeywords(text: string): string[] {
-        if (!text) return [];
-
-        const stopWords = new Set([
-            '的', '了', '在', '是', '和', '与', '或', '也', '都', '就', '不', '有', '这', '那',
-            '我', '你', '他', '她', '它', '们', '个', '上', '下', '中', '来', '去', '到', '说',
-            '要', '会', '能', '对', '着', '过', '从', '把', '给', '向', '而', '但', '如', '所',
-            '以', '为', '于', '之', '其', '者', '等', '时', '地', '得', '啊', '吗', '呢', '吧',
-            '呀', '哦', '哈', '嗯', '哎', '唉', '且', '并', '若', '况', '非', '莫', '既',
-            '怎么', '如何', '什么', '为什么', '哪里', '什么时候', '这样', '那样', '哪个', '哪些',
-            '觉得', '认为', '就是', '其实', '大概', '可能', '虽然', '但是', '如果', '由于', '因此',
-            '所以', '因为', '既然', '以此', '不仅', '而且', '此外', '或者', '否则', '还是', '甚至',
-            '以及', '至于', '关于', '对于', '所谓', '比如', '例如', '总之', '最后', '首先', '其次',
-            '已经', '曾经', '正在', '即将', '刚刚', '一直', '总是', '经常', '偶尔', '非常', '相当',
-            '及其', '更加', '比较', '稍微', '几乎', '所有', '整个', '一切', '各种', '各个', '部分',
-            '一些', '一点', '有些', '好多', '若干', '很多', '只有', '只要', '无论', '不管', '即使'
-        ]);
-
-        // 合并后端自适应停用词
-        if (this.plugin.settings.enableAdaptiveFiltering && this.plugin.vaultStopwords?.length > 0) {
-            for (const word of this.plugin.vaultStopwords) {
-                stopWords.add(word.toLowerCase());
-            }
-        }
-
-        // 合并用户自主定义的停用词
-        if (this.plugin.settings.customStopwords) {
-            const customList = this.plugin.settings.customStopwords
-                .split(/[\n,，\s]+/)
-                .map(w => w.trim().toLowerCase())
-                .filter(Boolean);
-            for (const word of customList) {
-                stopWords.add(word);
-            }
-        }
-
-        const keywords: Set<string> = new Set();
-        try {
-            const SegmenterConstructor = (Intl as unknown as { Segmenter?: new (locales: string, options: { granularity: string }) => { segment: (text: string) => Iterable<{ segment: string; isWordLike: boolean }> } }).Segmenter;
-            if (SegmenterConstructor) {
-                const segmenter = new SegmenterConstructor('zh', { granularity: 'word' });
-                for (const { segment, isWordLike } of segmenter.segment(text)) {
-                    if (!isWordLike) continue;
-                    const lower = segment.toLowerCase().trim();
-                    if (stopWords.has(lower) || /^\d+$/.test(lower)) continue;
-                    if (lower.length >= 2) keywords.add(lower);
-                }
-            } else {
-                throw new Error("Intl.Segmenter unavailable");
-            }
-        } catch {
-            const words = text.match(/[\u4e00-\u9fa5]{2,}|[a-zA-Z]{3,}/g) || [];
-            for (const word of words) {
-                const lower = word.toLowerCase();
-                if (!stopWords.has(lower)) keywords.add(lower);
-            }
-        }
-
-        return Array.from(keywords).sort((a, b) => b.length - a.length).slice(0, 8);
-    }
-
     private renderHighlightedSnippet(container: HTMLElement, snippet: string, keywords: string[]) {
         const p = container.createEl("p", { cls: "semantix-card-snippet" });
         if (!keywords || keywords.length === 0) {
@@ -261,7 +195,18 @@ export class RadarView extends ItemView implements HoverParent {
             return;
         }
 
-        const escaped = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+        const escaped = [...new Set(keywords)]
+            .filter(k => k.length >= 2)
+            .sort((a, b) => b.length - a.length)
+            .map(k => {
+                const left = /^[a-zA-Z0-9_]/.test(k) ? '(?<![a-zA-Z0-9_])' : '';
+                const right = /[a-zA-Z0-9_]$/.test(k) ? '(?![a-zA-Z0-9_])' : '';
+                return left + k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + right;
+            });
+        if (!escaped.length) {
+            p.setText(snippet);
+            return;
+        }
         const regex = new RegExp(`(${escaped.join('|')})`, 'gi');
         const parts = snippet.split(regex);
 
@@ -275,7 +220,7 @@ export class RadarView extends ItemView implements HoverParent {
         }
     }
 
-    private renderCardList(container: HTMLElement, items: RadarCardItem[], emptyText: string, keywords: string[] = []) {
+    private renderCardList(container: HTMLElement, items: RadarCardItem[], emptyText: string) {
         if (!container) return;
         container.empty();
 
@@ -338,7 +283,7 @@ export class RadarView extends ItemView implements HoverParent {
             }
 
             // 内容行 (摘要行，高亮关键词与自适应降噪)
-            this.renderHighlightedSnippet(card, item.snippet, keywords);
+            this.renderHighlightedSnippet(card, item.snippet, item.matched_terms || []);
 
             // 底部行 (召回原因标签行：严格限制至多展示 1 个高熵徽章)
             if (item.labels && item.labels.length > 0) {

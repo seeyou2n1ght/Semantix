@@ -1,7 +1,7 @@
 import logging
 import os
 from typing import List, Dict, Any, Optional
-import jieba
+from services.lexical import query_terms, highlight_terms
 from storage.lancedb_storage import LanceDBStorage
 from services.embedding_service import EmbeddingService, embedding_service
 from config import ranking_config
@@ -25,6 +25,7 @@ class RetrievalCandidate:
         full_path: str,
         hit_count: int = 1,
         rrf_score: float = 0.0,
+        matched_terms: Optional[List[str]] = None,
     ):
         self.path = path
         self.title = title
@@ -38,6 +39,7 @@ class RetrievalCandidate:
         self.full_path = full_path
         self.hit_count = hit_count
         self.rrf_score = rrf_score
+        self.matched_terms = matched_terms or []
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -113,6 +115,8 @@ class RetrievalService:
         exclude_paths: Optional[List[str]] = None,
         candidate_limit: int = 40,
         min_similarity: float = 0.0,
+        enable_adaptive_filtering: bool = True,
+        custom_stopwords: Optional[List[str]] = None,
     ) -> List[RetrievalCandidate]:
         """
         执行 Vector 与 FTS 独立召回并通过标准 Reciprocal Rank Fusion (RRF) 融合。
@@ -144,13 +148,13 @@ class RetrievalService:
 
             # 2. 独立全文检索召回 (FTS/BM25 Recall)
             fts_rows: List[Dict[str, Any]] = []
-            clean_query = query_text.strip() if query_text else ""
-            if clean_query:
-                vault_stops = self.storage.get_vault_stopwords(vault_id)
-                tokens = [t for t in jieba.cut(clean_query) if t.strip()]
-                filtered = [t for t in tokens if t.lower() not in vault_stops]
+            stops = set(custom_stopwords or [])
+            if enable_adaptive_filtering:
+                stops.update(self.storage.get_vault_stopwords(vault_id))
+            terms = query_terms(query_text or "", stops)
+            if terms:
                 try:
-                    fts_search_str = " ".join(filtered or tokens)
+                    fts_search_str = " ".join(terms)
                     fts_query = self.storage.table.search(fts_search_str, query_type="fts").limit(fetch_limit)
                     fts_rows = fts_query.where(filter_expr).to_list()
                 except Exception as e:
@@ -169,11 +173,14 @@ class RetrievalService:
             )
 
             # 4. 执行 RRF 融合与文档分块聚合
-            return self._fuse_and_aggregate(
+            candidates = self._fuse_and_aggregate(
                 vector_rows=guarded_vector_rows,
                 fts_rows=guarded_fts_rows,
                 min_similarity=min_similarity,
             )
+            for candidate in candidates:
+                candidate.matched_terms = highlight_terms(query_text or "", candidate.snippet, terms)
+            return candidates
         except Exception as e:
             logger.error("Error during candidate retrieval: %s", e)
             return []

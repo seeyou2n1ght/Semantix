@@ -97,11 +97,11 @@ The repository is organized with the Obsidian plugin as the root primary product
 
 1. The frontend creates a `context_id` and monotonically increasing local search ID.
 2. The backend embeds the query with `为这个句子生成表示以用于检索相关文章：`.
-3. Vector and FTS results are fused and aggregated by document. Radar requests use the configured 45-candidate recall limit.
+3. FTS uses engine-owned function-word filtering plus request-scoped custom stopwords and optional Vault stopwords. With no effective terms it is skipped; embedding and reranking retain the original semantic text. Vector and FTS results are fused and aggregated by document. Radar requests use the configured 45-candidate recall limit.
 4. `fast` skips CrossEncoder; `balanced` reranks up to 16 candidates; `high_quality` reranks up to 20.
 5. Related combines normalized semantic, reranker, and lexical evidence, with bounded folder/tag bonuses.
 6. Discover applies a relevance gate, excludes near-duplicates and Related results, applies diversity penalties/bridges, then selects with MMR.
-7. The response echoes `context_id`; the frontend discards stale IDs before rendering.
+7. Each card includes `matched_terms`: a bounded set of informative overlaps in its displayed snippet, indicating lexical overlap rather than semantic attribution. Display-only weak-word filtering and 2+1-character Chinese compound recovery do not change recall terms or ranking weights. Missing evidence yields plain text. The response echoes `context_id`; the frontend discards stale IDs before rendering.
 
 Explicit whole-note scans split the cleaned note into bounded text parts, search each part with its own echoed context ID, show completed-part progress, and merge the highest-scoring card per path. A failed part leaves the previous cards marked stale instead of presenting partial results as complete.
 

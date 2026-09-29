@@ -184,6 +184,8 @@ export class RadarEngine {
                     top_k_discover: this.plugin.settings.topNResults || 4,
                     ranking_mode: this.plugin.settings.rankingMode || 'balanced',
                     exclude_paths: excludes,
+                    enable_adaptive_filtering: this.plugin.settings.enableAdaptiveFiltering,
+                    custom_stopwords: (this.plugin.settings.customStopwords || '').split(/[\s,，]+/).filter(Boolean),
                     mmr_lambda: this.plugin.settings.mmrLambda ?? 0.65
                 });
                 if (searchId !== this.currentSearchId) return;

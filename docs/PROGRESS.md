@@ -4,6 +4,10 @@ This document records current state, gaps, priorities, near-term evidence, and r
 
 ## Current objective
 
+2026-09-30 0.11.0 scope: release the engine-owned lexical filtering, per-card highlight evidence, truthful adaptive-stopword statistics, and display-only highlight quality refinements. The prior eight-query real-model comparison did not justify changing global ranking weights. Full backend tests (34), plugin lint/build, and radar/highlight regression passed before release. After backing up and loading the build in Obsidian 1.13.7, live recalculation reported 594 notes and a 179-note cutoff, with four adaptive words. A real query returned complete 树莓派/阿里云 terms; a generic query returned cards without weak-word highlights. The plugin remained connected with one Radar view after cleanup. This validates the revised UI/contract on the real Vault, not broad relevance gains.
+
+2026-09-29 lexical filtering and highlighting: function-word filtering now lives in the engine; each request carries the adaptive-filter toggle and custom stopwords. An empty filtered query skips FTS while retaining the original semantic query. Cards carry filtered terms present in their own snippet, and the UI no longer selects query words by length. English token boundaries prevent substring highlights; retained cards without current evidence lose old highlights, and whole-note merges retain the winning card's evidence. Existing indexes need no rebuild. Older engines without `matched_terms` display plain snippets. Validation: 34 engine tests, frontend radar/highlight regression, lint, build, and whitespace checks passed with no test warnings. Adaptive document-frequency thresholds and ranking weights remain unchanged. Follow-up real-Vault acceptance verified request filtering settings, echoed context IDs, and backend-provided terms rendered as highlights in Obsidian 1.13.7 after backing up and reloading the approved build. A 593-document / 14,851-chunk snapshot independently reproduced exactly four adaptive words at the 30% threshold (178 documents). Eight exploratory real-model probes compared lexical filtering and weights: reducing lexical weight to 0.10 did not resolve generic-query noise, and raising reranker weight to 0.60 displaced a directly targeted note from the top four. Retain current weights pending labeled cross-topic evaluation. This is a small technical-topic probe set, not a relevance or latency benchmark.
+
 Measure real-Vault relevance and latency for the retrieval changes before further ranking or performance tuning.
 
 2026-09-24 0.10.0 scope: publish the sidecar lifecycle repair, lexical recall fixes, and sidebar/whole-note interaction work together. Plugin and engine versions are synchronized by `npm run version -- minor`; release checks verify both. Controlled Obsidian UI and automated checks support the interaction changes, while real-model relevance, end-to-end speed, touch interaction, and large-note latency remain follow-up evidence work.
@@ -84,7 +88,7 @@ Resolve Q1-Q3 in `ARCHITECTURE.md` before claiming mobile support, enforcing ver
 
 - Full indexing is frontend-driven; closing Obsidian resets in-memory progress.
 - First model load and large Vault indexing depend on local hardware and model cache state.
-- CI configuration has local validation; the first GitHub-hosted run remains external evidence.
+- GitHub-hosted release CI passed for 0.10.0; subsequent releases require their own run to confirm the published assets.
 - Release tags use the exact numeric manifest version; GitHub Actions builds the three Obsidian assets from that tag.
 
 ## Next order

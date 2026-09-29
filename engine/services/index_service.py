@@ -137,10 +137,14 @@ class IndexService:
         return tokens
 
     def compute_vault_stopwords(self, vault_id: str, threshold: float = 0.3) -> List[str]:
-        """计算 Vault 自适应停用词并按 vault_id 物理隔离存储"""
+        """计算 Vault 自适应停用词并按 vault_id 物理隔离存储。"""
+        return self.compute_vault_stopword_details(vault_id, threshold)["words"]
+
+    def compute_vault_stopword_details(self, vault_id: str, threshold: float = 0.3) -> Dict[str, Any]:
+        """Return the exact denominator and cutoff used by this calculation."""
         if self.storage.table is None or self.storage.table.count_rows() == 0:
             self.storage.set_vault_stopwords(vault_id, [])
-            return []
+            return {"words": [], "total_docs": 0, "min_doc_freq": 0, "threshold": threshold}
         try:
             where_clause = f"vault_id = '{self.storage._escape_sql_string(vault_id)}'"
             rows = self.storage.table.search().where(where_clause).limit(None).select(["text", "path"]).to_list()
@@ -159,11 +163,11 @@ class IndexService:
                 doc_words[path] = set(self._extract_tokens(combined))
 
             total_docs = len(doc_words)
+            min_doc_freq = max(2, math.ceil(total_docs * threshold))
             if total_docs < 2:
                 self.storage.set_vault_stopwords(vault_id, [])
-                return []
+                return {"words": [], "total_docs": total_docs, "min_doc_freq": min_doc_freq, "threshold": threshold}
 
-            min_doc_freq = max(2, math.ceil(total_docs * threshold))
             df_counter = Counter()
             for words in doc_words.values():
                 df_counter.update(words)
@@ -174,7 +178,7 @@ class IndexService:
                 len(noise_words), vault_id, total_docs, min_doc_freq
             )
             self.storage.set_vault_stopwords(vault_id, noise_words)
-            return noise_words
+            return {"words": noise_words, "total_docs": total_docs, "min_doc_freq": min_doc_freq, "threshold": threshold}
         except Exception as e:
             logger.error("Error computing vault stopwords: %s", e)
             raise

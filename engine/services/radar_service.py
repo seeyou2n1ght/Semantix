@@ -34,6 +34,8 @@ class RadarPipeline:
         top_k_discover: int = 4,
         ranking_mode: str = "balanced",
         mmr_lambda: float = 0.65,
+        enable_adaptive_filtering: bool = True,
+        custom_stopwords: Optional[List[str]] = None,
     ) -> Dict[str, List[Dict[str, Any]]]:
         if not query_text or not query_text.strip():
             return {"related": [], "discover": []}
@@ -56,6 +58,8 @@ class RadarPipeline:
             vault_id=vault_id,
             query_vector=query_vector,
             query_text=query_text,
+            enable_adaptive_filtering=enable_adaptive_filtering,
+            custom_stopwords=custom_stopwords,
             exclude_paths=exclude_paths,
             candidate_limit=ranking_config.RECALL_CANDIDATE_LIMIT,
         )
@@ -128,6 +132,7 @@ class RadarPipeline:
                 "score": round(float(score), 4),
                 "labels": f.labels,
                 "matched_chunk_index": f.candidate.matched_chunk_index,
+                "matched_terms": f.candidate.matched_terms,
             }
 
         return {

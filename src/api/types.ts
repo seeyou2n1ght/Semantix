@@ -68,6 +68,8 @@ export interface RadarSearchRequest {
     ranking_mode?: 'fast' | 'balanced' | 'high_quality';
     exclude_paths?: string[];
     mmr_lambda?: number;
+    enable_adaptive_filtering?: boolean;
+    custom_stopwords?: string[];
 }
 
 export interface RadarCardItem {
@@ -78,6 +80,7 @@ export interface RadarCardItem {
     score: number;
     labels: string[];
     matched_chunk_index?: number;
+    matched_terms?: string[];
 }
 
 export interface RadarSearchResponse {

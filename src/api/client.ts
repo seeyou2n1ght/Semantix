@@ -317,7 +317,7 @@ export class ApiClient {
     /**
      * 触发启发式噪音词计算 (方案二)
      */
-    async computeStopwords(): Promise<{status: string, count: number, words: string[]} | null> {
+    async computeStopwords(): Promise<{status: string, count: number, words: string[], total_docs?: number, min_doc_freq?: number, threshold?: number} | null> {
         try {
             const res = await requestUrl({
                 url: `${this.baseUrl}/index/compute-stopwords`,
@@ -327,7 +327,7 @@ export class ApiClient {
                 body: JSON.stringify({ vault_id: this.vaultId })
             });
             if (res.status === 200 && res.json) {
-                return res.json as {status: string, count: number, words: string[]};
+                return res.json as {status: string, count: number, words: string[], total_docs?: number, min_doc_freq?: number, threshold?: number};
             }
             return null;
         } catch {

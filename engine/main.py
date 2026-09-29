@@ -122,7 +122,7 @@ def verify_token(x_semantix_token: str | None = Header(default=None)):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
-ENGINE_VERSION = "0.10.0"
+ENGINE_VERSION = "0.11.0"
 API_VERSION = "1"
 INDEX_VERSION = "1"
 
@@ -444,6 +444,8 @@ def radar_search(request: RadarSearchRequest):
         radar_result = radar_pipeline.execute(
             vault_id=request.vault_id,
             query_text=query_text,
+            enable_adaptive_filtering=request.enable_adaptive_filtering,
+            custom_stopwords=request.custom_stopwords,
             current_path=ctx.path,
             title=ctx.title,
             heading=ctx.heading,
@@ -477,8 +479,8 @@ def compute_stopwords_api(request: MaintenanceRequest):
     if not request.vault_id:
         raise HTTPException(status_code=422, detail="vault_id is required")
     try:
-        noise_words = index_service.compute_vault_stopwords(request.vault_id)
-        return {"status": "success", "count": len(noise_words), "words": noise_words}
+        details = index_service.compute_vault_stopword_details(request.vault_id)
+        return {"status": "success", "count": len(details["words"]), **details}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

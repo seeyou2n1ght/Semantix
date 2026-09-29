@@ -1,3 +1,4 @@
+require('./highlights.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -39,7 +40,7 @@ vm.runInNewContext(code, { exports: exported, require: name => modules[name] || 
     let fail = true;
     const requests = [];
     const plugin = {
-        settings: { debounceDelay: 400, topNResults: 4, rankingMode: 'fast' },
+        settings: { debounceDelay: 400, topNResults: 4, rankingMode: 'fast', enableAdaptiveFiltering: false, customStopwords: '示例，Example\n模板' },
         vaultId: 'v',
         getConnectionStatus: () => 'connected',
         app: { workspace: {
@@ -55,6 +56,8 @@ vm.runInNewContext(code, { exports: exported, require: name => modules[name] || 
     const radar = new exported.RadarEngine(plugin);
     const snapshot = { contextId: 'ctx', context: { path: 'current.md', scope: 'focus' }, cleanedText: 'query', transitionType: 'NEW_FILE' };
     await radar.executeRadarSearch(snapshot);
+    assert.equal(requests[0].enable_adaptive_filtering, false);
+    assert.deepEqual(Array.from(requests[0].custom_stopwords), ['示例', 'Example', '模板']);
     assert.equal(view.errors, 1);
     assert.equal(view.results, 0);
 
