@@ -16,6 +16,7 @@ const queries = exported.splitNoteQueries(text);
 assert(queries.length > 2);
 assert(queries.every(query => query.length <= 240));
 assert(queries.some(query => query.includes('quantum tail')));
+assert.equal(exported.splitNoteQueries(('Repeated paragraph. '.repeat(8) + '\n\n').repeat(20)).length, 1);
 
 const card = (path, score) => ({ id: path, path, score });
 const merged = exported.mergeNoteResults([

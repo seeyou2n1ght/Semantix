@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import List, Dict, Any, Optional
 from services.embedding_service import embedding_service
 from services.reranker_service import reranker_service
@@ -36,7 +37,9 @@ class RadarPipeline:
         mmr_lambda: float = 0.65,
         enable_adaptive_filtering: bool = True,
         custom_stopwords: Optional[List[str]] = None,
-    ) -> Dict[str, List[Dict[str, Any]]]:
+    ) -> Dict[str, Any]:
+        warnings: List[str] = []
+        started = time.perf_counter()
         if not query_text or not query_text.strip():
             return {"related": [], "discover": []}
 
@@ -52,8 +55,9 @@ class RadarPipeline:
 
         # 生成带 BGE 检索前缀的 Query 向量
         query_vector = embedding_service.encode_query(structured_query_text)
+        embedded = time.perf_counter()
 
-        # 2. 召回粗排候选池 (Recall 40~50 -> Doc Aggregation 25~30)
+        # 2. 分通道召回并按文档聚合候选池
         candidates = self.retrieval_svc.retrieve_candidates(
             vault_id=vault_id,
             query_vector=query_vector,
@@ -62,12 +66,15 @@ class RadarPipeline:
             custom_stopwords=custom_stopwords,
             exclude_paths=exclude_paths,
             candidate_limit=ranking_config.RECALL_CANDIDATE_LIMIT,
+            warnings=warnings,
         )
+        recalled = time.perf_counter()
+        candidate_count = len(candidates)
         if not candidates:
-            return {"related": [], "discover": []}
+            return {"related": [], "discover": [], "warnings": warnings}
 
         # 3. 根据精排模式决定 CrossEncoder 调用候选深度
-        # fast: 0; balanced: 24; high_quality: 30
+        # Only a successfully reranked shortlist competes in reranking modes.
         rerank_scores: Optional[List[float]] = None
         if ranking_mode != "fast":
             rerank_limit = (
@@ -76,7 +83,7 @@ class RadarPipeline:
                 else ranking_config.RERANK_LIMIT_BALANCED
             )
             pool_for_rerank = candidates[:rerank_limit]
-            texts_to_rerank = [c.snippet or c.title for c in pool_for_rerank]
+            texts_to_rerank = [f"[{c.full_path or c.title}]\n{c.snippet}" for c in pool_for_rerank]
             # 构造适合 CrossEncoder 的对称上下文 Query，保留标题前缀并控制在 300 字符内
             rerank_query = structured_query_text
             if len(rerank_query) > 300:
@@ -92,11 +99,18 @@ class RadarPipeline:
                     rerank_query = query_text[:300]
             try:
                 rerank_scores = reranker_service.predict_scores(rerank_query, texts_to_rerank)
+                if rerank_scores is not None:
+                    if len(rerank_scores) != len(pool_for_rerank):
+                        raise ValueError("Reranker score count does not match candidate count")
+                    candidates = pool_for_rerank
             except Exception as e:
                 logger.error("Reranking failed (%s), fallback to base semantic.", e)
                 rerank_scores = None
+            if rerank_scores is None:
+                warnings.append("reranker_unavailable")
 
         # 4. 构建标准化特征
+        reranked = time.perf_counter()
         features = FeatureBuilder.build_features(
             candidates=candidates,
             current_path=current_path,
@@ -120,6 +134,12 @@ class RadarPipeline:
             top_k=top_k_discover,
             mmr_lambda=mmr_lambda,
         )
+        logger.info(
+            "Radar stages mode=%s candidates=%d ranked=%d embed_ms=%.2f recall_ms=%.2f rerank_ms=%.2f rank_ms=%.2f warnings=%s",
+            ranking_mode, candidate_count, len(features),
+            (embedded - started) * 1000, (recalled - embedded) * 1000,
+            (reranked - recalled) * 1000, (time.perf_counter() - reranked) * 1000, warnings,
+        )
 
         # 7. 打包为字典格式
         def to_card_dict(f, channel: str) -> Dict[str, Any]:
@@ -129,6 +149,7 @@ class RadarPipeline:
                 "path": f.candidate.path,
                 "title": f.candidate.title,
                 "snippet": f.candidate.snippet,
+                "source_text": f.candidate.source_text,
                 "score": round(float(score), 4),
                 "labels": f.labels,
                 "matched_chunk_index": f.candidate.matched_chunk_index,
@@ -138,4 +159,5 @@ class RadarPipeline:
         return {
             "related": [to_card_dict(f, "related") for f in related_selected],
             "discover": [to_card_dict(f, "discover") for f in discover_selected],
+            "warnings": warnings,
         }

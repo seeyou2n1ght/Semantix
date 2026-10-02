@@ -3,6 +3,7 @@ import SemantixPlugin, { IndexingState } from '../main';
 import { RadarCardItem } from '../api/types';
 import { t } from '../i18n/helpers';
 import { PopoverPreview } from './popover-preview';
+import { findSourceLines } from '../utils/source-location';
 
 export const WHISPERER_VIEW_TYPE = "semantix-whisperer-view";
 export const RADAR_VIEW_TYPE = WHISPERER_VIEW_TYPE;
@@ -16,6 +17,10 @@ export class RadarView extends ItemView implements HoverParent {
     private scanNoteBtnEl!: HTMLButtonElement;
     private scanBarEl!: HTMLElement;
     private searchErrorEl!: HTMLElement;
+    private searchInfoEl!: HTMLElement;
+    private isSearching = false;
+    private isScanningNote = false;
+    private renderedItems = new WeakMap<HTMLElement, string>();
     private progressContainerEl!: HTMLElement;
     private progressTextEl!: HTMLElement;
     private progressCountEl!: HTMLElement;
@@ -79,12 +84,14 @@ export class RadarView extends ItemView implements HoverParent {
             attr: { "title": t('BTN_SCAN_NOTE_TOOLTIP'), "aria-label": t('BTN_SCAN_NOTE') }
         });
         this.scanNoteBtnEl.addEventListener("click", () => {
-            void this.plugin.radar.triggerNoteScan();
+            if (this.isScanningNote) this.plugin.radar.cancelSearch();
+            else void this.plugin.radar.triggerNoteScan();
         });
 
         // 实时检索微光扫描条 (常驻顶栏下方，检索时优雅渐显，无 DOM 重排跳动)
         this.scanBarEl = wrapper.createDiv({ cls: "semantix-scan-bar" });
         this.searchErrorEl = wrapper.createDiv({ cls: "semantix-search-error is-hidden", attr: { role: "alert" } });
+        this.searchInfoEl = wrapper.createDiv({ cls: "semantix-search-info is-hidden", attr: { role: "status" } });
 
         // --- 动态进度反馈条 (全量索引与增量同步，仅展示分数/计数，不展示百分比) ---
         this.progressContainerEl = wrapper.createDiv({ 
@@ -152,13 +159,21 @@ export class RadarView extends ItemView implements HoverParent {
         discover: RadarCardItem[],
         contextPath?: string,
         contextHeading?: string,
-        _queryText?: string
+        _queryText?: string,
+        warnings: string[] = [],
+        partial = false
     ) {
-        this.clearLoading();
+        if (!partial) this.clearLoading();
         this.searchErrorEl?.addClass("is-hidden");
         this.relatedContainerEl?.removeClass("is-stale");
         this.discoverContainerEl?.removeClass("is-stale");
         this.updateContextBreadcrumb(contextPath, contextHeading);
+        if (this.searchInfoEl) {
+            const messages = warnings.length ? [t('SEARCH_DEGRADED')] : [];
+            if (partial) messages.unshift(t('SEARCH_PARTIAL'));
+            this.searchInfoEl.setText(messages.join(' '));
+            this.searchInfoEl.toggleClass('is-hidden', messages.length === 0);
+        }
 
         // 渲染 Related
         this.renderCardList(this.relatedContainerEl, related, t('STREAM_RELATED_EMPTY'));
@@ -169,6 +184,7 @@ export class RadarView extends ItemView implements HoverParent {
 
     public showSearchError(retry: () => void) {
         if (!this.searchErrorEl) return;
+        this.searchInfoEl?.addClass('is-hidden');
         this.searchErrorEl.empty();
         this.searchErrorEl.createSpan({ text: t('SEARCH_FAILED') });
         const button = this.searchErrorEl.createEl('button', { text: t('SEARCH_RETRY') });
@@ -179,6 +195,9 @@ export class RadarView extends ItemView implements HoverParent {
     }
 
     public resetForContext() {
+        if (this.relatedContainerEl) this.renderedItems.delete(this.relatedContainerEl);
+        if (this.discoverContainerEl) this.renderedItems.delete(this.discoverContainerEl);
+        this.searchInfoEl?.addClass('is-hidden');
         this.searchErrorEl?.addClass('is-hidden');
         this.relatedContainerEl?.removeClass('is-stale');
         this.discoverContainerEl?.removeClass('is-stale');
@@ -222,6 +241,9 @@ export class RadarView extends ItemView implements HoverParent {
 
     private renderCardList(container: HTMLElement, items: RadarCardItem[], emptyText: string) {
         if (!container) return;
+        const signature = JSON.stringify([items, emptyText]);
+        if (this.renderedItems.get(container) === signature) return;
+        this.renderedItems.set(container, signature);
         container.empty();
 
         if (items.length === 0) {
@@ -441,17 +463,14 @@ export class RadarView extends ItemView implements HoverParent {
         if (leaf.view instanceof MarkdownView) {
             const editor = leaf.view.editor;
             editor.focus();
-            if (item.snippet) {
-                const cleanSnip = item.snippet.replace(/^\.\.\.|\.\.\.$/g, '').trim().slice(0, 25);
-                const count = editor.lineCount();
-                for (let i = 0; i < count; i++) {
-                    const line = editor.getLine(i);
-                    if (cleanSnip && line.includes(cleanSnip)) {
-                        editor.setCursor({ line: i, ch: 0 });
-                        editor.scrollIntoView({ from: { line: i, ch: 0 }, to: { line: i, ch: line.length } }, true);
-                        break;
-                    }
-                }
+            const source = item.source_text || item.snippet.replace(/^\.\.\.|\.\.\.$/g, '').trim();
+            const location = findSourceLines(editor.getValue(), source);
+            if (location) {
+                editor.setCursor({ line: location.start, ch: 0 });
+                editor.scrollIntoView({ from: { line: location.start, ch: 0 },
+                    to: { line: location.end, ch: editor.getLine(location.end).length } }, true);
+            } else {
+                new Notice(t('MATCH_POSITION_UNAVAILABLE'), 2500);
             }
         }
     }
@@ -473,6 +492,7 @@ export class RadarView extends ItemView implements HoverParent {
     }
 
     public showLoading() {
+        this.isSearching = true;
         this.searchErrorEl?.addClass('is-hidden');
         if (this.scanNoteBtnEl) this.scanNoteBtnEl.disabled = false;
         if (this.scanBarEl) {
@@ -485,12 +505,33 @@ export class RadarView extends ItemView implements HoverParent {
     }
 
     public updateNoteScanProgress(current: number, total: number) {
+        this.isScanningNote = true;
         this.statusTextEl?.setText(t('SCAN_NOTE_PROGRESS', { current, total }));
-        if (this.scanNoteBtnEl) this.scanNoteBtnEl.disabled = true;
+        if (this.scanNoteBtnEl) {
+            this.scanNoteBtnEl.disabled = false;
+            this.scanNoteBtnEl.setText(t('SCAN_STOP'));
+            this.scanNoteBtnEl.setAttribute('aria-label', t('SCAN_STOP'));
+            this.scanNoteBtnEl.setAttribute('title', t('SCAN_STOP'));
+        }
+    }
+
+    public showScanCancelled() {
+        this.clearLoading();
+        this.searchInfoEl?.setText(t('SCAN_CANCELLED'));
+        this.searchInfoEl?.removeClass('is-hidden');
+        this.relatedContainerEl?.addClass('is-stale');
+        this.discoverContainerEl?.addClass('is-stale');
     }
 
     public clearLoading() {
-        if (this.scanNoteBtnEl) this.scanNoteBtnEl.disabled = false;
+        this.isSearching = false;
+        this.isScanningNote = false;
+        if (this.scanNoteBtnEl) {
+            this.scanNoteBtnEl.disabled = false;
+            this.scanNoteBtnEl.setText(t('BTN_SCAN_NOTE'));
+            this.scanNoteBtnEl.setAttribute('aria-label', t('BTN_SCAN_NOTE'));
+            this.scanNoteBtnEl.setAttribute('title', t('BTN_SCAN_NOTE_TOOLTIP'));
+        }
         if (this.scanBarEl) {
             this.scanBarEl.removeClass("is-scanning");
         }
@@ -498,6 +539,7 @@ export class RadarView extends ItemView implements HoverParent {
     }
 
     public updateStatus(status: 'connected' | 'disconnected' | 'syncing' | 'disabled') {
+        if (this.isSearching && status === 'connected') return;
         if (!this.indicatorEl || !this.statusTextEl) return;
         this.indicatorEl.className = 'semantix-status-indicator';
         this.indicatorEl.classList.add(`status-${status}`);

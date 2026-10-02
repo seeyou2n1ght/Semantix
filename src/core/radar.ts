@@ -8,7 +8,7 @@ import { QueryChangeGate } from './query-gate';
 import { ResultStabilizer } from './result-stabilizer';
 import { mergeNoteResults, splitNoteQueries } from './note-scan';
 
-import { RadarCardItem } from '../api/types';
+import { RadarCardItem, RadarSearchRequest, RadarSearchResponse } from '../api/types';
 
 export class RadarEngine {
     plugin: SemantixPlugin;
@@ -17,6 +17,8 @@ export class RadarEngine {
     private stabilizer: ResultStabilizer;
 
     private currentSearchId: number = 0;
+    private activeSearch: { id: number; scope: string | undefined } | null = null;
+    private requestInFlight: Promise<RadarSearchResponse | null> | null = null;
     private cursorActivityTimer: number | null = null;
     public debouncedSearch: () => void;
 
@@ -62,6 +64,7 @@ export class RadarEngine {
     public onFileOpen(file: TFile | null): void {
         // 同步失效当前在途请求并清理状态
         this.currentSearchId++;
+        this.activeSearch = null;
         this.clearLoading();
         this.queryGate.reset();
         this.contextEngine.reset();
@@ -82,13 +85,32 @@ export class RadarEngine {
         }, 120);
     }
 
-    public onEditorChange(_editor: Editor, _view: MarkdownView): void {
+    private invalidateActiveSearch(): void {
+        if (!this.activeSearch) return;
+        const wasNoteScan = this.activeSearch.scope === 'note';
+        this.currentSearchId++;
+        this.activeSearch = null;
+        // The gate previously admitted a request that can no longer be displayed.
+        this.queryGate.reset();
+        this.clearLoading();
+        if (wasNoteScan) {
+            const leaf = this.plugin.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE)[0];
+            if (leaf?.view instanceof RadarView) leaf.view.showScanCancelled();
+        }
+    }
+
+    public onEditorChange(_editor: Editor, view: MarkdownView): void {
+        if (view !== this.getCurrentMarkdownView()) return;
+        this.invalidateActiveSearch();
         this.debouncedSearch();
     }
 
     public onCursorActivity(): void {
         const view = this.getCurrentMarkdownView();
         if (!view || !view.file) return;
+        // Moving the cursor does not change the text of an explicit whole-note scan.
+        if (this.activeSearch?.scope === 'note') return;
+        this.invalidateActiveSearch();
 
         if (this.cursorActivityTimer !== null) {
             window.clearTimeout(this.cursorActivityTimer);
@@ -104,6 +126,7 @@ export class RadarEngine {
      * 核心触发逻辑：Focus 模式
      */
     private async handleFocusTrigger(isJump: boolean = false) {
+        if (this.activeSearch?.scope === 'note') return;
         const view = this.getCurrentMarkdownView();
         if (!view || !view.file) return;
 
@@ -126,6 +149,10 @@ export class RadarEngine {
      * 用户主动点击“扫描整篇” (Note Mode)
      */
     public async triggerNoteScan() {
+        if (this.cursorActivityTimer !== null) {
+            window.clearTimeout(this.cursorActivityTimer);
+            this.cursorActivityTimer = null;
+        }
         const view = this.getCurrentMarkdownView();
         if (!view || !view.file) return;
 
@@ -133,6 +160,28 @@ export class RadarEngine {
         if (!snapshot) return;
 
         await this.executeRadarSearch(snapshot);
+    }
+
+    public cancelSearch(): void {
+        this.invalidateActiveSearch();
+        const leaf = this.plugin.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE)[0];
+        if (leaf?.view instanceof RadarView) leaf.view.showScanCancelled();
+    }
+
+    private async requestLatest(request: RadarSearchRequest, searchId: number): Promise<RadarSearchResponse | null> {
+        // requestUrl cannot cancel model inference. Keep one request in flight and
+        // discard superseded waiters before they reach the engine.
+        if (this.requestInFlight) {
+            try { await this.requestInFlight; } catch { /* The owning search reports failure. */ }
+        }
+        if (searchId !== this.currentSearchId) return null;
+        const pending = this.plugin.apiClient.radarSearch(request);
+        this.requestInFlight = pending;
+        try {
+            return await pending;
+        } finally {
+            if (this.requestInFlight === pending) this.requestInFlight = null;
+        }
     }
 
     /**
@@ -153,11 +202,14 @@ export class RadarEngine {
      */
     private async executeRadarSearch(snapshot: ContextSnapshot) {
         const searchId = ++this.currentSearchId;
+        this.activeSearch = null;
         if (this.plugin.getConnectionStatus() !== 'connected') {
+            this.clearLoading();
             this.showSearchError(snapshot);
             return;
         }
 
+        this.activeSearch = { id: searchId, scope: snapshot.context.scope };
         this.showLoading();
 
         let excludes: string[] = snapshot.context.path ? [snapshot.context.path] : [];
@@ -176,7 +228,7 @@ export class RadarEngine {
             const responses = [];
             for (const [index, query] of queries.entries()) {
                 const contextId = queries.length === 1 ? snapshot.contextId : `${snapshot.contextId}#${index}`;
-                const response = await this.plugin.apiClient.radarSearch({
+                const response = await this.requestLatest({
                     vault_id: this.plugin.vaultId,
                     context_id: contextId,
                     context: { ...snapshot.context, text: query },
@@ -187,7 +239,7 @@ export class RadarEngine {
                     enable_adaptive_filtering: this.plugin.settings.enableAdaptiveFiltering,
                     custom_stopwords: (this.plugin.settings.customStopwords || '').split(/[\s,，]+/).filter(Boolean),
                     mmr_lambda: this.plugin.settings.mmrLambda ?? 0.65
-                });
+                }, searchId);
                 if (searchId !== this.currentSearchId) return;
                 if (!response) {
                     this.showSearchError(snapshot);
@@ -198,7 +250,17 @@ export class RadarEngine {
                     return;
                 }
                 responses.push(response);
-                if (snapshot.context.scope === 'note') this.showNoteScanProgress(index + 1, queries.length);
+                if (snapshot.context.scope === 'note') {
+                    const currentView = this.getCurrentMarkdownView();
+                    if (!currentView || currentView.file?.path !== snapshot.context.path
+                        || this.contextEngine.captureNoteSnapshot(currentView)?.cleanedText !== snapshot.cleanedText) return;
+                    if (index + 1 < queries.length) {
+                        const partial = mergeNoteResults(responses, this.plugin.settings.topNResults || 4);
+                        this.renderResults(partial.related, partial.discover, snapshot.context.path,
+                            snapshot.context.heading, undefined, partial.warnings, true);
+                    }
+                    this.showNoteScanProgress(index + 1, queries.length);
+                }
             }
             const response = responses.length === 1 ? responses[0]
                 : { context_id: snapshot.contextId, ...mergeNoteResults(responses, this.plugin.settings.topNResults || 4) };
@@ -218,7 +280,7 @@ export class RadarEngine {
             }
 
             if (response) {
-                // 通过 ResultStabilizer 实现双 Policy 平滑替换与标签锁定
+                // Keep current cards in stable positions without retaining old evidence.
                 const stabilized = this.stabilizer.stabilize(
                     response.related || [],
                     response.discover || [],
@@ -230,7 +292,8 @@ export class RadarEngine {
                     stabilized.discover,
                     snapshot.context.path,
                     snapshot.context.heading,
-                    snapshot.context.scope === 'note' ? undefined : snapshot.cleanedText
+                    snapshot.context.scope === 'note' ? undefined : snapshot.cleanedText,
+                    response.warnings
                 );
             }
         } catch (e) {
@@ -238,6 +301,7 @@ export class RadarEngine {
             if (searchId === this.currentSearchId) this.showSearchError(snapshot);
         } finally {
             if (searchId === this.currentSearchId) {
+                this.activeSearch = null;
                 this.clearLoading();
             }
         }
@@ -273,7 +337,9 @@ export class RadarEngine {
         discover: RadarCardItem[],
         contextPath?: string,
         contextHeading?: string,
-        queryText?: string
+        queryText?: string,
+        warnings?: string[],
+        partial = false
     ) {
         const leaves = this.plugin.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE);
         if (leaves.length === 0) return;
@@ -284,7 +350,9 @@ export class RadarEngine {
                 discover,
                 contextPath,
                 contextHeading,
-                queryText
+                queryText,
+                warnings,
+                partial
             );
         }
     }

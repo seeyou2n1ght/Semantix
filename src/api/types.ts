@@ -77,6 +77,7 @@ export interface RadarCardItem {
     path: string;
     title: string;
     snippet: string;
+    source_text?: string;
     score: number;
     labels: string[];
     matched_chunk_index?: number;
@@ -87,6 +88,7 @@ export interface RadarSearchResponse {
     context_id: string;
     related: RadarCardItem[];
     discover: RadarCardItem[];
+    warnings?: string[];
 }
 
 export interface HealthResponse {

@@ -92,7 +92,9 @@ class RerankerService:
 
         pairs = [[query, text] for text in texts]
         try:
-            raw_scores = self._model.predict(pairs)
+            # CrossEncoder defaults to Sigmoid for a single label. The ranking
+            # normalizer owns that conversion, so both inference paths need logits.
+            raw_scores = self._model.predict(pairs, activation_fn=torch.nn.Identity())
             return [float(s) for s in raw_scores]
         except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
             if self.active_device and self.active_device != "cpu":
@@ -105,10 +107,9 @@ class RerankerService:
                     torch.cuda.empty_cache()
                 if hasattr(self._model, "model"):
                     self._model.model = self._model.model.to("cpu")
-                self._model.device = torch.device("cpu")
                 self.active_device = "cpu"
                 device_manager.mark_fallback("reranker", f"Runtime inference failure: {e}")
-                raw_scores = self._model.predict(pairs)
+                raw_scores = self._model.predict(pairs, activation_fn=torch.nn.Identity())
                 return [float(s) for s in raw_scores]
             raise
 

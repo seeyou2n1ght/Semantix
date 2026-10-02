@@ -1,4 +1,5 @@
 require('./highlights.cjs');
+require('./source-location.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -9,11 +10,17 @@ class RadarView {
     errors = 0;
     results = 0;
     progress = [];
+    partialResults = 0;
+    cancelled = 0;
     showLoading() {}
     clearLoading() {}
     showSearchError() { this.errors++; }
     updateNoteScanProgress(current, total) { this.progress.push([current, total]); }
-    renderRadarResults() { this.results++; }
+    renderRadarResults(_r, _d, _p, _h, _q, _w, partial) {
+        if (partial) this.partialResults++;
+        else this.results++;
+    }
+    showScanCancelled() { this.cancelled++; }
 }
 class MarkdownView {}
 
@@ -28,11 +35,12 @@ const modules = {
     '@codemirror/view': {},
     '../ui/radar-view': { RADAR_VIEW_TYPE: 'radar', RadarView },
     './context': { ContextEngine: class {} },
-    './query-gate': { QueryChangeGate: class {} },
+    './query-gate': { QueryChangeGate: class { reset() {} } },
     './result-stabilizer': { ResultStabilizer: class { stabilize(related, discover) { return { related, discover }; } } },
     './note-scan': noteScan
 };
-vm.runInNewContext(code, { exports: exported, require: name => modules[name] || {}, console });
+vm.runInNewContext(code, { exports: exported, require: name => modules[name] || {}, console,
+    window: { setTimeout: () => 1, clearTimeout() {} } });
 
 (async () => {
     const view = new RadarView();
@@ -68,6 +76,7 @@ vm.runInNewContext(code, { exports: exported, require: name => modules[name] || 
     assert(requests.some(request => request.context.text.includes('quantum tail')));
     assert(view.progress.length > 1);
     assert.equal(view.results, 1);
+    assert(view.partialResults > 0, 'whole-note scans must show partial results before completion');
 
     let currentNote = note;
     radar.contextEngine.captureNoteSnapshot = () => currentNote;
@@ -77,5 +86,54 @@ vm.runInNewContext(code, { exports: exported, require: name => modules[name] || 
     };
     await radar.triggerNoteScan();
     assert.equal(view.results, 1, 'edited note must not render old scan results');
+
+    radar.debouncedSearch = () => {}; // Leave the next request inside its debounce window.
+    for (const event of ['edit', 'cursor', 'selection']) {
+        let complete;
+        plugin.apiClient.radarSearch = () => new Promise(resolve => { complete = resolve; });
+        const before = view.results;
+        const pending = radar.executeRadarSearch(snapshot);
+        if (event === 'edit') radar.onEditorChange({}, markdownView);
+        else radar.onCursorActivity();
+        complete({ context_id: snapshot.contextId, related: [], discover: [] });
+        await pending;
+        assert.equal(view.results, before, `${event} must invalidate before another request is sent`);
+    }
+    let complete;
+    plugin.apiClient.radarSearch = () => new Promise(resolve => { complete = resolve; });
+    const pending = radar.executeRadarSearch(snapshot);
+    const before = view.results;
+    radar.onEditorChange({}, new MarkdownView());
+    complete({ context_id: snapshot.contextId, related: [], discover: [] });
+    await pending;
+    assert.equal(view.results, before + 1, 'an inactive editor must not invalidate the active search');
+
+    const sent = [];
+    const completions = [];
+    plugin.apiClient.radarSearch = request => {
+        sent.push(request.context_id);
+        return new Promise(resolve => completions.push(() => resolve({
+            context_id: request.context_id, related: [], discover: []
+        })));
+    };
+    const first = radar.executeRadarSearch({ ...snapshot, contextId: 'first' });
+    const middle = radar.executeRadarSearch({ ...snapshot, contextId: 'middle' });
+    const latest = radar.executeRadarSearch({ ...snapshot, contextId: 'latest' });
+    assert.deepEqual(sent, ['first']);
+    completions.shift()();
+    await first;
+    await middle;
+    assert.deepEqual(sent, ['first', 'latest'], 'superseded queued contexts must not reach the engine');
+    completions.shift()();
+    await latest;
+
+    radar.contextEngine.captureNoteSnapshot = () => note;
+    sent.length = 0;
+    const scanning = radar.triggerNoteScan();
+    radar.cancelSearch();
+    completions.shift()();
+    await scanning;
+    assert.equal(sent.length, 1, 'cancel must prevent subsequent note parts');
+    assert(view.cancelled > 0);
     console.log('radar failure and note scan state passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

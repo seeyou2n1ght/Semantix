@@ -57,6 +57,7 @@ class RadarCardItem(BaseModel):
     path: str = Field(..., description="Vault relative path")
     title: str = Field(..., description="Note title")
     snippet: str = Field(..., description="Relevant context snippet")
+    source_text: Optional[str] = Field(None, description="Exact indexed child text for locating the source")
     score: float = Field(..., description="Normalized score [0, 1]")
     labels: List[str] = Field(default_factory=list, description="Machine label codes (e.g. UNLINKED, CROSS_TOPIC)")
     matched_chunk_index: Optional[int] = None
@@ -67,6 +68,7 @@ class RadarSearchResponse(BaseModel):
     context_id: str = Field(..., description="Echoed context id from frontend request")
     related: List[RadarCardItem] = Field(default_factory=list)
     discover: List[RadarCardItem] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list, description="Unavailable retrieval/reranking stages")
 
 
 # --- Status Models ---

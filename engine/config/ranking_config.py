@@ -12,6 +12,7 @@ class RankingConfig:
     # 召回与候选池深度
     RECALL_CANDIDATE_LIMIT: int = 45
     RECALL_OVERFETCH_LIMIT: int = 80
+    RECALL_MAX_ROUNDS: int = 4
     MAX_CHUNKS_PER_DOC_RECALL: int = 2
     RERANK_LIMIT_BALANCED: int = 16
     RERANK_LIMIT_HIGH_QUALITY: int = 20

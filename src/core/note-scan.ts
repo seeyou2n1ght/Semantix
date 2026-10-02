@@ -18,7 +18,9 @@ export function splitNoteQueries(text: string, maxLength = 240): string[] {
         }
     }
     if (pending) queries.push(pending);
-    return queries;
+    // Identical parts have identical request context and contribute no new
+    // evidence to the per-path max merge. Preserve first-occurrence order.
+    return [...new Set(queries)];
 }
 
 export function mergeNoteResults(responses: RadarSearchResponse[], limit: number) {
@@ -36,6 +38,7 @@ export function mergeNoteResults(responses: RadarSearchResponse[], limit: number
     const relatedPaths = new Set(selectedRelated.map(item => item.path));
     return {
         related: selectedRelated,
-        discover: sort(discover.values()).filter(item => !relatedPaths.has(item.path)).slice(0, limit)
+        discover: sort(discover.values()).filter(item => !relatedPaths.has(item.path)).slice(0, limit),
+        warnings: [...new Set(responses.flatMap(response => response.warnings || []))]
     };
 }

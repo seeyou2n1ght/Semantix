@@ -1,3 +1,4 @@
+import { findSourceLines } from '../utils/source-location';
 import { App, TFile, Keymap } from 'obsidian';
 import { RadarCardItem } from '../api/types';
 import { t } from '../i18n/helpers';
@@ -123,41 +124,21 @@ export class PopoverPreview {
             if (file instanceof TFile) {
                 app.vault.cachedRead(file).then((rawText) => {
                     if (!this.popoverEl || !this.popoverEl.contains(textEl)) return;
-                    const cleanSnip = item.snippet.replace(/^\.\.\.|\.\.\.$/g, '').trim();
-                    if (!cleanSnip || cleanSnip.length < 5) return;
-                    
-                    // 查找段落及对应的小节 Heading
-                    const lines = rawText.split('\n');
-                    let currentHeading = "";
-                    let matchedHeading = "";
-                    for (const line of lines) {
-                        const hMatch = line.match(/^#{1,6}\s+(.+)$/);
-                        if (hMatch && hMatch[1]) {
-                            currentHeading = hMatch[1].trim();
-                        }
-                        if (line.includes(cleanSnip.slice(0, 20))) {
-                            matchedHeading = currentHeading;
-                            break;
-                        }
+                    const source = item.source_text || item.snippet.replace(/^\.\.\.|\.\.\.$/g, '').trim();
+                    const location = findSourceLines(rawText, source);
+                    if (!location) return;
+                    const lines = rawText.split(/\r?\n/);
+                    let heading = '';
+                    for (let i = 0; i <= location.start; i++) {
+                        const match = lines[i]?.match(/^#{1,6}\s+(.+)$/);
+                        if (match?.[1]) heading = match[1].trim();
                     }
-
-                    if (matchedHeading && headingEl) {
-                        headingEl.setText(` › ## ${matchedHeading}`);
-                    }
-
-                    // 提取完整父级段落
-                    const anchor = cleanSnip.slice(0, 30);
-                    const paragraphs = rawText.split(/\n\s*\n/);
-                    for (const para of paragraphs) {
-                        const cleanPara = para.replace(/[#*`_~>[\]]/g, ' ').replace(/\s+/g, ' ').trim();
-                        if (cleanPara.includes(anchor) || para.includes(cleanSnip.slice(0, 20))) {
-                            const trimmed = para.trim();
-                            if (trimmed.length > item.snippet.length) {
-                                textEl.setText(trimmed);
-                            }
-                            break;
-                        }
-                    }
+                    if (heading && headingEl) headingEl.setText(` › ## ${heading}`);
+                    let start = location.start;
+                    let end = location.end;
+                    while (start > 0 && lines[start - 1]?.trim()) start--;
+                    while (end + 1 < lines.length && lines[end + 1]?.trim()) end++;
+                    textEl.setText(lines.slice(start, end + 1).join('\n').trim());
                 }).catch(() => {
                     // ignore
                 });

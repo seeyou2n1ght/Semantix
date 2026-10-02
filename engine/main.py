@@ -122,7 +122,7 @@ def verify_token(x_semantix_token: str | None = Header(default=None)):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
-ENGINE_VERSION = "0.11.1"
+ENGINE_VERSION = "0.11.2"
 API_VERSION = "1"
 INDEX_VERSION = "1"
 
@@ -471,6 +471,7 @@ def radar_search(request: RadarSearchRequest):
         context_id=request.context_id,
         related=[RadarCardItem(**item) for item in radar_result.get("related", [])],
         discover=[RadarCardItem(**item) for item in radar_result.get("discover", [])],
+        warnings=radar_result.get("warnings", []),
     )
 
 

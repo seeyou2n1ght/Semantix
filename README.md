@@ -13,7 +13,7 @@ Semantix is a local-first semantic retrieval and serendipity engine for Obsidian
 - **Dual-stream Inspiration**:
   - **Related**: Combines Vector embeddings and Full-Text Search (FTS) via Reciprocal Rank Fusion (RRF), refined with a Cross-Encoder reranker to surface directly relevant notes.
   - **Discover**: Relevance-gated candidate pool with duplicate suppression, relationship penalties, and Maximal Marginal Relevance (MMR) diversity to spark cross-topic serendipity.
-- **Real-time Writing Companion**: Context gating, keystroke debouncing, stable card ordering, popover previews, and one-click navigation to the exact paragraph.
+- **Real-time Writing Companion**: Context gating, keystroke debouncing, stable card ordering, popover previews, and navigation to a uniquely matched passage in the current note source.
 - **Local-First & Private**: All embeddings, indexing, and reranking run on your local machine. Notes never leave your device unless you explicitly configure a remote private server.
 - **Robust Vault Indexing**: Strict vault isolation, incremental syncing on save, failure-safe index retention, and graceful error recovery.
 
@@ -78,6 +78,9 @@ You can also enable **Auto-start Local Engine** in the plugin settings to have O
    - **Related**: Notes directly connected to your current paragraph.
    - **Discover**: Notes from other folders and topics that share deep conceptual echoes.
 4. Hover over any card for a quick popover preview, or click to jump directly to the referenced note.
+5. **Scan whole note** shows partial results as sections finish. **Stop scan** stops subsequent sections; an in-flight search may still finish. Failed or stopped scans keep results visibly incomplete. A separate notice identifies degraded retrieval when a search capability is unavailable.
+
+Navigation uses the complete matched text, including Markdown formatting and line breaks. If the passage changed or appears more than once, Semantix opens the note and reports that it cannot locate the match reliably.
 
 ---
 
@@ -119,12 +122,14 @@ You can also enable **Auto-start Local Engine** in the plugin settings to have O
 
 Semantix 是面向 Obsidian 的本地语义检索与灵感发现插件，在写作过程中提供强相关内容（Related）和跨主题关联（Discover）。
 
-当前版本：`v0.11.1`。桌面端本地 Sidecar 是主要工作流；代码中存在显式开启的移动端远程模式，其正式支持等级仍记录在 [PROGRESS](docs/PROGRESS.md) 中等待确认。
+当前版本：`v0.11.2`。桌面端本地 Sidecar 是主要工作流；代码中存在显式开启的移动端远程模式，其正式支持等级仍记录在 [PROGRESS](docs/PROGRESS.md) 中等待确认。
 
 ### 核心能力
 
 - **Related**：Vector + FTS 双路召回，经可选 Cross-Encoder 精排输出高相关笔记。
 - **Discover**：在相关性门控后排除 Related，通过关系特征和 MMR 提供不重复的跨主题线索。
+- **整篇扫描**：逐段展示并标明部分结果，可停止后续段落；已发送的请求可能继续完成。失败、停止与检索能力降级均有明确提示。
+- **命中定位**：按完整命中正文定位原始 Markdown 行；内容已变化或存在重复时打开笔记并提示，不猜测位置。
 - **实时编辑体验**：上下文门控、迟到响应丢弃、稳定卡片排序、悬浮预览与原文定位。
 - **可靠索引**：Vault 隔离、增量同步、失败文档保留旧索引、FTS 显式重建与有界重试。
 

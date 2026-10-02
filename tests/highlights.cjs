@@ -40,10 +40,12 @@ const stabilizer = new ResultStabilizer();
 const card = { id: 'a', path: 'a.md', labels: [], score: 0.9, matched_terms: ['old'] };
 stabilizer.stabilize([card], [], 'NEW_FILE');
 let result = stabilizer.stabilize([], [], 'SAME_PARAGRAPH');
-assert.equal(result.related.length, 1);
-assert.equal(result.related[0].matched_terms.length, 0, 'retained card must drop stale evidence');
+assert.equal(result.related.length, 0, 'obsolete cards must disappear without waiting for another response');
 result = stabilizer.stabilize([{ ...card, matched_terms: ['new'] }], [], 'SAME_PARAGRAPH');
 assert.equal(result.related[0].matched_terms[0], 'new');
+result = stabilizer.stabilize([{ ...card, labels: ['DEEP_SEMANTIC'] }], [card], 'SAME_PARAGRAPH');
+assert.equal(result.related[0].labels[0], 'DEEP_SEMANTIC');
+assert.equal(result.discover.length, 0, 'both channels must remain exclusive');
 
 const { mergeNoteResults } = load('src/core/note-scan.ts');
 const merged = mergeNoteResults([

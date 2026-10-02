@@ -1,18 +1,6 @@
 import numpy as np
 from typing import List, Callable, Any
-
-
-def cosine_similarity(v1: List[float], v2: List[float]) -> float:
-    """计算两个向量的余弦相似度（假设通常已归一化，但作防御性模长检查）"""
-    if not v1 or not v2:
-        return 0.0
-    a = np.asarray(v1, dtype=np.float32)
-    b = np.asarray(v2, dtype=np.float32)
-    norm_a = np.linalg.norm(a)
-    norm_b = np.linalg.norm(b)
-    if norm_a == 0.0 or norm_b == 0.0:
-        return 0.0
-    return float(np.dot(a, b) / (norm_a * norm_b))
+from utils.vectors import cosine_similarity
 
 
 def select_by_mmr(

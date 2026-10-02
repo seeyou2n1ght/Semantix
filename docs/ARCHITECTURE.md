@@ -36,7 +36,7 @@ Primary users run Obsidian Desktop with a local Python sidecar. A user-configure
 | --- | --- | --- |
 | Q1 | Is remote-engine mobile usage officially supported or best-effort? | Determines release claims and mobile acceptance tests. |
 | Q2 | Must plugin and engine versions match exactly, or only the API/index versions? | Determines compatibility and upgrade policy. |
-| Q3 | When reranking is unavailable, should balanced/high-quality requests fail or return an explicitly degraded result? | Determines truthful score semantics and UI behavior. |
+| Q3 | Resolved by ADR-0008: unavailable reranking returns explicitly degraded semantic results; failure of all eligible recall channels fails the request. | Keeps incomplete results distinct from a successful no-match response. |
 
 ## 2. System topology
 
@@ -95,15 +95,19 @@ The repository is organized with the Obsidian plugin as the root primary product
 
 ### Radar search
 
-1. The frontend creates a `context_id` and monotonically increasing local search ID.
+1. The frontend creates a `context_id` and monotonically increasing local search ID. Editor/cursor changes immediately invalidate in-flight Focus responses. One network search is in flight at a time; only the latest waiting context is sent next. Obsidian's transport does not cancel already-running inference.
 2. The backend embeds the query with `为这个句子生成表示以用于检索相关文章：`.
-3. FTS uses engine-owned function-word filtering plus request-scoped custom stopwords and optional Vault stopwords. With no effective terms it is skipped; embedding and reranking retain the original semantic text. Vector and FTS results are fused and aggregated by document. Radar requests use the configured 45-candidate recall limit.
-4. `fast` skips CrossEncoder; `balanced` reranks up to 16 candidates; `high_quality` reranks up to 20.
+3. FTS uses engine-owned function-word filtering plus request-scoped custom stopwords and optional Vault stopwords. With no effective terms it is skipped; embedding and reranking retain the original semantic text. Each channel targets up to 45 distinct documents, keeping at most two chunks per document. Up to four bounded batches of at least 80 rows exclude already-seen documents during refill; the channel union is then fused and aggregated. FTS-only chunks receive cosine evidence from their stored vectors and the query vector instead of an artificial zero.
+4. `fast` skips CrossEncoder; `balanced` reranks up to 16 candidates; `high_quality` reranks up to 20. Candidate text includes its semantic path/title and snippet. The model service explicitly returns raw logits; sigmoid/power normalization runs once. After successful reranking, only that shortlist competes in both streams. Unscored candidates cannot substitute semantic scores to bypass reranker rejection. If reranking is unavailable, all recalled candidates use the existing semantic fallback with a response warning.
 5. Related combines normalized semantic, reranker, and lexical evidence, with bounded folder/tag bonuses.
 6. Discover applies a relevance gate, excludes near-duplicates and Related results, applies diversity penalties/bridges, then selects with MMR.
 7. Each card includes `matched_terms`: a bounded set of informative overlaps in its displayed snippet, indicating lexical overlap rather than semantic attribution. Display-only weak-word filtering and 2+1-character Chinese compound recovery do not change recall terms or ranking weights. Missing evidence yields plain text. The response echoes `context_id`; the frontend discards stale IDs before rendering.
 
-Explicit whole-note scans split the cleaned note into bounded text parts, search each part with its own echoed context ID, show completed-part progress, and merge the highest-scoring card per path. A failed part leaves the previous cards marked stale instead of presenting partial results as complete.
+Explicit whole-note scans split the cleaned note into bounded text parts, search each part with its own echoed context ID, show completed-part progress, and merge the highest-scoring card per path. Completed parts are shown progressively with a partial-results notice. Stop prevents subsequent parts and stale rendering; the active inference may finish. A failed/cancelled scan marks displayed cards stale and never presents them as complete. Editing a note invalidates its scan, while cursor movement alone does not.
+
+The stabilizer preserves the relative positions of surviving current results, not obsolete membership or labels. Identical card payloads do not rebuild the card DOM. Optional response `warnings` distinguish degraded results from no matches; loss of all eligible recall channels raises an HTTP error. Logs split embedding, recall, reranking and ranking time without recording query text.
+
+Cards also carry the exact indexed child text as `source_text`. Navigation and preview match its complete cleaned text against current source lines, including multiline/Markdown-formatted passages. Ambiguous or changed passages have no guessed location. This uses existing index text and requires no rebuild; older engines fall back to the complete snippet.
 
 Ranking constants are defined in `engine/config/ranking_config.py`. Current notable defaults are Related weights `0.50/0.35/0.15`, Discover gate `0.45`, duplicate threshold `0.88`, and MMR lambda `0.65`. Do not duplicate these numbers in implementation.
 

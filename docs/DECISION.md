@@ -13,6 +13,7 @@ This file records durable decisions and their trade-offs. Current implementation
 | ADR-0005 | Separate monorepo source layout from the Obsidian release contract | Accepted | 2026-09-14 |
 | ADR-0006 | Position Obsidian Plugin as repository root product with Engine companion | Accepted | 2026-09-15 |
 | ADR-0007 | Flatten built plugin assets to root and enforce desktop-only contract | Accepted | 2026-09-18 |
+| ADR-0008 | Keep retrieval evidence and incomplete-result states explicit | Accepted | 2026-10-02 |
 
 ## ADR-0001: Local sidecar with explicit private-remote option
 
@@ -134,3 +135,24 @@ While ADR-0006 moved the plugin source to the repository root, `esbuild` still e
 2. Add `/main.js` and `/styles.css` to `.gitignore` to prevent generated bundle artifacts from polluting git.
 3. Update `package.json` `"main"` to `"main.js"`, and align `version-bump.mjs` and `.github/workflows/release.yml` to check and package root assets.
 4. Set `"isDesktopOnly": true` in `manifest.json` and provide `"authorUrl"` to satisfy community plugin review requirements.
+
+
+## ADR-0008: Keep retrieval evidence and incomplete-result states explicit
+
+**Status:** Accepted
+
+**Date:** 2026-10-02
+
+### Context
+
+A real-model probe found that CrossEncoder's default sigmoid output was treated as raw logits and normalized again. Candidates outside the reranked prefix substituted semantic scores for reranker evidence. Fixed chunk-depth recall could fill its budget with one long document. Whole-note scans waited for every part, and local stabilization could retain obsolete cards indefinitely without another response.
+
+### Alternatives and decision
+
+- Explicit raw logits plus one ranking conversion, instead of depending on model activation defaults or retuning weights around compressed scores.
+- A bounded reranked shortlist for balanced/high-quality modes, instead of mixing unscored candidates with reranker rejections or reranking every recalled document. This retains the 16/20 inference budgets, at the cost of omitting candidates outside the shortlist; labeled recall evaluation remains necessary.
+- Bounded refill excluding seen documents, instead of unlimited overfetch or raising a fixed chunk limit. This improves document coverage but may increase latency; the per-channel round cap is in ranking configuration.
+- Degraded semantic fallback with an additive response warning when reranking is unavailable, instead of silently reporting normal quality or failing all searches. If all eligible recall channels fail, fail the request.
+- Progressive whole-note results with explicit partial/cancelled/failed states, instead of a blank wait for all parts. Keep current result positions stable without preserving obsolete evidence.
+
+No index migration, release version change, or ranking-weight/threshold retuning is part of this decision. Broad relevance claims require a labeled real-Vault evaluation; synthetic gates and small model probes do not establish them.

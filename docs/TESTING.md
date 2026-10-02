@@ -40,6 +40,8 @@ Use `npm run version -- minor` for a minor release; the script also synchronizes
 - Discover respects its relevance gate and MMR diversity behavior on deterministic vectors.
 - Fast mode avoids reranking.
 - An unavailable reranker does not create a synthetic normalized reranker score.
+- CrossEncoder returns raw logits on normal and CPU-fallback paths; normalization is applied once. Candidates outside a successful rerank shortlist cannot bypass rejection.
+- Real temporary LanceDB tests prove bounded document refill, Vault/exclusion isolation on refill, and FTS-only cosine evidence. A failed channel reports degradation; loss of every eligible recall channel produces HTTP failure rather than an empty success.
 
 - Lexical filters honor request settings and Vault isolation; empty effective queries skip FTS without restoring noise or changing semantic input.
 - Card highlight terms occur in the displayed snippet; English substrings, missing evidence, and retained stale cards do not produce misleading highlights.
@@ -50,6 +52,9 @@ Use `npm run version -- minor` for a minor release; the script also synchronizes
 ### Frontend and lifecycle
 
 - A stale search ID or `context_id` cannot replace current sidebar results.
+- Edits/cursor changes invalidate Focus responses during debounce, before another request is sent. Superseded queued requests do not reach the engine.
+- Whole-note scans show explicitly partial results before completion and stop dispatching further parts after cancellation. Unchanged card payloads preserve DOM; result stabilization retains only current evidence.
+- `node tests/radar-state.cjs` includes source-location regression for multiline Markdown, frontmatter, duplicate passages and changed source. Unresolvable matches must not jump to a guessed line.
 - Index batch failures remain queued with bounded retry.
 - Local sidecar restart attempts are bounded and user stop suppresses automatic restart.
 - Mobile behavior matches the accepted support policy before release.

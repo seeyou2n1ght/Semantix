@@ -83,8 +83,25 @@ def test_api_passes_filters_and_returns_evidence(monkeypatch):
     assert response.status_code == 200
     assert response.json()['context_id'] == 'ctx'
     assert response.json()['related'][0]['matched_terms'] == ['api']
+    assert response.json()['warnings'] == []
     kwargs = retrieval.retrieve_candidates.call_args.kwargs
     assert kwargs['enable_adaptive_filtering'] is False
     assert kwargs['custom_stopwords'] == ['example']
     assert kwargs['query_text'] == '因为 API'
     encode.assert_called_once_with('因为 API')
+
+
+def test_api_reports_degradation_and_total_failure(monkeypatch):
+    from fastapi.testclient import TestClient
+    import main
+
+    pipeline = MagicMock()
+    pipeline.execute.return_value = {'related': [], 'discover': [], 'warnings': ['lexical_unavailable']}
+    monkeypatch.setattr(main, 'radar_pipeline', pipeline)
+    client = TestClient(main.app)
+    payload = {'vault_id': 'a', 'context_id': 'ctx', 'context': {'text': 'docker'}}
+    response = client.post('/search/radar', json=payload)
+    assert response.status_code == 200
+    assert response.json()['warnings'] == ['lexical_unavailable']
+    pipeline.execute.side_effect = RuntimeError('No retrieval channel is available')
+    assert client.post('/search/radar', json=payload).status_code == 500
