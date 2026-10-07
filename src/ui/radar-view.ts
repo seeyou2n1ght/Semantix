@@ -583,5 +583,3 @@ export class RadarView extends ItemView implements HoverParent {
         // 保留接口兼容性
     }
 }
-
-export { RadarView as WhispererView };

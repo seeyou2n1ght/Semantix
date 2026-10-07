@@ -7,8 +7,6 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class RankingConfig:
-    PROFILE_VERSION: str = "v2.0"
-
     # 召回与候选池深度
     RECALL_CANDIDATE_LIMIT: int = 45
     RECALL_OVERFETCH_LIMIT: int = 80
@@ -50,7 +48,5 @@ class RankingConfig:
     LABEL_CROSS_DOMAIN_MIN_REL: float = 0.50
 
 
-# 全局默认单例与向后兼容别名
+# Shared ranking configuration
 ranking_config = RankingConfig()
-RankingProfileV1 = RankingConfig
-RankingProfile = RankingConfig

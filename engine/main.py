@@ -28,7 +28,7 @@ from models import (
 from services.embedding_service import embedding_service
 from services.reranker_service import reranker_service
 from services.device_service import device_manager
-from services.database_service import db_svc, storage, index_service, radar_pipeline
+from services.database_service import storage, index_service, radar_pipeline
 
 API_TOKEN = os.getenv("SEMANTIX_API_TOKEN", "").strip() or None
 ALLOWED_ORIGINS = [
@@ -122,7 +122,7 @@ def verify_token(x_semantix_token: str | None = Header(default=None)):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
-ENGINE_VERSION = "0.11.2"
+ENGINE_VERSION = "0.11.3"
 API_VERSION = "1"
 INDEX_VERSION = "1"
 
@@ -136,9 +136,9 @@ def maintenance_worker() -> None:
             now = time.time()
             if now - last_run > 86400:
                 retention = int(METRICS.get("current_retention_days", 7))
-                db_svc.optimize_database(retention_days=retention)
+                storage.optimize_database(retention_days=retention)
                 METRICS["last_maintenance_at"] = datetime.now().isoformat()
-                METRICS["db_size_bytes"] = db_svc.get_storage_metrics()
+                METRICS["db_size_bytes"] = storage.get_storage_metrics()
                 last_run = now
         except Exception as e:
             logger.error("Error in maintenance worker: %s", e)
@@ -161,7 +161,7 @@ async def lifespan(app_instance: FastAPI):
     yield
     if not is_testing:
         logger.info("Semantix backend service is shutting down...")
-        db_svc.close()
+        storage.close()
 
 
 # Initialize FastAPI app
@@ -208,6 +208,16 @@ def health_check():
     active_dev = getattr(reranker_service, "active_device", None) or getattr(embedding_service, "active_device", None)
     hardware_info = device_manager.get_device_info(active_device=active_dev)
 
+    if embedding_service.load_error is not None:
+        return {
+            "status": "error",
+            "message": "Embedding model failed to load. Check the engine logs and restart after correcting the cause.",
+            "engine_version": ENGINE_VERSION,
+            "api_version": API_VERSION,
+            "embedding_model": embedding_service.model_name,
+            "index_version": INDEX_VERSION,
+            "hardware": hardware_info,
+        }
     if not embedding_service.is_ready:
         return {
             "status": "loading",
@@ -246,20 +256,20 @@ def readiness_check():
 @app.get("/index/status", response_model=IndexStatusResponse, tags=["Index"])
 def get_index_status(vault_id: str = "default"):
     """Get statistics about the current index."""
-    count = db_svc.count_notes(vault_id=vault_id)
+    count = storage.count_notes(vault_id=vault_id)
     return IndexStatusResponse(
         total_notes=count, 
         last_updated=METRICS["last_index_at"], 
         vault_id=vault_id,
-        vault_stopwords=list(db_svc.get_vault_stopwords(vault_id))
+        vault_stopwords=list(storage.get_vault_stopwords(vault_id))
     )
 
 
 @app.get("/metrics", response_model=MetricsResponse, tags=["Status"])
 def get_metrics(vault_id: Optional[str] = None):
     # Õ«×µùÂÕêÀµû░µò░µì«Õ║ôÕñºÕ░Åµîçµáç
-    METRICS["db_size_bytes"] = db_svc.get_storage_metrics()
-    return MetricsResponse(**{**METRICS, "total_indexed_docs": db_svc.count_notes(vault_id)})
+    METRICS["db_size_bytes"] = storage.get_storage_metrics()
+    return MetricsResponse(**{**METRICS, "total_indexed_docs": storage.count_notes(vault_id)})
 
 @app.post("/maintenance/run", tags=["Maintenance"])
 def run_maintenance(request: Optional[MaintenanceRequest] = None):
@@ -268,10 +278,10 @@ def run_maintenance(request: Optional[MaintenanceRequest] = None):
         # õ┐ØÕ¡ÿÕ«ÜµùÂþ╗┤µèñþ¡ûþòÑ´╝øµëïÕè¿µôìõ¢£µ£¼µ¼íõ╗ìõ╗Ñ 0 Õñ®ÚÿêÕÇ╝þ½ïÕì│Õø×µöÂþ®║Úù┤ÒÇé
         if request is not None:
             METRICS["current_retention_days"] = max(0, request.retention_days)
-        db_svc.optimize_database(retention_days=0)
+        storage.optimize_database(retention_days=0)
         
         METRICS["last_maintenance_at"] = datetime.now().isoformat()
-        METRICS["db_size_bytes"] = db_svc.get_storage_metrics()
+        METRICS["db_size_bytes"] = storage.get_storage_metrics()
         
         return {"status": "ok", "message": "Manual maintenance completed."}
     except Exception as e:
@@ -406,7 +416,7 @@ def confirm_clear_index(request: ClearIndexConfirmRequest):
     if datetime.now() > pending_request["expires_at"]:
         raise HTTPException(status_code=400, detail="Confirmation token expired")
 
-    db_svc.clear_vault(clean_vault_id)
+    storage.clear_vault(clean_vault_id)
     scope = f"vault '{clean_vault_id}'"
 
     logger.warning(

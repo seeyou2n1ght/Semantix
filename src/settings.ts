@@ -353,7 +353,8 @@ export class SemantixSettingTab extends PluginSettingTab {
         } else {
             dotEl.addClass('dot-disconnected');
             titleTextEl.setText(`Semantix · ${t('STATUS_BANNER_DISCONNECTED')}`);
-            descEl.setText(t('STATUS_BANNER_DISCONNECTED_DESC'));
+            descEl.setText(health?.status === 'error' || health?.status === 'loading'
+                ? health.message : t('STATUS_BANNER_DISCONNECTED_DESC'));
         }
 
         const checkBtn = bannerEl.createEl('button', {

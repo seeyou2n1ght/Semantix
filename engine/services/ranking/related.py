@@ -31,9 +31,12 @@ class RelatedRanker:
             # 亲和度轻量微调 (同目录/标签轻微加权)
             bonus = 0.0
             if feat.is_same_folder:
-                bonus += 0.02
+                bonus += ranking_config.RELATED_SAME_FOLDER_BOOST
             if feat.tag_overlap > 0:
-                bonus += min(feat.tag_overlap * 0.01, 0.03)
+                bonus += min(
+                    feat.tag_overlap * ranking_config.RELATED_TAG_OVERLAP_BOOST,
+                    ranking_config.RELATED_MAX_TAG_BOOST,
+                )
 
             feat.relevance_score = min(1.0, relevance + bonus)
 

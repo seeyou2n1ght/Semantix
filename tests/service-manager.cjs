@@ -22,7 +22,7 @@ const cp = {
 };
 const modules = {
     obsidian: { Platform: { isDesktop: true, isWin: true }, Notice: class {} },
-    '../api/client': { HealthStatus: { READY: 'ready', LOADING: 'loading', NONE: 'none' } },
+    '../api/client': { HealthStatus: { READY: 'ready', LOADING: 'loading', ERROR: 'error', NONE: 'none' } },
     '../utils/node-adapter': {
         getElectronNodeModule(name) { return { child_process: cp,
             fs: { existsSync: file => file === path.join(__dirname, '../engine/.venv/Scripts/python.exe') },
@@ -104,5 +104,14 @@ vm.runInNewContext(code, {
         assert.equal(savedUrl, undefined);
         assert.ok(statuses.some(message => message.includes('启动失败')));
     }
-    console.log('service manager startup and owned-process stop passed');
+    spawned = null;
+    const commandCount = commands.length;
+    plugin.apiClient.checkFullHealth = async () => 'error';
+    plugin.apiClient.lastHealthResponse = { status: 'error', message: 'Controlled model load failure' };
+    await manager.start({ force: true });
+    assert.equal(spawned, null, 'a failed live engine must not spawn a duplicate');
+    assert.equal(commands.length, commandCount, 'an initialization failure must not kill an external process');
+    assert.equal(manager.getLastStatus(), 'Controlled model load failure');
+    assert.equal(manager.isActivating(), false);
+    console.log('service manager startup, failed-model state and owned-process stop passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

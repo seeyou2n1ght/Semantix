@@ -375,5 +375,3 @@ export class RadarEngine {
         }
     }
 }
-
-export { RadarEngine as Whisperer };

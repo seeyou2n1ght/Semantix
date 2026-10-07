@@ -13,6 +13,7 @@ import {
 } from './types';
 
 export enum HealthStatus {
+    ERROR = "ERROR",       // Semantix responded with a permanent initialization failure.
     READY = "READY",       // µêæõ╗¼þÜäÕÉÄþ½»ÕÀ▓Õ░▒þ╗¬
     LOADING = "LOADING",   // µêæõ╗¼þÜäÕÉÄþ½»µ¡úÕ£¿ÕèáÞ¢¢µ¿íÕ×ï
     CONFLICT = "CONFLICT", // þ½»ÕÅúÞó½Õìáþö¿´╝êÚØ×µ£¼µÅÆõ╗ÂÕÉÄþ½»µêûµ£¬þƒÑÕôìÕ║ö´╝ë
@@ -83,6 +84,10 @@ export class ApiClient {
                     if (isSemantix && healthData.status === 'loading') {
                         this.lastHealthResponse = healthData;
                         return HealthStatus.LOADING;
+                    }
+                    if (isSemantix && healthData.status === 'error') {
+                        this.lastHealthResponse = healthData;
+                        return HealthStatus.ERROR;
                     }
                 }
                 this.lastHealthResponse = null;

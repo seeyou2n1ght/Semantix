@@ -268,7 +268,7 @@ export default {
     STARTUP_FAILED: "后端启动失败 ❌ ",
 
     // 视图相关 (Views)
-    VIEW_WHISPERER_TITLE: "Semantix 灵感雷达",
+    VIEW_WHISPERER_TITLE: "Semantix",
     WHISPERER_HEADER: "Semantix",
     STREAM_RELATED_TITLE: "RELATED",
     STREAM_RELATED_TOOLTIP: "与当前输入高度相关的笔记与段落",

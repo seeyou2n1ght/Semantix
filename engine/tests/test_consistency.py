@@ -15,6 +15,34 @@ from services.index_service import IndexService
 from config import ranking_config
 
 
+def test_empty_batch_document_removes_only_its_vault(tmp_path, monkeypatch):
+    import main
+    from fastapi.testclient import TestClient
+    from types import SimpleNamespace
+    from storage.lancedb_storage import LanceDBStorage
+
+    storage = LanceDBStorage(str(tmp_path / "empty"), dim=2)
+    service = IndexService(storage, SimpleNamespace(encode=lambda texts: [[1., 0.] for _ in texts]))
+    monkeypatch.setattr(main, "storage", storage)
+    monkeypatch.setattr(main, "index_service", service)
+    monkeypatch.setattr(storage, "maybe_rebuild_fts_index", lambda: None)
+    client = TestClient(main.app)
+    response = client.post("/index/batch", json={"documents": [
+        {"vault_id": vault, "path": "same.md", "text": "valid note"} for vault in ["a", "b"]
+    ]})
+    assert response.status_code == 200
+    assert storage.count_notes("a") == storage.count_notes("b") == 1
+    response = client.post("/index/batch", json={"documents": [
+        {"vault_id": "a", "path": "same.md", "text": ""}
+    ]})
+    assert response.status_code == 200
+    assert response.json()["indexed"] == 1
+    assert response.json()["failed_paths"] == []
+    assert storage.count_notes("a") == 0
+    assert storage.count_notes("b") == 1
+    storage.close()
+
+
 def test_upsert_documents_partial_failure_isolation():
     """测试当批次内某文档向量化异常时，成功的文档正常入库，失败文档被记录且旧索引不被误删"""
     mock_storage = MagicMock()
@@ -159,7 +187,7 @@ def test_rrf_fusion_and_hit_bonus():
     """测试标准 RRF (Reciprocal Rank Fusion) 多路融合算法及多分块 Hit Bonus"""
     mock_storage = MagicMock()
     mock_embedding = MagicMock()
-    retrieval_svc = RetrievalService(mock_storage, mock_embedding)
+    retrieval_svc = RetrievalService(mock_storage)
 
     # 模拟向量路与全文检索路
     vector_rows = [

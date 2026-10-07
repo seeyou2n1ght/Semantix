@@ -19,7 +19,7 @@ def test_health_endpoint():
     data = response.json()
     assert data["status"] in ["ok", "loading"]
     assert data["api_version"] == "1"
-    assert data["engine_version"] == "0.11.2"
+    assert data["engine_version"] == "0.11.3"
     assert "embedding_model" in data
 
 
@@ -28,6 +28,21 @@ def test_ping_endpoint():
     response = client.get("/ping")
     assert response.status_code == 200
     assert "timestamp" in response.json()
+
+
+def test_permanent_embedding_load_failure_is_not_loading(monkeypatch):
+    import main
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(main, "embedding_service", SimpleNamespace(
+        is_ready=False, load_error=RuntimeError("controlled permanent failure"),
+        model_name="controlled", active_device=None
+    ))
+    for path in ["/health", "/ready"]:
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.json()["status"] == "error"
+        assert "failed to load" in response.json()["message"]
 
 
 def test_metrics_endpoint():
@@ -42,8 +57,8 @@ def test_manual_maintenance_forces_deep_cleanup(monkeypatch):
     import main
 
     optimize = MagicMock()
-    monkeypatch.setattr(main.db_svc, "optimize_database", optimize)
-    monkeypatch.setattr(main.db_svc, "get_storage_metrics", lambda: 0)
+    monkeypatch.setattr(main.storage, "optimize_database", optimize)
+    monkeypatch.setattr(main.storage, "get_storage_metrics", lambda: 0)
     monkeypatch.setitem(main.METRICS, "current_retention_days", 7)
 
     response = client.post("/maintenance/run", json={"retention_days": 30})
@@ -108,7 +123,7 @@ def test_clear_index_vault_isolation(monkeypatch):
     token2 = resp_scoped2.json()["confirmation_token"]
 
     clear_mock = MagicMock()
-    monkeypatch.setattr(main.db_svc, "clear_vault", clear_mock)
+    monkeypatch.setattr(main.storage, "clear_vault", clear_mock)
 
     resp_confirm = client.post(
         "/index/clear/confirm",

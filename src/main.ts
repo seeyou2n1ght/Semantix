@@ -1,12 +1,12 @@
 import { Plugin, Notice, WorkspaceLeaf, TAbstractFile, TFile, MarkdownView, Platform, Modal, App } from 'obsidian';
 import { SemantixSettings, DEFAULT_SETTINGS, SemantixSettingTab } from "./settings";
-import { ApiClient } from './api/client';
+import { ApiClient, HealthStatus } from './api/client';
 import { IndexDocument } from './api/types';
 import { RadarView, RADAR_VIEW_TYPE } from './ui/radar-view';
 import { SyncManager } from './core/sync';
 import { RadarEngine } from './core/radar';
 import { ServiceManager } from './core/service-manager';
-import { cleanMarkdown } from './utils/markdown';
+import { readIndexDocument, indexBatchWouldOverflow } from './core/index-batch';
 import { t } from './i18n/helpers';
 
 export type IndexingState = {
@@ -58,7 +58,6 @@ export default class SemantixPlugin extends Plugin {
     apiClient: ApiClient;
     syncManager: SyncManager;
     radar: RadarEngine;
-    get whisperer(): RadarEngine { return this.radar; }
     serviceManager: ServiceManager;
     vaultId: string;
     isMobileHibernating: boolean = false;
@@ -143,12 +142,12 @@ export default class SemantixPlugin extends Plugin {
 
         // 注册原生悬浮预览源，支持与 Obsidian Page Preview 插件联动
         this.registerHoverLinkSource('semantix', {
-            display: 'Semantix Radar',
+            display: t('PLUGIN_NAME'),
             defaultMod: true
         });
 
         // 5. Ribbon Icon —— 打开 Semantix Radar 视图
-        this.addRibbonIcon('radar', `${t('PLUGIN_NAME')}: Radar`, () => {
+        this.addRibbonIcon('radar', t('PLUGIN_NAME'), () => {
             void this.activateRadarView();
         });
 
@@ -234,14 +233,6 @@ export default class SemantixPlugin extends Plugin {
     }
 
     /**
-     * 向后兼容别名
-     */
-    async activateWhispererView() {
-        await this.activateRadarView();
-    }
-
-
-    /**
      * 通用视图激活逻辑：如已存在则聚焦，否则在右侧边栏创建
      */
     private async activateViewByType(viewType: string) {
@@ -289,7 +280,19 @@ export default class SemantixPlugin extends Plugin {
         }
 
         // 2. 探活心跳检测（解耦进程归属与连接可用性，支持外部手动启动的本地引擎）
-        const isConnected = await this.apiClient.checkHealth();
+        const health = await this.apiClient.checkFullHealth();
+        if (health === HealthStatus.LOADING) {
+            this.updateAllViewStatus('syncing');
+            return;
+        }
+        if (health === HealthStatus.ERROR) {
+            if (manual || (!silent && this.lastConnectionStatus !== 'disconnected')) {
+                new Notice(this.apiClient.lastHealthResponse?.message || t('STARTUP_FAILED'));
+            }
+            this.updateAllViewStatus('disconnected');
+            return;
+        }
+        const isConnected = health === HealthStatus.READY;
         if (isConnected) {
             void this.apiClient.ping(); // 同时发送后端存活心跳（异步执行，不阻塞 UI）
             this.serviceManager.onHealthyStable(); // 重置连续失败熔断计数
@@ -468,10 +471,9 @@ export default class SemantixPlugin extends Plugin {
 
         let indexingNotice: Notice | null = new Notice(`Semantix: 开始全量索引 (共 ${files.length} 篇)...`, 0);
 
-        const maxBatchDocs = 25; // 限制单批最多 25 篇笔记
-        const maxBatchChars = 150_000; // 限制单批总字符数，防止超大请求包阻塞主线程
         let processed = 0;
         let canceled = false;
+        let submissionFailed = false;
         let completed = false;
         const failedPaths: string[] = [];
 
@@ -490,7 +492,6 @@ export default class SemantixPlugin extends Plugin {
         await this.syncManager.pause();
         try {
             let currentBatchDocs: IndexDocument[] = [];
-            let currentBatchChars = 0;
 
             const flushBatch = async (): Promise<boolean> => {
                 if (currentBatchDocs.length === 0) return true;
@@ -512,32 +513,16 @@ export default class SemantixPlugin extends Plugin {
                 }
 
                 try {
-                    const rawText = await this.app.vault.cachedRead(file);
-                    const cleaned = cleanMarkdown(rawText);
-                    if (cleaned.length > 0) {
-                        const context = this.getFileContext(file);
-                        const docChars = cleaned.length;
-
-                        // 超过单批上限时，先刷写上一批
-                        if (currentBatchDocs.length > 0 && (currentBatchDocs.length >= maxBatchDocs || currentBatchChars + docChars > maxBatchChars)) {
-                            const success = await flushBatch();
-                            if (!success) {
-                                canceled = true;
-                                break;
-                            }
-                            currentBatchDocs = [];
-                            currentBatchChars = 0;
+                    const doc = await readIndexDocument(this, file);
+                    if (indexBatchWouldOverflow(currentBatchDocs, doc)) {
+                        const success = await flushBatch();
+                        if (!success) {
+                            submissionFailed = true;
+                            break;
                         }
-
-                        currentBatchDocs.push({
-                            vault_id: this.vaultId,
-                            path: file.path,
-                            text: cleaned,
-                            tags: context.tags,
-                            links: context.links
-                        });
-                        currentBatchChars += docChars;
+                        currentBatchDocs = [];
                     }
+                    currentBatchDocs.push(doc);
                 } catch {
                     failedPaths.push(file.path);
                 }
@@ -552,12 +537,12 @@ export default class SemantixPlugin extends Plugin {
             }
 
             // 刷写剩余未提交文档
-            if (!canceled && currentBatchDocs.length > 0) {
+            if (!canceled && !submissionFailed && currentBatchDocs.length > 0) {
                 const success = await flushBatch();
-                if (!success) canceled = true;
+                if (!success) submissionFailed = true;
             }
 
-            completed = !canceled && processed >= files.length;
+            completed = !canceled && !submissionFailed && processed >= files.length;
         } catch (error) {
             console.error("Semantix: Full index failed.", error);
             new Notice("Semantix: 全量索引失败，请检查后端日志。");
@@ -584,9 +569,11 @@ export default class SemantixPlugin extends Plugin {
                 } else {
                     new Notice(`Semantix: 全量索引完成 ✅ (共 ${files.length} 篇笔记，全文索引已就绪)`);
                 }
-                if (this.whisperer) {
-                    void this.whisperer.triggerNoteScan();
+                if (this.radar) {
+                    void this.radar.triggerNoteScan();
                 }
+            } else if (submissionFailed) {
+                new Notice("Semantix: 全量索引未完成，批次提交失败。已提交的索引保留，请检查连接后重试。");
             } else if (canceled) {
                 new Notice("Semantix: 索引已取消。");
             }

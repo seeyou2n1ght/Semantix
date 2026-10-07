@@ -4,7 +4,6 @@ from typing import List, Dict, Any, Optional, Callable
 from utils.vectors import cosine_similarity
 from services.lexical import query_terms, highlight_terms
 from storage.lancedb_storage import LanceDBStorage
-from services.embedding_service import EmbeddingService, embedding_service
 from config import ranking_config
 
 logger = logging.getLogger("semantix")
@@ -44,20 +43,6 @@ class RetrievalCandidate:
         self.matched_terms = matched_terms or []
         self.source_text = source_text
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "path": self.path,
-            "title": self.title,
-            "snippet": self.snippet,
-            "vector": self.vector,
-            "semantic_score": self.semantic_score,
-            "lexical_score": self.lexical_score,
-            "matched_chunk_index": self.matched_chunk_index,
-            "tags": self.tags,
-            "links": self.links,
-            "full_path": self.full_path,
-        }
-
 
 class RetrievalService:
     """
@@ -65,9 +50,8 @@ class RetrievalService:
     按配置补足各通道的文档候选池，不决定最终展示与分流。
     """
 
-    def __init__(self, storage: LanceDBStorage, embedding_svc: Optional[EmbeddingService] = None):
+    def __init__(self, storage: LanceDBStorage):
         self.storage = storage
-        self.embedding_svc = embedding_svc or embedding_service
 
     def _truncate_snippet(self, text: str, max_length: int = 200) -> str:
         if not text:
@@ -233,7 +217,7 @@ class RetrievalService:
         vector_rows: List[Dict[str, Any]],
         fts_rows: List[Dict[str, Any]],
         min_similarity: float = 0.0,
-        rrf_k: float = 60.0,
+        rrf_k: float = ranking_config.RRF_K,
         query_vector: Optional[List[float]] = None,
     ) -> List[RetrievalCandidate]:
         """使用标准 Reciprocal Rank Fusion (k=60) 融合向量与词面分，并按文档路径聚合"""
@@ -328,7 +312,10 @@ class RetrievalService:
         for doc in doc_map.values():
             doc.pop("best_chunk_rrf", None)
             if doc["hit_count"] >= 2:
-                hit_bonus = min(0.15, 0.05 * (doc["hit_count"] - 1))
+                hit_bonus = min(
+                    ranking_config.HIT_BONUS_MAX,
+                    ranking_config.HIT_BONUS_STEP * (doc["hit_count"] - 1),
+                )
                 doc["rrf_score"] *= (1.0 + hit_bonus)
 
         candidates = [RetrievalCandidate(**item) for item in doc_map.values()]

@@ -9,7 +9,7 @@ Semantix is a local-first Obsidian plugin that indexes Markdown notes and return
 - **Related**: the most directly relevant notes for the active context.
 - **Discover**: relevant but diverse notes intended to surface less obvious connections.
 
-Primary users run Obsidian Desktop with a local Python sidecar. A user-configured private remote engine is supported by the protocol, but the mobile support policy is still an open product decision.
+The released plugin is desktop-only (`manifest.json`). Desktop users can run a local Python sidecar or a user-configured private remote engine. Mobile guards/settings are retained for future support work; mobile usage is not a supported release capability.
 
 ### Core use cases
 
@@ -46,7 +46,7 @@ Obsidian plugin (TypeScript)
                                  |
                                  v
 FastAPI sidecar (Python)
-  routes -> RadarService -> RetrievalService -> ranking pipeline
+  routes -> RadarPipeline -> RetrievalService -> ranking pipeline
                   |              |                    |
                   v              v                    v
           embedding/reranker  LanceDB + FTS      labels + MMR
@@ -68,13 +68,14 @@ The repository is organized with the Obsidian plugin as the root primary product
 - `core/query-gate.ts`: debounces insignificant context changes.
 - `core/result-stabilizer.ts`: stabilizes visible results across related contexts.
 - `core/radar.ts`: schedules searches and rejects stale responses.
-- `core/service-manager.ts`: local process startup, PID cleanup, health checks, bounded recovery, and shutdown.
+- `core/service-manager.ts`: local process startup, owned-process cleanup, health checks, bounded recovery, and shutdown.
 - `ui/`: sidebar and preview rendering; it never accesses storage directly.
 
 ### Engine (`engine/`)
 
 - `main.py`: process lifecycle and HTTP boundary.
 - `models.py`: Pydantic wire contracts.
+- `services/database_service.py`: composition entry point for shared storage/index/retrieval services; no forwarding facade.
 - `services/index_service.py`: Markdown chunking and index preparation.
 - `services/retrieval_service.py`: vector/FTS recall, fusion, and document aggregation.
 - `services/radar_service.py`: Related/Discover orchestration.
@@ -87,7 +88,7 @@ The repository is organized with the Obsidian plugin as the root primary product
 
 ### Indexing
 
-1. The plugin discovers changed Markdown files and sends adaptive batches of at most 25 notes and 150,000 characters.
+1. Full indexing and incremental sync share document preparation and request batching: at most 25 notes and a 150,000-character target. An indivisible larger note occupies its own request. Empty cleaned notes are submitted to remove their previous index. Incremental read failures remain queued while healthy notes continue; acknowledgments remove only the revision actually submitted.
 2. The frontend yields between batches to avoid monopolizing the renderer thread.
 3. The backend parses header-aware chunks, embeds them, and replaces only successfully prepared documents.
 4. Failed documents retain their previous valid chunks and are reported as failures.
@@ -111,7 +112,7 @@ Cards also carry the exact indexed child text as `source_text`. Navigation and p
 
 Ranking constants are defined in `engine/config/ranking_config.py`. Current notable defaults are Related weights `0.50/0.35/0.15`, Discover gate `0.45`, duplicate threshold `0.88`, and MMR lambda `0.65`. Do not duplicate these numbers in implementation.
 
-Current labels are generated from actual evidence: Related uses `KEYWORD_MATCH`, `DEEP_SEMANTIC`, `SAME_FOLDER`, `SHARED_TAGS`, or `RELEVANT`; Discover uses `UNLINKED`, `SHARED_CONCEPT`, `CROSS_TOPIC`, `CROSS_FOLDER`, `SHARED_TAGS`, or `SERENDIPITY`.
+Each stream emits at most one evidence-based label: `MISSING_LINK`, `ISLAND_WAKE`, `CONCEPT_BRIDGE` (optionally carrying a target), `DEEP_ECHO`, `CROSS_DOMAIN`, or `TOPIC_TAG`. Older response label codes remain display-compatible.
 
 ### Sidecar lifecycle
 
@@ -124,20 +125,19 @@ Current labels are generated from actual evidence: Related uses `KEYWORD_MATCH`,
 
 `engine/models.py`, FastAPI's generated OpenAPI schema, `engine/main.py`, and `src/api/types.ts` are authoritative. This document catalogs behavior but does not duplicate payload examples.
 
-When `SEMANTIX_API_TOKEN` is configured, the global FastAPI dependency requires the bearer token on every route. `vault_id` is carried in index/search request bodies and in relevant status, metrics, maintenance, and clear-operation query parameters.
+When `SEMANTIX_API_TOKEN` is configured, the global FastAPI dependency requires the `X-Semantix-Token` header on every route. `vault_id` is carried in index/search request bodies and in index-status, metrics, and clear-operation query parameters. Stopword computation is Vault-scoped; physical database maintenance and FTS rebuild operate on shared storage.
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| GET | `/health`, `/ready`, `/ping` | Liveness/model state and compatibility information; `/ready` is currently a health alias and may return loading state with HTTP 200. |
-| GET | `/index/status`, `/metrics` | Vault-scoped index and runtime information. |
+| GET | `/health`, `/ready`, `/ping` | Liveness/model state and compatibility information; `/ready` is a health alias. Health returns `ok`, `loading`, or `error` with HTTP 200; clients must inspect the state. |
+| GET | `/index/status`, `/metrics` | Vault-scoped note counts/stopwords; search timing and physical storage metrics are engine-wide. |
 | POST | `/index/batch`, `/index/delete` | Replace indexed documents or delete paths. |
 | POST | `/index/clear/request`, `/index/clear/confirm` | Two-step Vault-scoped destructive clear. |
 | POST | `/index/compute-stopwords`, `/index/rebuild-fts` | Recompute lexical filters and rebuild FTS. |
 | POST | `/search/radar` | Primary Related/Discover query. |
-| POST | `/search/semantic` | Deprecated compatibility search. |
-| POST | `/maintenance/run` | Vault-scoped maintenance. |
+| POST | `/maintenance/run` | Engine-wide physical maintenance; the request sets retention for scheduled maintenance, while manual cleanup uses zero days. |
 
-The current reranker-unavailable behavior does not yet meet the truthful-degradation invariant; remediation is tracked in `PROGRESS.md`.
+Unavailable reranking returns semantic fallback with explicit response warnings, as specified by ADR-0008. Permanent embedding initialization failure returns an error health state and is shown to the user rather than waiting indefinitely.
 
 ## 6. Storage and isolation
 
@@ -146,6 +146,7 @@ The current reranker-unavailable behavior does not yet meet the truthful-degrada
 - Successful document replacement removes obsolete chunks for only that document and Vault.
 - Encoding or write failure must preserve the last valid indexed version.
 - Schema incompatibility and storage failure are visible failures, never silent database recreation.
+- Stopword changes serialize per storage instance and atomically replace the JSON snapshot before updating memory; write failure preserves the old snapshot and propagates to the API.
 
 The default database path is `./semantix_lance`; deployment may override it with `SEMANTIX_DB_PATH`.
 

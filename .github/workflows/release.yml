@@ -26,6 +26,7 @@ jobs:
       - run: npm run lint
       - run: npx tsc --noEmit --skipLibCheck --types obsidian
       - run: npm run build
+      - run: node tests/indexing.cjs
       - run: node tests/radar-state.cjs
       - run: node tests/service-manager.cjs
       - run: node tests/api-health.cjs

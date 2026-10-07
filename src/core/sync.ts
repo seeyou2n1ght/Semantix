@@ -1,7 +1,7 @@
 import { TFile, TFolder, TAbstractFile } from 'obsidian';
 import SemantixPlugin from '../main';
 import { IndexDocument } from '../api/types';
-import { cleanMarkdown } from '../utils/markdown';
+import { readIndexDocument, indexBatches } from './index-batch';
 import picomatch from 'picomatch';
 
 export class SyncManager {
@@ -10,7 +10,8 @@ export class SyncManager {
     // 待更新队列 (path -> revision counter)
     private pendingUpdates: Map<string, number> = new Map();
     // 待删除队列
-    private pendingDeletes: Set<string> = new Set();
+    private pendingDeletes: Map<string, number> = new Map();
+    private revision = 0;
     
     private syncTimer: number | null = null;
     private isFlushing: boolean = false;
@@ -69,7 +70,7 @@ export class SyncManager {
         // Check exclusion rules
         if (this.isExcluded(file.path)) return;
 
-        const nextRev = (this.pendingUpdates.get(file.path) ?? 0) + 1;
+        const nextRev = ++this.revision;
         this.pendingUpdates.set(file.path, nextRev);
         // 如果文件同时在删除队列里，移除它 (意味着它被重建/覆盖了)
         this.pendingDeletes.delete(file.path);
@@ -84,7 +85,7 @@ export class SyncManager {
         if (file instanceof TFile) {
             if (file.extension !== 'md') return;
 
-            this.pendingDeletes.add(file.path);
+            this.pendingDeletes.set(file.path, ++this.revision);
             // 如果正在等待更新，取消更新
             this.pendingUpdates.delete(file.path);
 
@@ -95,7 +96,7 @@ export class SyncManager {
             for (const p of Array.from(this.pendingUpdates.keys())) {
                 if (p.startsWith(prefix)) {
                     this.pendingUpdates.delete(p);
-                    this.pendingDeletes.add(p);
+                    this.pendingDeletes.set(p, ++this.revision);
                 }
             }
             this.startTimerIfNeeded();
@@ -108,7 +109,7 @@ export class SyncManager {
     public queueRename(file: TAbstractFile, oldPath: string) {
         if (file instanceof TFile) {
             if (oldPath.endsWith('.md')) {
-                this.pendingDeletes.add(oldPath);
+                this.pendingDeletes.set(oldPath, ++this.revision);
                 this.pendingUpdates.delete(oldPath);
             }
             if (file.extension === 'md') {
@@ -212,6 +213,7 @@ export class SyncManager {
         if (this.pendingUpdates.size === 0 && this.pendingDeletes.size === 0) {
             return;
         }
+        this.clearTimer();
         this.isFlushing = true;
         const promise = this.doFlush();
         this.flushPromise = promise;
@@ -227,35 +229,28 @@ export class SyncManager {
         try {
             // 提取当前待处理项快照及当前版本号，待服务端确认成功后再比对移除
             const inFlightUpdates = new Map(this.pendingUpdates);
-            const inFlightDeletes = new Set(this.pendingDeletes);
+            const inFlightDeletes = new Map(this.pendingDeletes);
             const currentUpdates = Array.from(inFlightUpdates.keys());
-            const currentDeletes = Array.from(inFlightDeletes);
+            const currentDeletes = Array.from(inFlightDeletes.keys());
 
-            const emptyFilesToPurge: string[] = [];
+            let anyFailure = false;
             const documents: IndexDocument[] = [];
 
             for (const path of currentUpdates) {
                 const file = this.plugin.app.vault.getAbstractFileByPath(path);
                 if (file instanceof TFile && file.extension === 'md') {
-                    const rawText = await this.plugin.app.vault.cachedRead(file);
-                    const cleaned = cleanMarkdown(rawText);
-                    if (cleaned.length === 0) {
-                        // 空文档语义：从索引中删除历史旧数据
-                        emptyFilesToPurge.push(path);
-                    } else {
-                        const context = this.plugin.getFileContext(file);
-                        documents.push({ 
-                            vault_id: this.plugin.vaultId, 
-                            path: path, 
-                            text: cleaned,
-                            tags: context.tags,
-                            links: context.links
-                        });
+                    try {
+                        documents.push(await readIndexDocument(this.plugin, file));
+                    } catch (error) {
+                        anyFailure = true;
+                        console.warn("Semantix Sync: Could not read queued document; retaining it for retry.", error);
                     }
+                } else if (this.pendingUpdates.get(path) === inFlightUpdates.get(path)) {
+                    this.pendingUpdates.delete(path);
                 }
             }
 
-            const allDeletes = Array.from(new Set([...currentDeletes, ...emptyFilesToPurge]));
+            const allDeletes = currentDeletes;
             const totalTasks = documents.length + allDeletes.length;
             let processed = 0;
 
@@ -267,18 +262,13 @@ export class SyncManager {
                 this.plugin.updateIndexingProgress(processed, totalTasks, true, "sync");
             }
 
-            let anyFailure = false;
-
-            // 1. 处理删除任务（包含明确删除的文件与变为空白的文件）
+            // 1. 处理明确删除的文件；空文档由批量更新原子删除。
             if (allDeletes.length > 0) {
                 const delRes = await this.plugin.apiClient.indexDelete({ vault_id: this.plugin.vaultId, paths: allDeletes });
                 if (delRes && delRes.status === 'success') {
                     for (const p of currentDeletes) {
-                        this.pendingDeletes.delete(p);
-                    }
-                    for (const p of emptyFilesToPurge) {
-                        if (this.pendingUpdates.get(p) === inFlightUpdates.get(p)) {
-                            this.pendingUpdates.delete(p);
+                        if (this.pendingDeletes.get(p) === inFlightDeletes.get(p)) {
+                            this.pendingDeletes.delete(p);
                         }
                     }
                 } else {
@@ -292,11 +282,11 @@ export class SyncManager {
             }
 
             // 2. 处理更新任务
-            if (documents.length > 0) {
-                const batchRes = await this.plugin.apiClient.indexBatch({ documents });
+            for (const batch of indexBatches(documents)) {
+                const batchRes = await this.plugin.apiClient.indexBatch({ documents: batch });
                 if (batchRes && batchRes.status === 'success') {
                     const failedSet = new Set(batchRes.failed_paths || []);
-                    for (const doc of documents) {
+                    for (const doc of batch) {
                         if (!failedSet.has(doc.path)) {
                             // 仅当文件在网络请求期间没有发生新修改时才从队列移除
                             if (this.pendingUpdates.get(doc.path) === inFlightUpdates.get(doc.path)) {
@@ -311,7 +301,7 @@ export class SyncManager {
                     anyFailure = true;
                     console.warn("Semantix Sync: Batch upsert failed, will retry.");
                 }
-                processed += documents.length;
+                processed += batch.length;
                 if (canReportProgress()) {
                     this.plugin.updateIndexingProgress(processed, totalTasks, true, "sync");
                 }
@@ -322,6 +312,9 @@ export class SyncManager {
             } else {
                 this.retryAttempts += 1;
             }
+        } catch (error) {
+            this.retryAttempts += 1;
+            console.warn("Semantix Sync: Flush failed; retaining queued documents for retry.", error);
         } finally {
             this.isFlushing = false;
 

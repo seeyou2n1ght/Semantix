@@ -77,6 +77,10 @@ class EmbeddingService:
             self._loading = False
 
     @property
+    def load_error(self) -> Optional[Exception]:
+        return self._load_error
+
+    @property
     def is_ready(self) -> bool:
         return self._model is not None and not self._loading
 

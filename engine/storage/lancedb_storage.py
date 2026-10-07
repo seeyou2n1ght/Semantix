@@ -3,6 +3,7 @@ import os
 import json
 import threading
 import time
+import tempfile
 from typing import List, Dict, Any, Set, Optional
 import pyarrow as pa
 import lancedb
@@ -37,6 +38,7 @@ class LanceDBStorage:
         self._fts_dirty = False
         self._last_fts_rebuild_at = 0.0
         self.stopword_file = os.path.join(db_path, "custom_stopwords.json")
+        self._stopword_lock = threading.Lock()
         self.vault_stopwords: Dict[str, Set[str]] = self._load_custom_stopwords()
         self.table = None
         self._init_collection()
@@ -44,7 +46,7 @@ class LanceDBStorage:
     def close(self):
         """关闭数据库连接与清理"""
         try:
-            if hasattr(self, "db") and self.db:
+            if hasattr(self, "db") and self.db is not None:
                 logger.info("LanceDBStorage connection closing...")
                 self.db = None
                 self.table = None
@@ -127,22 +129,35 @@ class LanceDBStorage:
                 logger.error("Failed to load custom stopwords: %s", e)
         return {}
 
-    def _save_custom_stopwords(self):
+    def _save_custom_stopwords(self, words_by_vault: Dict[str, Set[str]]):
+        temporary_path = None
         try:
             os.makedirs(self.db_path, exist_ok=True)
-            with open(self.stopword_file, "w", encoding="utf-8") as f:
-                dump_data = {vid: sorted(list(words)) for vid, words in self.vault_stopwords.items()}
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.db_path,
+                                             prefix="stopwords-", suffix=".tmp", delete=False) as f:
+                temporary_path = f.name
+                dump_data = {vid: sorted(words) for vid, words in words_by_vault.items()}
                 json.dump(dump_data, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temporary_path, self.stopword_file)
         except Exception as e:
             logger.error("Failed to save custom stopwords: %s", e)
+            raise
+        finally:
+            if temporary_path is not None and os.path.exists(temporary_path):
+                os.unlink(temporary_path)
 
     def get_vault_stopwords(self, vault_id: str) -> Set[str]:
-        return self.vault_stopwords.get(vault_id, set())
+        with self._stopword_lock:
+            return set(self.vault_stopwords.get(vault_id, set()))
 
     def set_vault_stopwords(self, vault_id: str, words: List[str]):
         # 重算结果是当前语料的完整快照，必须替换旧集合，避免陈旧噪音词永久残留。
-        self.vault_stopwords[vault_id] = set(words)
-        self._save_custom_stopwords()
+        with self._stopword_lock:
+            updated = {**self.vault_stopwords, vault_id: set(words)}
+            self._save_custom_stopwords(updated)
+            self.vault_stopwords = updated
 
     def count_notes(self, vault_id: Optional[str] = None) -> int:
         try:
@@ -187,17 +202,6 @@ class LanceDBStorage:
             logger.info("Cleared all notes for vault_id=%s", vault_id)
         except Exception as e:
             logger.error("Error clearing vault: %s", e)
-            raise
-
-    def clear_all(self):
-        try:
-            self.db.drop_table(COLLECTION_NAME)
-            self._init_collection()
-            self.vault_stopwords.clear()
-            self._save_custom_stopwords()
-            logger.info("Table cleared and recreated.")
-        except Exception as e:
-            logger.error("Error clearing table: %s", e)
             raise
 
     def insert_rows(self, rows: List[Dict[str, Any]]):

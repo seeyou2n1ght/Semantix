@@ -14,7 +14,7 @@ This document defines the smallest reliable checks for frontend, backend, Harnes
 | Tier | Scope | Commands | Required when |
 | --- | --- | --- | --- |
 | 0 | Documentation and whitespace | `git diff --check` | Documentation changes |
-| 1 | Plugin static and radar behavior | `npm run lint`; `npm exec tsc -- --noEmit --skipLibCheck --types obsidian`; `node tests/radar-state.cjs` | Plugin UI or search flow changes |
+| 1 | Plugin static and radar behavior | `npm run lint`; `npm exec tsc -- --noEmit --skipLibCheck --types obsidian`; `node tests/radar-state.cjs`; `node tests/indexing.cjs` | Plugin UI or search flow changes |
 | 1 | Service process regression | `node tests/service-manager.cjs`; `node tests/api-health.cjs` | Sidecar startup, port handling, restart, or shutdown changes |
 | 1 | Engine focused tests | `cd engine`; `uv run pytest tests/test_<area>.py` | An engine module changes |
 | 2 | Full plugin | `npm run build`; `npm run lint` | Before completing plugin work |
@@ -55,7 +55,9 @@ Use `npm run version -- minor` for a minor release; the script also synchronizes
 - Edits/cursor changes invalidate Focus responses during debounce, before another request is sent. Superseded queued requests do not reach the engine.
 - Whole-note scans show explicitly partial results before completion and stop dispatching further parts after cancellation. Unchanged card payloads preserve DOM; result stabilization retains only current evidence.
 - `node tests/radar-state.cjs` includes source-location regression for multiline Markdown, frontmatter, duplicate passages and changed source. Unresolvable matches must not jump to a guessed line.
-- Index batch failures remain queued with bounded retry.
+- Incremental read/batch failures remain queued with capped exponential retry delay; healthy documents proceed. Full/incremental indexing share batch limits and submit empty documents for atomic deletion. In-flight acknowledgments cannot discard newer updates or deletes. `node tests/indexing.cjs` exercises these paths without a real Vault.
+- Stopword persistence failure leaves the old disk and memory snapshots intact and fails the API call; concurrent Vault updates preserve both sets.
+- Permanent embedding load failure has an error health state; clients retain its message and do not treat it as loading or another service on the port.
 - Local sidecar restart attempts are bounded and user stop suppresses automatic restart.
 - Mobile behavior matches the accepted support policy before release.
 

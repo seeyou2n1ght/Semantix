@@ -22,5 +22,11 @@ vm.runInNewContext(code, {
     assert.equal(await client.checkFullHealth(), apiExports.HealthStatus.CONFLICT);
     body = { status: 'ok', engine_version: '0.9.3', api_version: '1' };
     assert.equal(await client.checkFullHealth(), apiExports.HealthStatus.READY);
+    body = { status: 'loading', engine_version: '0.11.2', api_version: '1' };
+    assert.equal(await client.checkFullHealth(), apiExports.HealthStatus.LOADING);
+    body = { status: 'error', engine_version: '0.11.2', api_version: '1', message: 'Model load failed' };
+    assert.equal(await client.checkFullHealth(), apiExports.HealthStatus.ERROR);
+    assert.equal(client.lastHealthResponse.message, 'Model load failed');
+    assert.equal(await client.checkHealth(), false);
     console.log('health identity check passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

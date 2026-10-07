@@ -3,7 +3,6 @@ import sys
 import logging
 import threading
 import time
-import math
 from typing import List, Dict, Any, Optional
 import torch
 from sentence_transformers import CrossEncoder
@@ -70,16 +69,6 @@ class RerankerService:
     @property
     def is_ready(self) -> bool:
         return self._model is not None and not self._loading
-
-    def normalize_score(self, x: float, exponent: float = 0.7) -> float:
-        """
-        Sigmoid + 幂函数非线性校准，映射到 [0, 1] 空间。
-        """
-        try:
-            prob = 1.0 / (1.0 + math.exp(-x))
-            return math.pow(prob, exponent)
-        except OverflowError:
-            return 0.0 if x < 0 else 1.0
 
     def predict_scores(self, query: str, texts: List[str]) -> Optional[List[float]]:
         """批量预测相关性原始 logits。带运行时 OOM 与计算异常自动降级回退。"""

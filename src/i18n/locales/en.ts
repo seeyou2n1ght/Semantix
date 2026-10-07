@@ -266,7 +266,7 @@ export default {
     STARTUP_FAILED: "Backend failed ❌ ",
 
     // Views
-    VIEW_WHISPERER_TITLE: "Semantix Radar",
+    VIEW_WHISPERER_TITLE: "Semantix",
     WHISPERER_HEADER: "Semantix",
     STREAM_RELATED_TITLE: "RELATED",
     STREAM_RELATED_TOOLTIP: "Highly relevant notes and passages based on current focus",

@@ -1,6 +1,6 @@
 {
 	"name": "semantix",
-	"version": "0.11.2",
+	"version": "0.11.3",
 	"description": "Surface related notes and unexpected semantic connections as you write.",
 	"main": "main.js",
 	"type": "module",
@@ -33,6 +33,9 @@
 		"tslib": "2.4.0",
 		"typescript": "^5.8.3",
 		"typescript-eslint": "8.35.1"
+	},
+	"overrides": {
+		"moment": "2.31.0"
 	},
 	"dependencies": {
 		"@codemirror/view": "6.38.6",

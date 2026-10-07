@@ -76,11 +76,17 @@ class DiscoverRanker:
             bridge_bonus = 0.0
             # 2-hop 共同引用桥梁：非直接双链，但双方共同引用核心概念节点
             if feat.shared_links_count > 0 and not feat.is_direct_link:
-                bridge_bonus += min(0.08, 0.04 * feat.shared_links_count)
+                bridge_bonus += min(
+                    ranking_config.DISCOVER_BRIDGE_SHARED_LINKS_MAX,
+                    ranking_config.DISCOVER_BRIDGE_SHARED_LINKS_UNIT * feat.shared_links_count,
+                )
 
             # 跨目录共享专有标签桥梁
             if feat.is_cross_folder_shared_tag:
-                bridge_bonus += min(0.06, 0.03 * feat.tag_overlap)
+                bridge_bonus += min(
+                    ranking_config.DISCOVER_BRIDGE_CROSS_TAG_MAX,
+                    ranking_config.DISCOVER_BRIDGE_CROSS_TAG_UNIT * feat.tag_overlap,
+                )
 
             feat.bridge_score = bridge_bonus
 

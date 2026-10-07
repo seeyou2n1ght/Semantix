@@ -147,6 +147,10 @@ export class ServiceManager {
                     this.reportStatus("后端正在载入模型，等待就绪... ⏳");
                     return;
                 }
+                if (status === HealthStatus.ERROR) {
+                    this.reportStatus(this.plugin.apiClient.lastHealthResponse?.message || "后端模型加载失败，请修正原因后重启。");
+                    return;
+                }
 
                 await this.forceKillAndStart({ isHeal: true });
             })();
@@ -209,6 +213,13 @@ export class ServiceManager {
             }
             if (status === HealthStatus.LOADING) {
                 this.reportStatus("后端正在载入模型... ⏳");
+                this.isStarting = false;
+                return;
+            }
+            if (status === HealthStatus.ERROR) {
+                const message = this.plugin.apiClient.lastHealthResponse?.message || "后端模型加载失败，请修正原因后重启。";
+                this.reportStatus(message);
+                if (force) new Notice(message);
                 this.isStarting = false;
                 return;
             }
