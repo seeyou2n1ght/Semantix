@@ -62,6 +62,8 @@ export default class SemantixPlugin extends Plugin {
     vaultId: string;
     isMobileHibernating: boolean = false;
     private healthTimer: number | null = null;
+    private radarActivation: Promise<void> | null = null;
+    private unloaded = false;
     private indexingState: IndexingState = { active: false, current: 0, total: 0 };
     private lastConnectionStatus: 'connected' | 'disconnected' | 'syncing' | 'disabled' = 'disabled';
     private isFullIndexing: boolean = false;
@@ -111,7 +113,7 @@ export default class SemantixPlugin extends Plugin {
             }
 
             // 如果是结束态，则设置一个较短的延迟后关闭
-            const isClosingMsg = msg.includes("✅") || msg.includes("🚀") || msg.includes("❌") || msg.includes("就绪");
+            const isClosingMsg = msg.includes("✅") || msg.includes("🚀") || msg.includes("❌") || msg.includes("🛑") || msg.includes("就绪");
             if (isClosingMsg) {
                 this.isStartupNoticeCompleted = true; // 锁定状态，禁止后续日志复现浮窗
                 const noticeToClose = this.startupNotice;
@@ -178,6 +180,7 @@ export default class SemantixPlugin extends Plugin {
 
         // 7. 工作区就绪后打开视图、探活并注册文件增量监听
         this.app.workspace.onLayoutReady(() => {
+            if (this.unloaded) return;
             if (!this.isMobileHibernating) {
                 void this.activateRadarView();
 
@@ -229,7 +232,15 @@ export default class SemantixPlugin extends Plugin {
      * 打开或聚焦 Radar 视图
      */
     async activateRadarView() {
-        await this.activateViewByType(RADAR_VIEW_TYPE);
+        if (this.unloaded) return;
+        // Layout restoration, commands and ribbon clicks may arrive while setViewState awaits.
+        const activation = this.radarActivation ?? this.activateViewByType(RADAR_VIEW_TYPE);
+        this.radarActivation = activation;
+        try {
+            await activation;
+        } finally {
+            if (this.radarActivation === activation) this.radarActivation = null;
+        }
     }
 
     /**
@@ -243,16 +254,22 @@ export default class SemantixPlugin extends Plugin {
 
         if (leaves.length > 0) {
             leaf = leaves[0];
+            // Saved layouts can contain several copies of this singleton sidebar.
+            for (const duplicate of leaves.slice(1)) duplicate.detach();
         } else {
             leaf = workspace.getRightLeaf(false);
             if (leaf) {
                await leaf.setViewState({ type: viewType, active: true });
+               if (this.unloaded) {
+                   leaf.detach();
+                   return;
+               }
             }
         }
 
         if (leaf) {
             if ('revealLeaf' in workspace && typeof workspace.revealLeaf === 'function') {
-                void workspace.revealLeaf(leaf);
+                await workspace.revealLeaf(leaf);
             } else {
                 workspace.setActiveLeaf(leaf, { focus: true });
             }
@@ -260,10 +277,12 @@ export default class SemantixPlugin extends Plugin {
     }
 
     async checkConnection(options: { silent?: boolean; manual?: boolean } = {}) {
+        if (this.unloaded) return;
         const { silent = false, manual = false } = options;
 
         // 1. 判断是否处于“未启用”或“休眠”状态
         if (this.isMobileHibernating) {
+            this.syncManager.setConnectionReady(false);
             this.updateAllViewStatus('disabled');
             return;
         }
@@ -274,6 +293,7 @@ export default class SemantixPlugin extends Plugin {
                 this.updateAllViewStatus('syncing');
             } else if (this.serviceManager.isUserStopped()) {
                 // 用户主动点击停止，保持禁用状态
+                this.syncManager.setConnectionReady(false);
                 this.updateAllViewStatus('disabled');
                 return;
             }
@@ -281,6 +301,13 @@ export default class SemantixPlugin extends Plugin {
 
         // 2. 探活心跳检测（解耦进程归属与连接可用性，支持外部手动启动的本地引擎）
         const health = await this.apiClient.checkFullHealth();
+        if (this.unloaded) return;
+        if (Platform.isDesktop && this.settings.backendMode === 'local' && this.serviceManager.isUserStopped()) {
+            this.syncManager.setConnectionReady(false);
+            this.updateAllViewStatus('disabled');
+            return;
+        }
+        this.syncManager.setConnectionReady(health === HealthStatus.READY);
         if (health === HealthStatus.LOADING) {
             this.updateAllViewStatus('syncing');
             return;
@@ -296,11 +323,6 @@ export default class SemantixPlugin extends Plugin {
         if (isConnected) {
             void this.apiClient.ping(); // 同时发送后端存活心跳（异步执行，不阻塞 UI）
             this.serviceManager.onHealthyStable(); // 重置连续失败熔断计数
-        } else if (Platform.isDesktop && this.settings.backendMode === 'local') {
-            // 本地未连通且开启自启，触发自愈
-            if (this.settings.autoStartServer && !this.serviceManager.isUserStopped()) {
-                this.serviceManager.triggerSelfHealing("检测到服务未运行");
-            }
         }
         const nextStatus = isConnected ? 'connected' : 'disconnected';
         
@@ -581,6 +603,8 @@ export default class SemantixPlugin extends Plugin {
     }
 
     onunload() {
+        this.unloaded = true;
+        this.syncManager.setConnectionReady(false);
         this.syncManager.clearTimer();
         this.clearHealthTimer();
         this.serviceManager.stop();

@@ -23,6 +23,7 @@ jobs:
       - run: node tests/indexing.cjs
       - run: node tests/radar-state.cjs
       - run: node tests/service-manager.cjs
+      - run: node tests/plugin-lifecycle.cjs
       - run: node tests/api-health.cjs
       - run: npm run check:release
 

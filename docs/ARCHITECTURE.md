@@ -117,7 +117,7 @@ Each stream emits at most one evidence-based label: `MISSING_LINK`, `ISLAND_WAKE
 ### Sidecar lifecycle
 
 1. Desktop auto-start uses the engine virtual environment when present, then spawns the configured Python backend. Force restart only stops the process held by the current plugin instance; the parent watchdog handles processes left by a previous session.
-2. Health polling uses bounded retry/backoff and a circuit breaker after repeated launch failure.
+2. Health polling uses bounded retry/backoff and a circuit breaker after repeated launch failure. Three automatic recovery attempts exhaust the budget; elapsed time alone cannot reset it. Manual restart or a healthy connection resets recovery. Quiet health polling remains available to detect an externally restored engine.
 3. The backend watches `SEMANTIX_PARENT_PID`; on Windows, a parent exit code other than `259` means the host is no longer active.
 4. User-initiated stop suppresses auto-restart. The watchdog and shutdown path release process and database resources.
 

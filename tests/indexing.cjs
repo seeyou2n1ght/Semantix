@@ -45,6 +45,11 @@ function stub(files, read) {
         updateAllViewStatus() {} };
     return { plugin, batches };
 }
+function readySync(plugin) {
+    const sync = new SyncManager(plugin);
+    sync.setConnectionReady(true);
+    return sync;
+}
 async function fullIndex(fixture) {
     const plugin = new Semantix();
     Object.assign(plugin, fixture.plugin);
@@ -57,7 +62,7 @@ async function fullIndex(fixture) {
     await fullIndex(full);
     assert.equal(full.batches[0][0].text, '');
     const incremental = stub([empty], async () => '');
-    const sync = new SyncManager(incremental.plugin);
+    const sync = readySync(incremental.plugin);
     sync.queueUpdate(empty); await sync.flushQueue();
     assert.equal(incremental.batches[0][0].text, '');
 
@@ -65,12 +70,12 @@ async function fullIndex(fixture) {
     const fullBulk = stub(files, async () => 'x'.repeat(10000));
     await fullIndex(fullBulk);
     const incrementalBulk = stub(files, async () => 'x'.repeat(10000));
-    const bulk = new SyncManager(incrementalBulk.plugin);
+    const bulk = readySync(incrementalBulk.plugin);
     files.forEach(file => bulk.queueUpdate(file)); await bulk.flushQueue();
     assert.deepEqual(incrementalBulk.batches.map(b => b.length), [15, 15]);
     assert.deepEqual(fullBulk.batches.map(b => b.length), [15, 15]);
     const small = stub(files, async () => 'short');
-    const smallSync = new SyncManager(small.plugin);
+    const smallSync = readySync(small.plugin);
     files.forEach(file => smallSync.queueUpdate(file)); await smallSync.flushQueue();
     assert.deepEqual(small.batches.map(b => b.length), [25, 5]);
     const oversized = [...batch.indexBatches([
@@ -82,7 +87,7 @@ async function fullIndex(fixture) {
         if (file.path === 'bad.md') throw new Error('controlled read failure');
         return 'valid';
     });
-    const failing = new SyncManager(bad.plugin);
+    const failing = readySync(bad.plugin);
     bad.plugin.app.vault.getMarkdownFiles().forEach(file => failing.queueUpdate(file));
     await failing.flushQueue();
     assert.equal(bad.batches[0][0].path, 'good.md');
@@ -99,7 +104,7 @@ async function fullIndex(fixture) {
 
     // A failed chunk of a large queue does not prevent later healthy batches.
     const partial = stub(files, async () => 'short');
-    const partialSync = new SyncManager(partial.plugin);
+    const partialSync = readySync(partial.plugin);
     let calls = 0;
     partial.plugin.apiClient.indexBatch = async () => ++calls === 1 ? null : { status: 'success' };
     files.forEach(file => partialSync.queueUpdate(file)); await partialSync.flushQueue();
@@ -108,7 +113,7 @@ async function fullIndex(fixture) {
 
     // A newer update or repeated delete during a request needs another acknowledgment.
     const changing = stub([empty], async () => 'valid');
-    const changingSync = new SyncManager(changing.plugin);
+    const changingSync = readySync(changing.plugin);
     changing.plugin.apiClient.indexBatch = async () => {
         changingSync.queueDelete(empty); changingSync.queueUpdate(empty);
         return { status: 'success' };
@@ -121,6 +126,64 @@ async function fullIndex(fixture) {
     changingSync.queueDelete(empty); await changingSync.flushQueue();
     assert.equal(changingSync.pendingDeletes.size, 1);
 
+    // Offline edits remain queued without file reads, requests, progress or timers.
+    let reads = 0;
+    let progress = 0;
+    let deletes = 0;
+    const offline = stub([empty], async () => { reads++; return 'offline edit'; });
+    offline.plugin.updateIndexingProgress = () => progress++;
+    offline.plugin.apiClient.indexDelete = async request => {
+        deletes++;
+        assert.deepEqual(Array.from(request.paths), ['removed.md']);
+        return { status: 'success' };
+    };
+    const offlineSync = new SyncManager(offline.plugin);
+    const beforeOffline = timers.length;
+    offlineSync.queueUpdate(empty);
+    offlineSync.queueDelete(new TFile('removed.md'));
+    await offlineSync.flushQueue();
+    assert.equal(reads, 0);
+    assert.equal(progress, 0);
+    assert.equal(deletes, 0);
+    assert.equal(offline.batches.length, 0);
+    assert.equal(timers.length, beforeOffline);
+    // Reconnection cannot release a full-index pause.
+    await offlineSync.pause();
+    offlineSync.setConnectionReady(true);
+    await offlineSync.flushQueue();
+    assert.equal(reads, 0);
+    assert.equal(timers.length, beforeOffline);
+    offlineSync.resume();
+    assert.equal(timers.length, beforeOffline + 1);
+    await offlineSync.flushQueue();
+    assert.equal(deletes, 1);
+    assert.equal(offline.batches[0][0].text, 'offline edit');
+    assert.equal(offlineSync.pendingUpdates.size + offlineSync.pendingDeletes.size, 0);
+
+    // Disconnection during an in-flight batch stops subsequent batches/retries.
+    const interrupted = stub(files, async () => 'short');
+    const interruptedSync = readySync(interrupted.plugin);
+    let submitted = 0;
+    interrupted.plugin.apiClient.indexBatch = async () => {
+        submitted++;
+        interruptedSync.setConnectionReady(false);
+        return null;
+    };
+    files.forEach(file => interruptedSync.queueUpdate(file));
+    const beforeInterrupted = timers.length;
+    await interruptedSync.flushQueue();
+    assert.equal(submitted, 1);
+    assert.equal(timers.length, beforeInterrupted);
+    assert.equal(interruptedSync.pendingUpdates.size, 30);
+    interrupted.plugin.apiClient.indexBatch = async request => {
+        interrupted.batches.push(request.documents);
+        return { status: 'success' };
+    };
+    interruptedSync.setConnectionReady(true);
+    await interruptedSync.flushQueue();
+    assert.equal(interrupted.batches.flat().length, 30);
+    assert.equal(interruptedSync.pendingUpdates.size, 0);
+
     // Polling a live failed/loading engine must not launch another sidecar.
     const unhealthy = new Semantix();
     Object.assign(unhealthy, stub([], async () => '').plugin);
@@ -129,6 +192,7 @@ async function fullIndex(fixture) {
     unhealthy.settings.autoStartServer = true;
     let heals = 0;
     let status;
+    unhealthy.syncManager = { setConnectionReady() {} };
     unhealthy.serviceManager = { isActivating: () => false, isUserStopped: () => false,
         triggerSelfHealing: () => heals++ };
     unhealthy.apiClient.checkFullHealth = async () => HealthStatus.ERROR;

@@ -112,7 +112,7 @@ Navigation uses the complete matched text, including Markdown formatting and lin
 
 ### Troubleshooting
 
-- **Engine Not Connected**: Verify the engine is running and accessible at `http://127.0.0.1:8000/health`. Check that the port in plugin settings matches.
+- **Engine Not Connected**: Verify the engine is running and accessible at `http://127.0.0.1:8000/health`. Check that the port in plugin settings matches. Automatic local recovery stops after three failed recovery attempts and reports the suspension once. Fix the cause and use **Force Restart Engine**, or start the engine externally; quiet health checks detect recovery. Pending incremental changes wait while offline and resume when connected.
 - **Model downloading takes long**: Check network access to HuggingFace or ModelScope. Pre-run `scripts/download_models.py` if needed.
 - **Port Conflict**: If the configured local port is occupied, the plugin selects a free loopback port and saves the new Engine URL. **Force Restart Engine** only restarts its own process. Disable the older `obsidian-semantix` plugin before enabling this `semantix` plugin: both register the same legacy view type and cannot run together.
 
@@ -122,7 +122,7 @@ Navigation uses the complete matched text, including Markdown formatting and lin
 
 Semantix 是面向 Obsidian 的本地语义检索与灵感发现插件，在写作过程中提供强相关内容（Related）和跨主题关联（Discover）。
 
-当前版本：`v0.11.3`。正式发布限定桌面端，支持本地 Sidecar 或用户配置的远程引擎；移动端相关代码保留用于后续支持工作，当前不属于已支持的发布能力。
+当前版本：`v0.11.4`。正式发布限定桌面端，支持本地 Sidecar 或用户配置的远程引擎；移动端相关代码保留用于后续支持工作，当前不属于已支持的发布能力。
 
 ### 核心能力
 
@@ -200,6 +200,8 @@ npm run build
 #### 3. 建立索引
 
 Engine 连接成功后，在设置页启动全量索引。插件按文档数和字符数分批发送，并在批次间让出 UI 执行权。失败文档保留在增量队列中重试。
+
+后端离线时，增量同步暂停提交并保留待处理队列，恢复连接后继续。本地自动恢复最多尝试三次，失败后只提示一次并暂停，不会因等待时间增加而重新循环启动。排除原因后可在设置中手动强制重启，或自行启动后端，由静默健康检查识别恢复。
 
 ---
 

@@ -48,7 +48,7 @@ export class ServiceManager {
     // 自愈与熔断状态机 (Self-Healing & Circuit Breaker)
     private healAttempts: number = 0;
     private readonly maxHealAttempts: number = 3;
-    private lastHealTimestamp: number = 0;
+    private healingSuspended: boolean = false;
     private healTimer: number | null = null;
     private userIntentStopped: boolean = false;
 
@@ -75,6 +75,7 @@ export class ServiceManager {
      */
     public resetHealing() {
         this.healAttempts = 0;
+        this.healingSuspended = false;
         this.userIntentStopped = false;
         this.cancelSelfHealing();
     }
@@ -106,30 +107,27 @@ export class ServiceManager {
     public triggerSelfHealing(reason: string) {
         if (!Platform.isDesktop) return;
         if (this.userIntentStopped) return;
+        if (this.healingSuspended) return;
         const { settings } = this.plugin;
         if (settings.backendMode !== 'local' || !settings.autoStartServer) return;
         if (this.isStarting || this.isRunning()) return;
         if (this.healTimer !== null) return; // 已在等待退避调度中
 
-        // 窗口滑动：距离上次自愈超过 2 分钟，自动清零失败计数
-        if (Date.now() - this.lastHealTimestamp > 120_000) {
-            this.healAttempts = 0;
-        }
-
         // 熔断保护：连续失败达到 3 次，停止自动拉起，避免 CPU 飙升与死循环
         if (this.healAttempts >= this.maxHealAttempts) {
+            this.healingSuspended = true;
             this.reportStatus("后台服务连续异常退出，自愈机制已熔断暂停 🛑");
             new Notice("Semantix: 引擎连续多次异常退出，已暂停自动拉起。请检查环境或手动启动。");
             return;
         }
 
         this.healAttempts++;
-        this.lastHealTimestamp = Date.now();
 
         // 指数退避调度: 1次 3s, 2次 6s, 3次 15s
         const backoffDelay = this.healAttempts === 1 ? 3000 : this.healAttempts === 2 ? 6000 : 15000;
         this.reportStatus(`服务异常 (${reason})，${backoffDelay / 1000}s 后尝试自动自愈 (${this.healAttempts}/${this.maxHealAttempts})...`);
 
+        const generation = this.startGeneration;
         this.healTimer = window.setTimeout(() => {
             void (async () => {
                 this.healTimer = null;
@@ -137,6 +135,8 @@ export class ServiceManager {
 
                 // 自愈前检查外部是否已恢复或手动拉起服务
                 const status = await this.plugin.apiClient.checkFullHealth();
+                if (generation !== this.startGeneration || this.userIntentStopped ||
+                    this.plugin.settings.backendMode !== 'local' || !this.plugin.settings.autoStartServer) return;
                 if (status === HealthStatus.READY) {
                     this.onHealthyStable();
                     this.reportStatus("后端连接已恢复 ✅");
@@ -162,6 +162,8 @@ export class ServiceManager {
      */
     public onHealthyStable() {
         this.healAttempts = 0;
+        this.healingSuspended = false;
+        this.cancelSelfHealing();
         this.lastStatus = '后端已就绪 ✅';
     }
 
@@ -373,11 +375,16 @@ export class ServiceManager {
      * 强力清理并重新启动 (支持自愈模式透传)
      */
     public async forceKillAndStart(options: { isHeal?: boolean } = {}) {
+        // An explicit restart is a new user intent, even after a previous stop.
+        if (!options.isHeal) this.resetHealing();
         const port = this.getEffectivePort();
         this.reportStatus(options.isHeal ? "正在自愈重启引擎..." : `正在重新启动 ${port} 端口上的受管引擎...`);
         this.stop();
+        const generation = this.startGeneration;
         // 给系统一点释放资源的时间
         await new Promise(r => window.setTimeout(r, 1000));
+        if (generation !== this.startGeneration || this.userIntentStopped) return;
+        if (options.isHeal && (this.plugin.settings.backendMode !== 'local' || !this.plugin.settings.autoStartServer)) return;
         await this.start({ force: true, isHeal: options.isHeal });
     }
 

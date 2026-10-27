@@ -15,7 +15,7 @@ This document defines the smallest reliable checks for frontend, backend, Harnes
 | --- | --- | --- | --- |
 | 0 | Documentation and whitespace | `git diff --check` | Documentation changes |
 | 1 | Plugin static and radar behavior | `npm run lint`; `npm exec tsc -- --noEmit --skipLibCheck --types obsidian`; `node tests/radar-state.cjs`; `node tests/indexing.cjs` | Plugin UI or search flow changes |
-| 1 | Service process regression | `node tests/service-manager.cjs`; `node tests/api-health.cjs` | Sidecar startup, port handling, restart, or shutdown changes |
+| 1 | Service process regression | `node tests/service-manager.cjs`; `node tests/api-health.cjs`; `node tests/plugin-lifecycle.cjs` | Sidecar startup, port handling, restart, shutdown, or sidebar lifecycle changes |
 | 1 | Engine focused tests | `cd engine`; `uv run pytest tests/test_<area>.py` | An engine module changes |
 | 2 | Full plugin | `npm run build`; `npm run lint` | Before completing plugin work |
 | 2 | Full engine | `cd engine`; `uv sync --locked`; `uv run pytest` | Before completing engine work |
@@ -58,7 +58,8 @@ Use `npm run version -- minor` for a minor release; the script also synchronizes
 - Incremental read/batch failures remain queued with capped exponential retry delay; healthy documents proceed. Full/incremental indexing share batch limits and submit empty documents for atomic deletion. In-flight acknowledgments cannot discard newer updates or deletes. `node tests/indexing.cjs` exercises these paths without a real Vault.
 - Stopword persistence failure leaves the old disk and memory snapshots intact and fails the API call; concurrent Vault updates preserve both sets.
 - Permanent embedding load failure has an error health state; clients retain its message and do not treat it as loading or another service on the port.
-- Local sidecar restart attempts are bounded and user stop suppresses automatic restart.
+- Local sidecar restart attempts are bounded across elapsed time; exhaustion reports once and remains paused until manual restart or a healthy connection. User stop suppresses automatic restart.
+- `node tests/plugin-lifecycle.cjs` covers concurrent sidebar opens, restored duplicate Semantix leaves, activation failure recovery, and unloading during activation. Only Semantix leaves may be consolidated.
 - Mobile behavior matches the accepted support policy before release.
 
 ## 4. CI baseline and known gap

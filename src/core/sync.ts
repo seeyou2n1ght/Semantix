@@ -16,6 +16,7 @@ export class SyncManager {
     private syncTimer: number | null = null;
     private isFlushing: boolean = false;
     private isPaused: boolean = false;
+    private connectionReady: boolean = false;
     private flushPromise: Promise<void> | null = null;
     private retryAttempts: number = 0;
 
@@ -24,6 +25,15 @@ export class SyncManager {
 
     constructor(plugin: SemantixPlugin) {
         this.plugin = plugin;
+    }
+
+    public setConnectionReady(ready: boolean) {
+        this.connectionReady = ready;
+        if (!ready) {
+            this.clearTimer();
+        } else if (this.pendingUpdates.size > 0 || this.pendingDeletes.size > 0) {
+            this.startTimerIfNeeded();
+        }
     }
 
     /**
@@ -184,7 +194,7 @@ export class SyncManager {
      * 启动定时器（如果尚未启动）
      */
     private startTimerIfNeeded(delayMs?: number) {
-        if (this.syncTimer !== null || this.isFlushing || this.isPaused) return;
+        if (!this.connectionReady || this.syncTimer !== null || this.isFlushing || this.isPaused) return;
 
         const defaultIntervalMs = this.plugin.settings.syncBatchInterval * 1000;
         const intervalMs = delayMs !== undefined ? delayMs : defaultIntervalMs;
@@ -209,7 +219,7 @@ export class SyncManager {
      * 执行批量同步（两阶段确认机制 + 空文档删除）
      */
     public async flushQueue(): Promise<void> {
-        if (this.isFlushing || this.isPaused) return;
+        if (!this.connectionReady || this.isFlushing || this.isPaused) return;
         if (this.pendingUpdates.size === 0 && this.pendingDeletes.size === 0) {
             return;
         }
@@ -237,6 +247,7 @@ export class SyncManager {
             const documents: IndexDocument[] = [];
 
             for (const path of currentUpdates) {
+                if (!this.connectionReady) return;
                 const file = this.plugin.app.vault.getAbstractFileByPath(path);
                 if (file instanceof TFile && file.extension === 'md') {
                     try {
@@ -251,12 +262,13 @@ export class SyncManager {
             }
 
             const allDeletes = currentDeletes;
+            if (!this.connectionReady) return;
             const totalTasks = documents.length + allDeletes.length;
             let processed = 0;
 
             const canReportProgress = () => {
                 const state = this.plugin.getIndexingState();
-                return !(state.active && state.label === "full");
+                return this.connectionReady && !(state.active && state.label === "full");
             };
             if (canReportProgress()) {
                 this.plugin.updateIndexingProgress(processed, totalTasks, true, "sync");
@@ -283,6 +295,7 @@ export class SyncManager {
 
             // 2. 处理更新任务
             for (const batch of indexBatches(documents)) {
+                if (!this.connectionReady) return;
                 const batchRes = await this.plugin.apiClient.indexBatch({ documents: batch });
                 if (batchRes && batchRes.status === 'success') {
                     const failedSet = new Set(batchRes.failed_paths || []);
@@ -319,7 +332,7 @@ export class SyncManager {
             this.isFlushing = false;
 
             // 同步完成后刷新侧边栏索引计数
-            void this.plugin.checkConnection();
+            if (this.connectionReady) void this.plugin.checkConnection();
             const state = this.plugin.getIndexingState();
             if (!(state.active && state.label === "full")) {
                 this.plugin.clearIndexingProgress();
