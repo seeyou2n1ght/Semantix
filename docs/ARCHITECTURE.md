@@ -79,7 +79,7 @@ The repository is organized with the Obsidian plugin as the root primary product
 - `services/index_service.py`: Markdown chunking and index preparation.
 - `services/retrieval_service.py`: vector/FTS recall, fusion, and document aggregation.
 - `services/radar_service.py`: Related/Discover orchestration.
-- `services/embedding_service.py`, `services/reranker_service.py`: shared model lifecycle.
+- `services/embedding_service.py`, `services/reranker_service.py`: shared model lifecycle. Reranker identity, pinned M3 revision and 512-token pair limit are shared with the pre-downloader through `config/model_config.py`.
 - `services/ranking/`: score normalization, Related ranking, Discover gating/MMR, and labels.
 - `storage/lancedb_storage.py`: Vault-scoped persistence, replacement, deletion, and FTS lifecycle.
 - `config/ranking_config.py`: ranking thresholds, limits, and weights SSOT.
@@ -100,9 +100,11 @@ The repository is organized with the Obsidian plugin as the root primary product
 2. The backend embeds the query with `为这个句子生成表示以用于检索相关文章：`.
 3. FTS uses engine-owned function-word filtering plus request-scoped custom stopwords and optional Vault stopwords. With no effective terms it is skipped; embedding and reranking retain the original semantic text. Each channel targets up to 45 distinct documents, keeping at most two chunks per document. Up to four bounded batches of at least 80 rows exclude already-seen documents during refill; the channel union is then fused and aggregated. FTS-only chunks receive cosine evidence from their stored vectors and the query vector instead of an artificial zero.
 4. `fast` skips CrossEncoder; `balanced` reranks up to 16 candidates; `high_quality` reranks up to 20. Candidate text includes its semantic path/title and snippet. The model service explicitly returns raw logits; sigmoid/power normalization runs once. After successful reranking, only that shortlist competes in both streams. Unscored candidates cannot substitute semantic scores to bypass reranker rejection. If reranking is unavailable, all recalled candidates use the existing semantic fallback with a response warning.
-5. Related combines normalized semantic, reranker, and lexical evidence, with bounded folder/tag bonuses.
-6. Discover applies a relevance gate, excludes near-duplicates and Related results, applies diversity penalties/bridges, then selects with MMR.
-7. Each card includes `matched_terms`: a bounded set of informative overlaps in its displayed snippet, indicating lexical overlap rather than semantic attribution. Display-only weak-word filtering and 2+1-character Chinese compound recovery do not change recall terms or ranking weights. Missing evidence yields plain text. The response echoes `context_id`; the frontend discards stale IDs before rendering.
+5. Related combines normalized semantic, reranker, and lexical evidence, with bounded folder/tag bonuses and its existing composite admission threshold. Explicitly linked notes retain their lower Related gate. The thresholds are heuristic, not calibrated probabilities; a separate content-only gate was rejected after independent synthetic evaluation showed loss of a useful paraphrase while retaining unrelated results.
+6. Discover applies its relevance gate, excludes near-duplicates and Related results, applies diversity penalties/bridges, then selects with MMR.
+7. Each card includes `matched_terms`: a bounded set of informative overlaps in its displayed snippet, indicating lexical overlap rather than semantic attribution. Degree words such as `有点` are function-word filters for FTS, while semantic input is unchanged. Display-only weak modifiers are suppressed in isolation but retained in complete shared expressions such as `可靠传输` and `最终一致性`; 2+1-character compound recovery remains available. Missing lexical overlap yields plain text without rejecting semantic candidates. The response echoes `context_id`; the frontend discards stale IDs before rendering.
+
+Document-level RRF and hit counts decide the candidate order. The strongest cosine passage currently supplies semantic and lexical scores, vector, snippet, source text and highlight terms together; independent maxima from other passages are not combined into final ranking evidence. Controlled synthetic comparisons supported this selection for one fast-mode long-note case without an observed exact-term regression; they do not establish broad quality gains. The legacy base reranker loses a useful recovery paraphrase; the default M3 reranker restored it in the frozen regression corpus, without establishing real-Vault acceptance. Long notes and same-person/different-event matches remain relevance risks; stronger model scores alone do not establish user usefulness.
 
 Explicit whole-note scans split the cleaned note into bounded text parts, search each part with its own echoed context ID, show completed-part progress, and merge the highest-scoring card per path. Completed parts are shown progressively with a partial-results notice. Stop prevents subsequent parts and stale rendering; the active inference may finish. A failed/cancelled scan marks displayed cards stale and never presents them as complete. Editing a note invalidates its scan, while cursor movement alone does not.
 
@@ -137,7 +139,9 @@ When `SEMANTIX_API_TOKEN` is configured, the global FastAPI dependency requires 
 | POST | `/search/radar` | Primary Related/Discover query. |
 | POST | `/maintenance/run` | Engine-wide physical maintenance; the request sets retention for scheduled maintenance, while manual cleanup uses zero days. |
 
-Unavailable reranking returns semantic fallback with explicit response warnings, as specified by ADR-0008. Permanent embedding initialization failure returns an error health state and is shown to the user rather than waiting indefinitely.
+The reranker defaults to official `BAAI/bge-reranker-v2-m3` revision `953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e`, safetensors, no remote code, and at most 512 tokens per query/passage pair. Explicit `SEMANTIX_RERANKER_MODEL=BAAI/bge-reranker-base` retains legacy resource compatibility; GPU failure falls back to CPU using the same selected model, never silently to base. Embedding/profile/index and ranking weights/thresholds are unchanged.
+
+Unavailable reranking returns semantic fallback with explicit response warnings, as specified by ADR-0008. `/health` and `/ready` add selected reranker model/revision/status/device. Top-level `ok` denotes available semantic retrieval; the message reports degraded reranking until ready. Permanent loading or CPU inference failure stops automatic retries until engine restart. Permanent embedding initialization failure returns an error health state and is shown to the user rather than waiting indefinitely.
 
 ## 6. Storage and isolation
 
@@ -152,7 +156,7 @@ The default database path is `./semantix_lance`; deployment may override it with
 
 ## 7. Runtime configuration
 
-The sidecar supports `SEMANTIX_API_TOKEN`, `SEMANTIX_DB_PATH`, `SEMANTIX_ALLOWED_ORIGINS`, `SEMANTIX_LOG_LEVEL`, `SEMANTIX_PARENT_PID`, `SEMANTIX_WATCHDOG_TIMEOUT`, `SEMANTIX_HOST`, and `SEMANTIX_PORT`. Defaults and user-facing setup are maintained in `README.md` and the implementation.
+The sidecar supports `SEMANTIX_API_TOKEN`, `SEMANTIX_DB_PATH`, `SEMANTIX_ALLOWED_ORIGINS`, `SEMANTIX_LOG_LEVEL`, `SEMANTIX_RERANKER_MODEL`, `SEMANTIX_PARENT_PID`, `SEMANTIX_WATCHDOG_TIMEOUT`, `SEMANTIX_HOST`, and `SEMANTIX_PORT`. Defaults and user-facing setup are maintained in `README.md` and the implementation.
 
 ## 8. Architecture invariants
 

@@ -22,6 +22,9 @@ vm.runInNewContext(code, {
     assert.equal(await client.checkFullHealth(), apiExports.HealthStatus.CONFLICT);
     body = { status: 'ok', engine_version: '0.9.3', api_version: '1' };
     assert.equal(await client.checkFullHealth(), apiExports.HealthStatus.READY);
+    body = { status: 'ok', engine_version: '0.11.4', api_version: '1', reranker_model: 'BAAI/bge-reranker-v2-m3', reranker_status: 'error', message: 'Semantic retrieval is ready; reranker is error.' };
+    assert.equal(await client.checkFullHealth(), apiExports.HealthStatus.READY);
+    assert.equal(client.lastHealthResponse.reranker_status, 'error');
     body = { status: 'loading', engine_version: '0.11.2', api_version: '1' };
     assert.equal(await client.checkFullHealth(), apiExports.HealthStatus.LOADING);
     body = { status: 'error', engine_version: '0.11.2', api_version: '1', message: 'Model load failed' };

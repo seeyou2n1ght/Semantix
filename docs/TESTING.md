@@ -36,15 +36,21 @@ Use `npm run version -- minor` for a minor release; the script also synchronizes
 
 ### Retrieval and ranking
 
+- `engine/tests/test_reranker_config.py` verifies shared default/explicit legacy selection, pinned M3 revision/safetensors/no remote code/512-token options, same-model CPU fallback, terminal failure without repeated loading, truthful health and partial pre-download failure. Existing raw-logit and semantic-degradation tests remain required. The 2026-10-28 M3 candidate passed the full 65-test engine suite plus API-health/radar regressions, plugin type checking, lint and build; these checks do not replace labeled model evaluation.
+- For model changes, freeze model revision, inputs, ranking options and labels before comparison. Use the stock pipeline with shared services and isolated databases; reuse known regression results without calling them unseen holdout evidence. Run resource comparisons in fresh processes so retained bound methods cannot keep the previous model alive. Bound near-limit 16/20-pair CUDA checks and a short CPU compatibility smoke separately; report truncation, embedding-excluded memory, and CPU coverage gaps.
+
 - Related and Discover outputs are mutually exclusive.
 - Discover respects its relevance gate and MMR diversity behavior on deterministic vectors.
 - Fast mode avoids reranking.
+- Document aggregation keeps semantic/lexical scores, vectors, displayed source and highlights on the same selected passage. Other passages contribute to recall ordering but not synthetic final-score maxima; FTS-only evidence retains its actual cosine and lexical score.
 - An unavailable reranker does not create a synthetic normalized reranker score.
 - CrossEncoder returns raw logits on normal and CPU-fallback paths; normalization is applied once. Candidates outside a successful rerank shortlist cannot bypass rejection.
 - Real temporary LanceDB tests prove bounded document refill, Vault/exclusion isolation on refill, and FTS-only cosine evidence. A failed channel reports degradation; loss of every eligible recall channel produces HTTP failure rather than an empty success.
 
 - Lexical filters honor request settings and Vault isolation; empty effective queries skip FTS without restoring noise or changing semantic input.
 - Card highlight terms occur in the displayed snippet; English substrings, missing evidence, and retained stale cards do not produce misleading highlights.
+- Diary degree words such as `有点` do not drive FTS/highlights; people and events remain searchable. Weak isolated modifiers may be hidden, but complete shared terms (`可靠传输`, `高效算法`, `最终一致性`, `高可用`) and topical adjectives (`幸福`, `焦虑`) remain eligible. No-overlap semantic paraphrases remain valid results.
+- `engine/tests/test_retrieval_quality.py` covers these controlled contracts. It does not establish real-model precision or recall gains; compare frozen inputs and baseline/candidate outputs with independently judged useful and irrelevant notes before making relevance claims.
 - Display-only filtering leaves FTS terms intact; compound Chinese terms appear only when the whole span occurs in both query and snippet, and the UI receives no more than six terms per card.
 - Stopword recalculation reports the actual number of notes with text, threshold and minimum document frequency used for that Vault.
 - `engine/tests/test_lexical.py` exercises real temporary LanceDB/FTS with deterministic vectors plus API wiring. `node tests/radar-state.cjs` also runs `tests/highlights.cjs` for rendering, request settings, stabilization, and whole-note evidence merging.

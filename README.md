@@ -54,12 +54,24 @@ uv sync --locked
 uv run uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
-> **Note**: On first run, the engine will automatically download the local embedding model (`BAAI/bge-small-zh-v1.5`) and reranker model (`BAAI/bge-reranker-base`). No note contents are uploaded.
+> **Note**: On first run, the engine will automatically download the local embedding model (`BAAI/bge-small-zh-v1.5`) and reranker model (`BAAI/bge-reranker-v2-m3`). No note contents are uploaded.
 > For offline environments, you can pre-download models:
 > ```powershell
 > cd engine
-> uv run python scripts/download_models.py
+> uv run python scripts/download_models.py --no-mirror
 > ```
+
+The pre-downloader uses the same model ID/revision and Hugging Face cache as the service; run it under the same user and cache environment (`HF_HOME`, if customized). The example uses the official endpoint; omit `--no-mirror` to request the mirror. For offline startup after a successful download, set `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1` before starting the engine. The M3 safetensors weights alone are approximately 2.3 GB, so allow download time, disk space and additional runtime memory.
+
+The reranker is pinned to official revision `953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e`, uses safetensors without remote code, and processes at most 512 tokens per query/passage pair (long pairs are truncated). It changes reranking only: existing embeddings and indexes remain valid, so no index rebuild is needed. M3 needs more memory and inference time than the previous base model; CPU fallback can be substantially slower.
+
+For resource compatibility, explicitly select the previous model **before starting the engine or pre-downloader**:
+
+```powershell
+$env:SEMANTIX_RERANKER_MODEL = "BAAI/bge-reranker-base"
+```
+
+Only these two official model IDs are supported. The legacy base selection retains its original model revision behavior. The engine never silently substitutes base for M3. Download/load/inference failure returns semantic results with `reranker_unavailable`; `/health` reports the selected `reranker_model`, `reranker_revision`, `reranker_status` and `reranker_device`. Top-level `ok` means semantic retrieval is available, and does not guarantee reranker readiness. A permanent reranker failure requires correcting the cause and restarting the engine; the downloader exits unsuccessfully if either model fails.
 
 You can also enable **Auto-start Local Engine** in the plugin settings to have Obsidian launch the sidecar automatically on desktop.
 
@@ -100,6 +112,7 @@ Navigation uses the complete matched text, including Markdown formatting and lin
 | Variable | Default | Description |
 | --- | --- | --- |
 | `SEMANTIX_API_TOKEN` | *empty* | When set, all requests must include a matching Bearer token. Required for remote servers. |
+| `SEMANTIX_RERANKER_MODEL` | `BAAI/bge-reranker-v2-m3` | Explicit compatibility option: `BAAI/bge-reranker-base`; applies to the engine and pre-downloader. |
 | `SEMANTIX_DB_PATH` | `./semantix_lance` | Directory for LanceDB vector storage. |
 | `SEMANTIX_ALLOWED_ORIGINS` | Localhost & Obsidian origins | Comma-separated CORS allowed origins. |
 | `SEMANTIX_LOG_LEVEL` | `INFO` | Engine logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
@@ -122,7 +135,7 @@ Navigation uses the complete matched text, including Markdown formatting and lin
 
 Semantix 是面向 Obsidian 的本地语义检索与灵感发现插件，在写作过程中提供强相关内容（Related）和跨主题关联（Discover）。
 
-当前版本：`v0.11.4`。正式发布限定桌面端，支持本地 Sidecar 或用户配置的远程引擎；移动端相关代码保留用于后续支持工作，当前不属于已支持的发布能力。
+当前版本：`v0.11.5`。正式发布限定桌面端，支持本地 Sidecar 或用户配置的远程引擎；移动端相关代码保留用于后续支持工作，当前不属于已支持的发布能力。
 
 ### 核心能力
 
@@ -136,7 +149,8 @@ Semantix 是面向 Obsidian 的本地语义检索与灵感发现插件，在写�
 ### 隐私与网络边界
 
 - 默认模式仅在本机插件与 `127.0.0.1` Sidecar 之间传输笔记内容；模型推理和索引存储在用户控制的环境中完成。
-- 首次运行可能从模型注册源下载 `BAAI/bge-small-zh-v1.5` 和 `BAAI/bge-reranker-base`。这不会上传笔记内容。
+- 首次运行可能从模型注册源下载 `BAAI/bge-small-zh-v1.5` 和 `BAAI/bge-reranker-v2-m3`。这不会上传笔记内容。
+- 精排默认固定官方 M3 revision `953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e`，使用 safetensors，禁用 remote code，每个 query/passage pair 最多 512 tokens（超长截断）；仅影响精排，无需重建索引。M3 的内存和推理开销更高，资源有限时可在启动前设置 `SEMANTIX_RERANKER_MODEL=BAAI/bge-reranker-base` 显式回选旧模型。不会静默替换模型；下载/加载/推理失败会通过 `reranker_unavailable` 明示语义降级，health 的顶层 `ok` 只保证语义检索可用，新增精排状态字段单独反映就绪情况。
 - 只有用户显式配置私有远程 Engine 时，笔记数据才会发送至该地址。远程部署必须配置 API Token，并由操作者负责 TLS 或可信网络边界。
 - 插件不会修改、重命名或删除 Vault 内的 Markdown 原文；向量和 FTS 索引存储在 Vault 外部的 Engine 数据目录。
 - 项目不包含遥测或第三方笔记处理服务。

@@ -97,6 +97,10 @@ export interface HealthResponse {
     engine_version?: string;
     api_version?: string;
     embedding_model?: string;
+    reranker_model?: string;
+    reranker_revision?: string | null;
+    reranker_status?: 'not_loaded' | 'loading' | 'ready' | 'error';
+    reranker_device?: string | null;
     index_version?: string;
 }
 

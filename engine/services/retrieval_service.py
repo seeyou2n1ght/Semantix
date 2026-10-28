@@ -243,6 +243,7 @@ class RetrievalService:
                 chunk_dict[key] = r
 
         doc_map: Dict[str, Dict[str, Any]] = {}
+        passages_by_path: Dict[str, List[RetrievalCandidate]] = {}
 
         for key, row in chunk_dict.items():
             path = row["path"]
@@ -277,40 +278,20 @@ class RetrievalService:
             tags = row.get("tags", [])
             links = row.get("links", [])
 
-            if path not in doc_map:
-                doc_map[path] = {
-                    "path": path,
-                    "title": os.path.splitext(os.path.basename(path))[0],
-                    "snippet": self._create_snippet(full_text, chunk_text),
-                    "source_text": chunk_text,
-                    "vector": vector,
-                    "semantic_score": similarity,
-                    "lexical_score": lexical,
-                    "matched_chunk_index": chunk_idx,
-                    "tags": tags,
-                    "links": links,
-                    "full_path": full_path,
-                    "hit_count": 1,
-                    "best_chunk_rrf": rrf_score,
-                    "rrf_score": rrf_score,
-                }
-            else:
-                doc_map[path]["hit_count"] += 1
-                # 最佳 chunk 判断：与分块自身的最佳 RRF 比较，而非与已累加的文档总分比较
-                if rrf_score > doc_map[path]["best_chunk_rrf"]:
-                    doc_map[path]["best_chunk_rrf"] = rrf_score
-                    doc_map[path]["snippet"] = self._create_snippet(full_text, chunk_text)
-                    doc_map[path]["source_text"] = chunk_text
-                    doc_map[path]["vector"] = vector
-                    doc_map[path]["matched_chunk_index"] = chunk_idx
-                    doc_map[path]["full_path"] = full_path
-                doc_map[path]["semantic_score"] = max(doc_map[path]["semantic_score"], similarity)
-                doc_map[path]["lexical_score"] = max(doc_map[path]["lexical_score"], lexical)
-                doc_map[path]["rrf_score"] += rrf_score
+            passages_by_path.setdefault(path, []).append(RetrievalCandidate(
+                path=path, title=os.path.splitext(os.path.basename(path))[0],
+                snippet=self._create_snippet(full_text, chunk_text), source_text=chunk_text,
+                vector=vector, semantic_score=similarity, lexical_score=lexical,
+                matched_chunk_index=chunk_idx, tags=tags, links=links,
+                full_path=full_path, rrf_score=rrf_score,
+            ))
+
+            document = doc_map.setdefault(path, {"hit_count": 0, "rrf_score": 0.0})
+            document["hit_count"] += 1
+            document["rrf_score"] += rrf_score
 
         # 多分块 Hit Bonus：同一文档命中多块时轻微奖励，提升整篇代表性
         for doc in doc_map.values():
-            doc.pop("best_chunk_rrf", None)
             if doc["hit_count"] >= 2:
                 hit_bonus = min(
                     ranking_config.HIT_BONUS_MAX,
@@ -318,6 +299,13 @@ class RetrievalService:
                 )
                 doc["rrf_score"] *= (1.0 + hit_bonus)
 
-        candidates = [RetrievalCandidate(**item) for item in doc_map.values()]
+        candidates = []
+        for path, item in doc_map.items():
+            passages = passages_by_path[path]
+            # RRF orders documents; select one coherent content passage.
+            semantic_best = max(passages, key=lambda p: (p.semantic_score, p.rrf_score))
+            semantic_best.rrf_score = item["rrf_score"]
+            semantic_best.hit_count = item["hit_count"]
+            candidates.append(semantic_best)
         candidates.sort(key=lambda c: c.rrf_score, reverse=True)
         return candidates

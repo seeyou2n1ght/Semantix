@@ -122,7 +122,7 @@ def verify_token(x_semantix_token: str | None = Header(default=None)):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
-ENGINE_VERSION = "0.11.4"
+ENGINE_VERSION = "0.11.5"
 API_VERSION = "1"
 INDEX_VERSION = "1"
 
@@ -207,9 +207,16 @@ def health_check():
     """Health check and capability negotiation endpoint."""
     active_dev = getattr(reranker_service, "active_device", None) or getattr(embedding_service, "active_device", None)
     hardware_info = device_manager.get_device_info(active_device=active_dev)
+    reranker_info = {
+        "reranker_model": reranker_service.model_name,
+        "reranker_revision": reranker_service.model_revision,
+        "reranker_status": reranker_service.status,
+        "reranker_device": reranker_service.active_device,
+    }
 
     if embedding_service.load_error is not None:
         return {
+            **reranker_info,
             "status": "error",
             "message": "Embedding model failed to load. Check the engine logs and restart after correcting the cause.",
             "engine_version": ENGINE_VERSION,
@@ -220,6 +227,7 @@ def health_check():
         }
     if not embedding_service.is_ready:
         return {
+            **reranker_info,
             "status": "loading",
             "message": "Model is loading...",
             "engine_version": ENGINE_VERSION,
@@ -229,8 +237,10 @@ def health_check():
             "hardware": hardware_info,
         }
     return {
+        **reranker_info,
         "status": "ok",
-        "message": "Semantix backend is ready.",
+        "message": ("Semantix backend is ready." if reranker_service.is_ready else
+                    f"Semantic retrieval is ready; reranker is {reranker_service.status}. Reranking requests use degraded semantic results until it is ready."),
         "engine_version": ENGINE_VERSION,
         "api_version": API_VERSION,
         "embedding_model": embedding_service.model_name,

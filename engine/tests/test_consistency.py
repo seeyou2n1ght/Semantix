@@ -195,11 +195,12 @@ def test_rrf_fusion_and_hit_bonus():
         {"path": "B.md", "chunk_index": 0, "text": "Vec second chunk", "parent_text": "Vec second chunk", "_distance": 0.3},
     ]
     fts_rows = [
-        {"path": "B.md", "chunk_index": 1, "text": "FTS top chunk", "parent_text": "FTS top chunk", "_score": 25.0},
+        {"path": "B.md", "chunk_index": 1, "text": "FTS top chunk", "parent_text": "FTS top chunk", "_score": 25.0, "vector": [0.6, 0.8]},
         {"path": "C.md", "chunk_index": 0, "text": "FTS second chunk", "parent_text": "FTS second chunk", "_score": 15.0},
     ]
 
-    candidates = retrieval_svc._fuse_and_aggregate(vector_rows, fts_rows, rrf_k=60.0)
+    candidates = retrieval_svc._fuse_and_aggregate(vector_rows, fts_rows, rrf_k=60.0,
+                                                  query_vector=[1.0, 0.0])
 
     # B.md 命中了两个不同 chunk，且在向量与全文均有命中，应获得多块 Hit Bonus
     candidate_paths = [c.path for c in candidates]
@@ -208,9 +209,10 @@ def test_rrf_fusion_and_hit_bonus():
     # B.md 由于双路命中且多分块，RRF 分数胜出
     assert candidate_paths[0] == "B.md"
 
-    # 原生量纲保持独立解耦
-    assert b_cand.semantic_score > 0.0
-    assert b_cand.lexical_score > 0.0
+    # The strongest semantic passage supplies all final ranking evidence.
+    assert b_cand.matched_chunk_index == 0
+    assert b_cand.semantic_score == pytest.approx(0.7)
+    assert b_cand.lexical_score == 0.0
 
 
 def test_bridge_strength_features_and_labels():

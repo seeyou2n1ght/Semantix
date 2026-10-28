@@ -156,3 +156,20 @@ A real-model probe found that CrossEncoder's default sigmoid output was treated 
 - Progressive whole-note results with explicit partial/cancelled/failed states, instead of a blank wait for all parts. Keep current result positions stable without preserving obsolete evidence.
 
 No index migration, release version change, or ranking-weight/threshold retuning is part of this decision. Broad relevance claims require a labeled real-Vault evaluation; synthetic gates and small model probes do not establish them.
+
+
+## ADR-0009: Use a pinned M3 reranker with an explicit legacy resource option
+
+**Status:** Accepted
+
+**Date:** 2026-10-28
+
+### Context
+
+The legacy base reranker preferred a same-person park event over a useful recovery paraphrase. Raising content-only admission thresholds lost useful paraphrases while retaining unrelated notes; reranking extra passages did not fix the model's judgment. A frozen 27-query stock-pipeline comparison with M3 improved useful balanced cards from 39 to 42 and reduced unrelated cards from 11 to 3 without changing embedding/index, score transforms, weights or gates. These controlled regression findings do not prove general or real-Vault accuracy, and M3 uses more memory and inference time.
+
+### Alternatives and decision
+
+Use the standard official `BAAI/bge-reranker-v2-m3` at tested revision `953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e`, safetensors with remote code disabled. Share identity and loading options between the model service and pre-downloader. Keep the previous 512-token pair budget rather than adopting M3's much larger default context; long pairs can be truncated. Preserve existing embedding/profile/index and ranking parameters, requiring no index rebuild.
+
+Retain only an explicit environment choice of the legacy base model for resource compatibility, rather than silently substituting a cheaper model on failure or adding a new UI selector. GPU failure retries the same model on CPU. Loading or terminal inference failure remains visible through health state and `reranker_unavailable` semantic fallback, with no repeated automatic model loading after failure. Top-level health `ok` continues to mean semantic availability for old clients, while additive fields and the message state actual reranker availability.
