@@ -65,7 +65,7 @@ Use `npm run version -- minor` for a minor release; the script also synchronizes
 - Stopword persistence failure leaves the old disk and memory snapshots intact and fails the API call; concurrent Vault updates preserve both sets.
 - Permanent embedding load failure has an error health state; clients retain its message and do not treat it as loading or another service on the port.
 - Local sidecar restart attempts are bounded across elapsed time; exhaustion reports once and remains paused until manual restart or a healthy connection. User stop suppresses automatic restart.
-- `node tests/plugin-lifecycle.cjs` covers concurrent sidebar opens, restored duplicate Semantix leaves, activation failure recovery, and unloading during activation. Only Semantix leaves may be consolidated.
+- `node tests/plugin-lifecycle.cjs` covers concurrent sidebar opens, deferred-view reuse, later restored duplicate Semantix leaves, layout-event reentry, activation failure recovery, and unloading during activation. Only Semantix leaves may be consolidated, without moving the retained panel. Radar regressions verify that multiple loaded panels receive identical results, errors, progress, cancellation and context reset.
 - Mobile behavior matches the accepted support policy before release.
 
 ## 4. CI baseline and known gap

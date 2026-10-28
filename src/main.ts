@@ -64,6 +64,7 @@ export default class SemantixPlugin extends Plugin {
     private healthTimer: number | null = null;
     private radarActivation: Promise<void> | null = null;
     private unloaded = false;
+    private consolidatingRadar = false;
     private indexingState: IndexingState = { active: false, current: 0, total: 0 };
     private lastConnectionStatus: 'connected' | 'disconnected' | 'syncing' | 'disabled' = 'disabled';
     private isFullIndexing: boolean = false;
@@ -182,6 +183,9 @@ export default class SemantixPlugin extends Plugin {
         this.app.workspace.onLayoutReady(() => {
             if (this.unloaded) return;
             if (!this.isMobileHibernating) {
+                this.registerEvent(this.app.workspace.on('layout-change', () => {
+                    this.consolidateRadarLeaves();
+                }));
                 void this.activateRadarView();
 
                 // 清空初始队列，防止应用启动扫描期间累积幽灵事件
@@ -250,12 +254,12 @@ export default class SemantixPlugin extends Plugin {
         const { workspace } = this.app;
         
         let leaf: WorkspaceLeaf | null | undefined = null;
-        const leaves = workspace.getLeavesOfType(viewType);
+        const leaves = this.getRadarLeaves();
 
         if (leaves.length > 0) {
-            leaf = leaves[0];
-            // Saved layouts can contain several copies of this singleton sidebar.
-            for (const duplicate of leaves.slice(1)) duplicate.detach();
+            leaf = this.consolidateRadarLeaves();
+            if (leaf) await leaf.loadIfDeferred();
+            if (this.unloaded) return;
         } else {
             leaf = workspace.getRightLeaf(false);
             if (leaf) {
@@ -273,6 +277,31 @@ export default class SemantixPlugin extends Plugin {
             } else {
                 workspace.setActiveLeaf(leaf, { focus: true });
             }
+        }
+    }
+
+    // Deferred views expose their saved type through getViewState, not their current View.
+    private getRadarLeaves(): WorkspaceLeaf[] {
+        const leaves: WorkspaceLeaf[] = [];
+        this.app.workspace.iterateAllLeaves(leaf => {
+            if (leaf.getViewState().type === RADAR_VIEW_TYPE) leaves.push(leaf);
+        });
+        return leaves;
+    }
+
+    private consolidateRadarLeaves(): WorkspaceLeaf | undefined {
+        if (this.unloaded || this.consolidatingRadar) return;
+        this.consolidatingRadar = true;
+        try {
+            const leaves = this.getRadarLeaves();
+            // Preserve a functioning panel in its current location before a deferred placeholder.
+            const retained = leaves.find(leaf => !leaf.isDeferred) ?? leaves[0];
+            for (const leaf of leaves) {
+                if (leaf !== retained) leaf.detach();
+            }
+            return retained;
+        } finally {
+            this.consolidatingRadar = false;
         }
     }
 

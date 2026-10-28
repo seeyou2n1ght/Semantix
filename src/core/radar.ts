@@ -69,8 +69,7 @@ export class RadarEngine {
         this.queryGate.reset();
         this.contextEngine.reset();
         this.stabilizer.resetAll();
-        const radarLeaf = this.plugin.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE)[0];
-        if (radarLeaf?.view instanceof RadarView) radarLeaf.view.resetForContext();
+        this.forEachView(view => view.resetForContext());
 
         if (!file || file.extension !== 'md') {
             return;
@@ -94,8 +93,7 @@ export class RadarEngine {
         this.queryGate.reset();
         this.clearLoading();
         if (wasNoteScan) {
-            const leaf = this.plugin.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE)[0];
-            if (leaf?.view instanceof RadarView) leaf.view.showScanCancelled();
+            this.forEachView(view => view.showScanCancelled());
         }
     }
 
@@ -164,8 +162,7 @@ export class RadarEngine {
 
     public cancelSearch(): void {
         this.invalidateActiveSearch();
-        const leaf = this.plugin.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE)[0];
-        if (leaf?.view instanceof RadarView) leaf.view.showScanCancelled();
+        this.forEachView(view => view.showScanCancelled());
     }
 
     private async requestLatest(request: RadarSearchRequest, searchId: number): Promise<RadarSearchResponse | null> {
@@ -308,16 +305,14 @@ export class RadarEngine {
     }
 
     private showNoteScanProgress(current: number, total: number) {
-        const leaf = this.plugin.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE)[0];
-        if (leaf?.view instanceof RadarView) leaf.view.updateNoteScanProgress(current, total);
+        this.forEachView(view => view.updateNoteScanProgress(current, total));
     }
 
     private showSearchError(snapshot: ContextSnapshot) {
         const activeView = this.getCurrentMarkdownView();
         if (activeView?.file?.path !== snapshot.context.path) return;
-        const leaf = this.plugin.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE)[0];
-        if (leaf?.view instanceof RadarView) {
-            leaf.view.showSearchError(() => {
+        this.forEachView(view => {
+            view.showSearchError(() => {
                 void (async () => {
                     try {
                         await this.plugin.checkConnection({ silent: true });
@@ -329,7 +324,7 @@ export class RadarEngine {
                     }
                 })();
             });
-        }
+        });
     }
 
     private renderResults(
@@ -341,11 +336,8 @@ export class RadarEngine {
         warnings?: string[],
         partial = false
     ) {
-        const leaves = this.plugin.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE);
-        if (leaves.length === 0) return;
-        const leaf = leaves[0];
-        if (leaf && leaf.view instanceof RadarView) {
-            leaf.view.renderRadarResults(
+        this.forEachView(view => {
+            view.renderRadarResults(
                 related,
                 discover,
                 contextPath,
@@ -354,24 +346,20 @@ export class RadarEngine {
                 warnings,
                 partial
             );
+        });
+    }
+
+    private forEachView(update: (view: RadarView) => void): void {
+        for (const leaf of this.plugin.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE)) {
+            if (leaf.view instanceof RadarView) update(leaf.view);
         }
     }
 
     private showLoading() {
-        const leaves = this.plugin.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE);
-        if (leaves.length === 0) return;
-        const leaf = leaves[0];
-        if (leaf && leaf.view instanceof RadarView) {
-            leaf.view.showLoading();
-        }
+        this.forEachView(view => view.showLoading());
     }
 
     private clearLoading() {
-        const leaves = this.plugin.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE);
-        if (leaves.length === 0) return;
-        const leaf = leaves[0];
-        if (leaf && leaf.view instanceof RadarView) {
-            leaf.view.clearLoading();
-        }
+        this.forEachView(view => view.clearLoading());
     }
 }

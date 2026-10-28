@@ -32,6 +32,9 @@ function fixture() {
     const makeLeaf = type => {
         const leaf = {
             type,
+            isDeferred: false,
+            getViewState() { return { type: this.type }; },
+            async loadIfDeferred() { this.isDeferred = false; },
             async setViewState(state) { await viewSetup(); this.type = state.type; },
             detach() { leaves.splice(leaves.indexOf(this), 1); }
         };
@@ -40,7 +43,8 @@ function fixture() {
     };
     const plugin = new Semantix();
     plugin.app = { workspace: {
-        getLeavesOfType: type => leaves.filter(leaf => leaf.type === type),
+        getLeavesOfType: type => leaves.filter(leaf => !leaf.isDeferred && leaf.type === type),
+        iterateAllLeaves: callback => leaves.slice().forEach(callback),
         getRightLeaf: () => { created++; return makeLeaf('empty'); },
         revealLeaf: async leaf => { revealed.push(leaf); }
     } };
@@ -74,6 +78,46 @@ function fixture() {
     assert.deepEqual(restored.leaves, [first, markdown]);
     assert.deepEqual(restored.revealed, [first]);
     assert.equal(restored.created(), 0);
+
+    // Deferred background tabs retain the saved Semantix type despite not being live views.
+    const background = fixture();
+    const placeholder = background.makeLeaf(VIEW);
+    placeholder.isDeferred = true;
+    await background.plugin.activateRadarView();
+    assert.equal(background.created(), 0, 'reuse a deferred view instead of creating a new tab');
+    assert.equal(placeholder.isDeferred, false);
+    assert.deepEqual(background.revealed, [placeholder]);
+
+    // A later restored layout must keep the working panel and its current position.
+    const late = fixture();
+    const dormant = late.makeLeaf(VIEW);
+    dormant.isDeferred = true;
+    const working = late.makeLeaf(VIEW);
+    const unrelated = late.makeLeaf('markdown');
+    const originalDetach = dormant.detach;
+    dormant.detach = () => {
+        originalDetach.call(dormant);
+        late.plugin.consolidateRadarLeaves(); // detach can synchronously trigger layout-change.
+    };
+    assert.equal(late.plugin.consolidateRadarLeaves(), working);
+    assert.deepEqual(late.leaves, [working, unrelated]);
+    const newPlaceholder = late.makeLeaf(VIEW);
+    newPlaceholder.isDeferred = true;
+    late.plugin.consolidateRadarLeaves();
+    assert.deepEqual(late.leaves, [working, unrelated]);
+    assert.equal(late.revealed.length, 0, 'layout maintenance must not steal focus');
+
+    const deferredUnload = fixture();
+    const deferredLeaf = deferredUnload.makeLeaf(VIEW);
+    deferredLeaf.isDeferred = true;
+    const loadingDeferred = deferred();
+    deferredLeaf.loadIfDeferred = () => loadingDeferred.promise;
+    const deferredActivation = deferredUnload.plugin.activateRadarView();
+    deferredUnload.plugin.onunload();
+    loadingDeferred.resolve();
+    await deferredActivation;
+    assert.equal(deferredUnload.revealed.length, 0);
+    assert.equal(deferredUnload.created(), 0);
 
     // A rejected initialization releases the lock so an explicit retry works.
     const failed = fixture();

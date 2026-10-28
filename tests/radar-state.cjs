@@ -12,8 +12,12 @@ class RadarView {
     progress = [];
     partialResults = 0;
     cancelled = 0;
-    showLoading() {}
-    clearLoading() {}
+    loading = 0;
+    cleared = 0;
+    resets = 0;
+    showLoading() { this.loading++; }
+    clearLoading() { this.cleared++; }
+    resetForContext() { this.resets++; }
     showSearchError() { this.errors++; }
     updateNoteScanProgress(current, total) { this.progress.push([current, total]); }
     renderRadarResults(_r, _d, _p, _h, _q, _w, partial) {
@@ -44,6 +48,7 @@ vm.runInNewContext(code, { exports: exported, require: name => modules[name] || 
 
 (async () => {
     const view = new RadarView();
+    const secondView = new RadarView();
     const markdownView = Object.assign(new MarkdownView(), { file: { path: 'current.md' } });
     let fail = true;
     const requests = [];
@@ -54,7 +59,7 @@ vm.runInNewContext(code, { exports: exported, require: name => modules[name] || 
         app: { workspace: {
             getActiveViewOfType: () => null,
             getActiveFile: () => markdownView.file,
-            getLeavesOfType: type => type === 'markdown' ? [{ view: markdownView }] : [{ view }]
+            getLeavesOfType: type => type === 'markdown' ? [{ view: markdownView }] : [{ view }, { view: secondView }, { view: {} }]
         } },
         apiClient: { radarSearch: async request => {
             requests.push(request);
@@ -135,5 +140,18 @@ vm.runInNewContext(code, { exports: exported, require: name => modules[name] || 
     await scanning;
     assert.equal(sent.length, 1, 'cancel must prevent subsequent note parts');
     assert(view.cancelled > 0);
-    console.log('radar failure and note scan state passed');
+    // Restored duplicate panels must receive the same results and transient states.
+    assert.equal(secondView.results, view.results);
+    assert.equal(secondView.partialResults, view.partialResults);
+    assert.equal(secondView.errors, view.errors);
+    assert.deepEqual(secondView.progress, view.progress);
+    assert.equal(secondView.cancelled, view.cancelled);
+    assert.equal(secondView.loading, view.loading);
+    assert.equal(secondView.cleared, view.cleared);
+    radar.contextEngine.reset = () => {};
+    radar.stabilizer.resetAll = () => {};
+    radar.onFileOpen(null);
+    assert.equal(view.resets, 1);
+    assert.equal(secondView.resets, 1);
+    console.log('radar failure, note scan state and multiple panel rendering passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
