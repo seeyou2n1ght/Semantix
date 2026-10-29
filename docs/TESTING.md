@@ -33,6 +33,8 @@ Use `npm run version -- minor` for a minor release; the script also synchronizes
 - A successful shorter replacement deletes obsolete chunks for only that document and Vault.
 - Clear, status, stopword, delete, and search operations cannot cross `vault_id` boundaries.
 - Schema incompatibility fails visibly instead of silently recreating data.
+- A heading-only note longer than one child chunk preserves middle and tail text in bounded encoded chunks; an embedding failure leaves its previous index intact.
+- On an isolated temporary LanceDB, maintenance preserves current rows, vectors, FTS recall, Vault separation, and a recent readable snapshot. Zero-day cleanup is rejected; manual maintenance honors the requested or current nonzero retention. Database size alone is not an acceptance signal.
 
 ### Retrieval and ranking
 

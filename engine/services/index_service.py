@@ -4,7 +4,7 @@ import os
 import re
 from collections import Counter
 from typing import List, Dict, Any, Set, Optional
-from utils.chunker import split_into_chunks
+from utils.chunker import split_into_chunks, _sliding_window_split
 from storage.lancedb_storage import LanceDBStorage
 from services.embedding_service import EmbeddingService, embedding_service
 
@@ -52,8 +52,13 @@ class IndexService:
 
             chunks_with_idx = split_into_chunks(text)
             if not chunks_with_idx:
-                fallback = text[:500] if len(text) > 500 else text
-                chunks_with_idx = [(fallback, fallback, 0, "")]
+                # A heading-only note has no body chunks. Preserve its entire
+                # content in bounded overlapping pieces instead of losing the tail.
+                chunks_with_idx = [
+                    (part, part, index, "")
+                    for index, part in enumerate(_sliding_window_split(text, 400, 50))
+                    if part
+                ]
 
             file_basename = os.path.basename(path)
             if file_basename.lower().endswith(".md"):

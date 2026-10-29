@@ -168,19 +168,22 @@ def test_stopword_threshold_uses_ceiling_document_frequency():
     assert details == {"words": ["beta"], "total_docs": 7, "min_doc_freq": 3, "threshold": 0.3}
 
 
-def test_manual_database_optimization_prunes_all_old_versions():
-    """存储优化必须通过 LanceDB 原生参数立即清理历史版本和未校验碎片。"""
+def test_database_optimization_keeps_recent_versions_and_unverified_files():
+    """Maintenance retains a reader grace period and in-progress write files."""
     from storage.lancedb_storage import LanceDBStorage
 
     storage = LanceDBStorage.__new__(LanceDBStorage)
     storage.table = MagicMock()
 
-    storage.optimize_database(retention_days=0)
+    storage.optimize_database(retention_days=7)
 
     storage.table.optimize.assert_called_once_with(
-        cleanup_older_than=timedelta(days=0),
-        delete_unverified=True,
+        cleanup_older_than=timedelta(days=7),
+        delete_unverified=False,
     )
+    with pytest.raises(ValueError, match="at least one day"):
+        storage.optimize_database(retention_days=0)
+    storage.table.optimize.assert_called_once()
 
 
 def test_rrf_fusion_and_hit_bonus():

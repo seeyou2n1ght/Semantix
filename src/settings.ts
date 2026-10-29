@@ -894,7 +894,7 @@ export class SemantixSettingTab extends PluginSettingTab {
             .setName(t('STORAGE_RETENTION_NAME'))
             .setDesc(t('STORAGE_RETENTION_DESC'))
             .addSlider(slider => slider
-                .setLimits(0, 30, 1)
+                .setLimits(1, 30, 1)
                 .setValue(this.plugin.settings.dbRetentionDays)
                 .setDynamicTooltip()
                 .onChange(async (val) => {

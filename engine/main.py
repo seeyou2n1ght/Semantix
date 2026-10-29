@@ -283,12 +283,11 @@ def get_metrics(vault_id: Optional[str] = None):
 
 @app.post("/maintenance/run", tags=["Maintenance"])
 def run_maintenance(request: Optional[MaintenanceRequest] = None):
-    """µëïÕè¿ÞºªÕÅæµò░µì«Õ║ôµÀ▒Õ║ªþ╗┤µèñ´╝îþ½ïÕì│Õø×µöÂÕà¿Úâ¿ÕÄåÕÅ▓Õ║ƒÕ╝âþëêµ£¼ÒÇé"""
+    """Run physical maintenance with the requested or current retention period."""
     try:
-        # õ┐ØÕ¡ÿÕ«ÜµùÂþ╗┤µèñþ¡ûþòÑ´╝øµëïÕè¿µôìõ¢£µ£¼µ¼íõ╗ìõ╗Ñ 0 Õñ®ÚÿêÕÇ╝þ½ïÕì│Õø×µöÂþ®║Úù┤ÒÇé
-        if request is not None:
-            METRICS["current_retention_days"] = max(0, request.retention_days)
-        storage.optimize_database(retention_days=0)
+        retention_days = request.retention_days if request is not None else int(METRICS["current_retention_days"])
+        storage.optimize_database(retention_days=retention_days)
+        METRICS["current_retention_days"] = retention_days
         
         METRICS["last_maintenance_at"] = datetime.now().isoformat()
         METRICS["db_size_bytes"] = storage.get_storage_metrics()

@@ -183,7 +183,7 @@ export default {
     STOPWORDS_FAILED: "噪音词计算失败，请确认引擎已连接且索引不为空。",
     STORAGE_SIZE_NAME: "数据库体积与碎片",
     STORAGE_RETENTION_NAME: "历史版本保留天数",
-    STORAGE_RETENTION_DESC: "数据库保留冗余历史版本的时长（用于时间旅行回滚）。设为 0 仅保留当前最新状态。",
+    STORAGE_RETENTION_DESC: "旧数据库版本至少保留一天，让正在读取的操作有时间完成；默认保留七天。",
     BTN_OPTIMIZE_STORAGE: "立即整理碎片",
     CLEAR_DATABASE_ONLY_NAME: "清空向量数据库",
     CLEAR_DATABASE_ONLY_DESC: "强行清空向量数据库，且不自动触发全量重建。",
@@ -243,7 +243,7 @@ export default {
     RUN_MAINTENANCE_BTN: "立即执行磁盘优化",
     RUN_MAINTENANCE_DESC: "整理 LanceDB 数据碎片，清理超出保留天数的过期版本以压缩存储体积。",
     MAINTENANCE_RUNNING: "正在优化...",
-    MAINTENANCE_SUCCESS: "数据库优化完成，已释放冗余空间。",
+    MAINTENANCE_SUCCESS: "数据库优化完成。",
 
     CONFIRM_CLEAR_1: "⚠️ 确定要清空向量数据库并重建索引吗？\n\n此操作将删除所有已建立的语义索引数据，并自动重新扫描全库进行向量化。",
     CONFIRM_CLEAR_2: "⚠️ 再次确认：此操作不可逆！",

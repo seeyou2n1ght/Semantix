@@ -137,7 +137,7 @@ When `SEMANTIX_API_TOKEN` is configured, the global FastAPI dependency requires 
 | POST | `/index/clear/request`, `/index/clear/confirm` | Two-step Vault-scoped destructive clear. |
 | POST | `/index/compute-stopwords`, `/index/rebuild-fts` | Recompute lexical filters and rebuild FTS. |
 | POST | `/search/radar` | Primary Related/Discover query. |
-| POST | `/maintenance/run` | Engine-wide physical maintenance; the request sets retention for scheduled maintenance, while manual cleanup uses zero days. |
+| POST | `/maintenance/run` | Engine-wide physical maintenance; manual and scheduled runs use the configured retention (at least one day). |
 
 The reranker defaults to official `BAAI/bge-reranker-v2-m3` revision `953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e`, safetensors, no remote code, and at most 512 tokens per query/passage pair. Explicit `SEMANTIX_RERANKER_MODEL=BAAI/bge-reranker-base` retains legacy resource compatibility; GPU failure falls back to CPU using the same selected model, never silently to base. Embedding/profile/index and ranking weights/thresholds are unchanged.
 
@@ -151,6 +151,7 @@ Unavailable reranking returns semantic fallback with explicit response warnings,
 - Encoding or write failure must preserve the last valid indexed version.
 - Schema incompatibility and storage failure are visible failures, never silent database recreation.
 - Stopword changes serialize per storage instance and atomically replace the JSON snapshot before updating memory; write failure preserves the old snapshot and propagates to the API.
+- Maintenance retains verified versions for at least one day and never forces deletion of unverified files, which may belong to a concurrent writer. This bounds normal old-snapshot readers without claiming to protect an arbitrarily long read transaction. History older than the chosen period remains eligible for pruning.
 
 The default database path is `./semantix_lance`; deployment may override it with `SEMANTIX_DB_PATH`.
 

@@ -641,6 +641,10 @@ export default class SemantixPlugin extends Plugin {
 
     async loadSettings() {
         this.settings = Object.assign({}, DEFAULT_SETTINGS, (await this.loadData()) as Partial<SemantixSettings>);
+        if (this.settings.dbRetentionDays < 1) {
+            this.settings.dbRetentionDays = 1;
+            await this.saveData(this.settings);
+        }
     }
 
     async saveSettings() {

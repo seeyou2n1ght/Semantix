@@ -14,6 +14,7 @@ This file records durable decisions and their trade-offs. Current implementation
 | ADR-0006 | Position Obsidian Plugin as repository root product with Engine companion | Accepted | 2026-09-15 |
 | ADR-0007 | Flatten built plugin assets to root and enforce desktop-only contract | Accepted | 2026-09-18 |
 | ADR-0008 | Keep retrieval evidence and incomplete-result states explicit | Accepted | 2026-10-02 |
+| ADR-0012 | Retain a bounded history window during database maintenance | Accepted for local implementation | 2026-10-29 |
 
 ## ADR-0001: Local sidecar with explicit private-remote option
 
@@ -173,3 +174,17 @@ The legacy base reranker preferred a same-person park event over a useful recove
 Use the standard official `BAAI/bge-reranker-v2-m3` at tested revision `953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e`, safetensors with remote code disabled. Share identity and loading options between the model service and pre-downloader. Keep the previous 512-token pair budget rather than adopting M3's much larger default context; long pairs can be truncated. Preserve existing embedding/profile/index and ranking parameters, requiring no index rebuild.
 
 Retain only an explicit environment choice of the legacy base model for resource compatibility, rather than silently substituting a cheaper model on failure or adding a new UI selector. GPU failure retries the same model on CPU. Loading or terminal inference failure remains visible through health state and `reranker_unavailable` semantic fallback, with no repeated automatic model loading after failure. Top-level health `ok` continues to mean semantic availability for old clients, while additive fields and the message state actual reranker availability.
+
+## ADR-0012: Retain a bounded history window during database maintenance
+
+**Status:** Accepted for local implementation
+
+**Date:** 2026-10-29
+
+### Context
+
+The maintenance button sent a selected retention period but the engine always optimized with zero days. LanceDB 0.29.2 documents that zero days removes every verified version except the latest, and `delete_unverified=True` may remove files from an in-progress write without an age check. The heading-only indexing fallback separately truncated text to 500 characters.
+
+### Decision and consequences
+
+Manual maintenance uses the requested retention, or the current retention when the body is omitted; scheduled maintenance uses the same policy. The minimum is one day, the default remains seven days, and saved zero-day settings migrate to one day. Leave `delete_unverified=False`, retaining LanceDB's age protection for files from incomplete writes. The nonzero window allows ordinary readers on recent snapshots to finish while older history remains eligible for pruning; it is not a guarantee for arbitrarily long reads or independent processes. Do not use disk-size reduction as the correctness criterion. Heading-only text is split into bounded overlapping chunks instead of being truncated; body-bearing notes retain their existing chunking path.

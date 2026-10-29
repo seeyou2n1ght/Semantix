@@ -183,7 +183,7 @@ export default {
     STOPWORDS_FAILED: "Noise-word calculation failed. Check that the engine is connected and the index is not empty.",
     STORAGE_SIZE_NAME: "Database size & fragmentation",
     STORAGE_RETENTION_NAME: "History retention days",
-    STORAGE_RETENTION_DESC: "Duration to keep historical database versions (for time travel fallback). Set to 0 to keep only current state.",
+    STORAGE_RETENTION_DESC: "Keep previous database versions for at least one day so active readers can finish. The default is seven days.",
     BTN_OPTIMIZE_STORAGE: "Optimize storage",
     CLEAR_DATABASE_ONLY_NAME: "Clear vector database",
     CLEAR_DATABASE_ONLY_DESC: "Forcibly delete all vector embeddings without re-indexing.",

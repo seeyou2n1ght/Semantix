@@ -52,8 +52,8 @@ def test_metrics_endpoint():
     assert "total_indexed_docs" in response.json()
 
 
-def test_manual_maintenance_forces_deep_cleanup(monkeypatch):
-    """手动维护必须忽略历史保留配置并以 0 天阈值立即清理旧版本。"""
+def test_manual_maintenance_uses_configured_retention(monkeypatch):
+    """Manual maintenance uses the requested grace period, or the current setting."""
     import main
 
     optimize = MagicMock()
@@ -64,8 +64,16 @@ def test_manual_maintenance_forces_deep_cleanup(monkeypatch):
     response = client.post("/maintenance/run", json={"retention_days": 30})
 
     assert response.status_code == 200
-    optimize.assert_called_once_with(retention_days=0)
+    optimize.assert_called_once_with(retention_days=30)
     assert main.METRICS["current_retention_days"] == 30
+
+    response = client.post("/maintenance/run")
+    assert response.status_code == 200
+    assert optimize.call_args_list[-1].kwargs == {"retention_days": 30}
+
+    response = client.post("/maintenance/run", json={"retention_days": 0})
+    assert response.status_code == 422
+    assert optimize.call_count == 2
 
 
 def test_ready_endpoint():

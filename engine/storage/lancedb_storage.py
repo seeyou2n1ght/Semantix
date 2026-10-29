@@ -277,17 +277,19 @@ class LanceDBStorage:
             with self._fts_rebuild_lock:
                 self._fts_rebuild_in_progress = False
 
-    def optimize_database(self, retention_days: int = 0):
+    def optimize_database(self, retention_days: int = 7):
         from datetime import timedelta
         try:
             if self.table is None:
                 return
+            if retention_days < 1:
+                raise ValueError("Database optimization requires at least one day of history retention")
             logger.info("Starting database optimization (retention: %d days)...", retention_days)
-            # LanceDB 0.29+: optimize 执行 Compaction、Prune 与 Index 维护
-            # cleanup_older_than 设为 retention_days（为 0 时清理所有历史版本，仅保留最新版，彻底回收空间）
+            # Keep a grace period for readers on older snapshots. Unverified files
+            # may belong to an in-progress write, so retain LanceDB's safe default.
             self.table.optimize(
-                cleanup_older_than=timedelta(days=max(0, retention_days)),
-                delete_unverified=True
+                cleanup_older_than=timedelta(days=retention_days),
+                delete_unverified=False
             )
             logger.info("Database optimization completed.")
         except Exception as e:
