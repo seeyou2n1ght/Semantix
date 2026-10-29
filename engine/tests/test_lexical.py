@@ -45,18 +45,24 @@ def test_request_filters_and_card_evidence(tmp_path, monkeypatch):
 
     filtered = retrieve()
     assert len(filtered) == 1
-    assert filtered[0].lexical_score == 0
-    assert filtered[0].matched_terms == []
-    assert all(call.kwargs.get('query_type') != 'fts' for call in search.call_args_list)
+    assert filtered[0].lexical_score > 0
+    assert filtered[0].lexical_evidence_strength == 0.5
+    assert filtered[0].matched_terms == ['quartzplanet']
+    assert any(call.kwargs.get('query_type') == 'fts' for call in search.call_args_list)
     enabled = retrieve(enable_adaptive_filtering=False)
     assert enabled[0].lexical_score > 0
+    assert enabled[0].lexical_score == filtered[0].lexical_score
+    assert enabled[0].rrf_score == filtered[0].rrf_score
+    assert enabled[0].lexical_evidence_strength == 1
     assert enabled[0].matched_terms == ['quartzplanet']
     custom = retrieve(enable_adaptive_filtering=False, custom_stopwords=['QUARTZPLANET'])
     assert custom[0].lexical_score == 0
     assert custom[0].matched_terms == []
+    assert custom[0].lexical_evidence_strength == 0
     other_vault = retrieve('b')
     assert len(other_vault) == 1
     assert other_vault[0].lexical_score > 0
+    assert other_vault[0].lexical_evidence_strength == 1
     assert storage.get_vault_stopwords('a') == {'quartzplanet'}
     assert storage.get_vault_stopwords('b') == set()
 

@@ -229,6 +229,20 @@ def test_new_label_resolver_single_badge():
     assert labels[0] == "MISSING_LINK"
 
 
+def test_relative_scores_do_not_emit_deep_echo_label():
+    from services.ranking.labels import LabelResolver
+    c = RetrievalCandidate(
+        path="Notes/Paraphrase.md", title="Paraphrase", snippet="snippet", vector=[0.1]*5,
+        semantic_score=0.8, lexical_score=0.0, matched_chunk_index=0,
+        tags=[], links=["somewhere.md"], full_path="Notes > Paraphrase"
+    )
+    feat = CandidateFeatures(c, 0.8, 0.8, 0.0, False, False, 0)
+    feat.relevance_score = 0.8
+    feat.discover_score = 0.8
+    assert "DEEP_ECHO" not in LabelResolver.resolve_related_labels(feat)
+    assert "DEEP_ECHO" not in LabelResolver.resolve_discover_labels(feat)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
 

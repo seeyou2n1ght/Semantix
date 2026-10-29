@@ -2,7 +2,7 @@ import logging
 import os
 from typing import List, Dict, Any, Optional, Callable
 from utils.vectors import cosine_similarity
-from services.lexical import query_terms, highlight_terms
+from services.lexical import query_terms, highlight_terms, lexical_evidence_strength
 from storage.lancedb_storage import LanceDBStorage
 from config import ranking_config
 
@@ -27,6 +27,8 @@ class RetrievalCandidate:
         rrf_score: float = 0.0,
         matched_terms: Optional[List[str]] = None,
         source_text: str = "",
+        lexical_evidence_strength: float = 1.0,
+        lexical_source: str = "",
     ):
         self.path = path
         self.title = title
@@ -42,6 +44,8 @@ class RetrievalCandidate:
         self.rrf_score = rrf_score
         self.matched_terms = matched_terms or []
         self.source_text = source_text
+        self.lexical_evidence_strength = lexical_evidence_strength
+        self.lexical_source = lexical_source
 
 
 class RetrievalService:
@@ -179,8 +183,8 @@ class RetrievalService:
             # 2. 独立全文检索召回 (FTS/BM25 Recall)
             fts_rows: List[Dict[str, Any]] = []
             stops = set(custom_stopwords or [])
-            if enable_adaptive_filtering:
-                stops.update(self.storage.get_vault_stopwords(vault_id))
+            frequent_terms = (self.storage.get_vault_stopwords(vault_id)
+                              if enable_adaptive_filtering else set())
             terms = query_terms(query_text or "", stops)
             fts_succeeded = False
             if terms:
@@ -206,6 +210,10 @@ class RetrievalService:
                 query_vector=query_vector,
             )
             for candidate in candidates:
+                # The selected indexed passage and its metadata support the
+                # score; expanded parent context and UI highlighting do not.
+                candidate.lexical_evidence_strength = lexical_evidence_strength(
+                    candidate.lexical_source, terms, frequent_terms)
                 candidate.matched_terms = highlight_terms(query_text or "", candidate.snippet, terms)
             return candidates
         except Exception as e:
@@ -281,6 +289,8 @@ class RetrievalService:
             passages_by_path.setdefault(path, []).append(RetrievalCandidate(
                 path=path, title=os.path.splitext(os.path.basename(path))[0],
                 snippet=self._create_snippet(full_text, chunk_text), source_text=chunk_text,
+                lexical_source=(row.get('fts_tokens') or LanceDBStorage.tokenize_for_fts(
+                    f"{os.path.splitext(os.path.basename(path))[0]} {chunk_text}")),
                 vector=vector, semantic_score=similarity, lexical_score=lexical,
                 matched_chunk_index=chunk_idx, tags=tags, links=links,
                 full_path=full_path, rrf_score=rrf_score,

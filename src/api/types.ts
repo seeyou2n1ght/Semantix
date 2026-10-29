@@ -96,6 +96,7 @@ export interface HealthResponse {
     message: string;
     engine_version?: string;
     api_version?: string;
+    capabilities?: string[];
     embedding_model?: string;
     reranker_model?: string;
     reranker_revision?: string | null;

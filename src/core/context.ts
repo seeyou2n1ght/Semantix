@@ -17,6 +17,7 @@ export interface ContextSnapshot {
     contextId: string;
     cleanedText: string;
     paragraphLine: number;
+    sourceKind?: 'selection' | 'line' | 'paragraph' | 'note';
 }
 
 export class ContextEngine {
@@ -51,14 +52,17 @@ export class ContextEngine {
         const paragraphInfo = this.extractParagraph(editor, cursor.line);
         
         let cleanedText: string;
+        let sourceKind: ContextSnapshot['sourceKind'];
         if (isSelectionActive) {
             cleanedText = selectionClean;
+            sourceKind = 'selection';
         } else {
             // 优先以当前光标所在行作为核心语义 Focus，若当前行为空或过短则回退至整段
             const currentLineRaw = editor.getLine(cursor.line);
             const currentLineClean = cleanMarkdown(currentLineRaw).trim();
             const paragraphClean = cleanMarkdown(paragraphInfo.text).trim();
-            cleanedText = currentLineClean.length >= 4 ? currentLineClean : paragraphClean;
+            sourceKind = currentLineClean.length >= 4 ? 'line' : 'paragraph';
+            cleanedText = sourceKind === 'line' ? currentLineClean : paragraphClean;
         }
         if (cleanedText.length < 3) return null;
 
@@ -112,7 +116,8 @@ export class ContextEngine {
             context,
             contextId,
             cleanedText,
-            paragraphLine: paragraphInfo.startLine
+            paragraphLine: paragraphInfo.startLine,
+            sourceKind
         };
     }
 
@@ -149,7 +154,8 @@ export class ContextEngine {
             context,
             contextId,
             cleanedText,
-            paragraphLine: 0
+            paragraphLine: 0,
+            sourceKind: 'note'
         };
     }
 

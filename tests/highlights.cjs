@@ -14,8 +14,19 @@ function load(file, modules = {}) {
     return exported;
 }
 
-const { RadarView } = load('src/ui/radar-view.ts', { obsidian: { ItemView: class {} } });
+const { RadarView } = load('src/ui/radar-view.ts', {
+    obsidian: { ItemView: class {} }, '../i18n/helpers': { t: key => key }
+});
 const view = Object.create(RadarView.prototype);
+const sourceLabel = { text: '', hidden: true,
+    setText(value) { this.text = value; },
+    toggleClass(_name, value) { this.hidden = value; } };
+view.contextSourceEl = sourceLabel;
+view.updateContextBreadcrumb('Notes/Draft.md', 'Plan', 'selection');
+assert.equal(sourceLabel.text, 'CONTEXT_SOURCE: Notes/Draft.md › Plan · CONTEXT_SELECTION');
+assert.equal(sourceLabel.hidden, false);
+view.updateContextBreadcrumb();
+assert.equal(sourceLabel.hidden, true);
 function render(text, terms) {
     const marks = [];
     let output = '';

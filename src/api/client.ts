@@ -24,15 +24,32 @@ export class ApiClient {
     private settings: SemantixSettings;
     private vaultId: string;
     public lastHealthResponse: HealthResponse | null = null;
+    private connectionIdentity: string;
+    private healthRequestId = 0;
+
+    supportsAdaptiveSoftFiltering(): boolean {
+        return this.lastHealthResponse?.capabilities?.includes('adaptive_lexical_soft_discount') === true;
+    }
 
     constructor(settings: SemantixSettings, vaultId: string) {
         this.settings = settings;
         this.vaultId = vaultId;
+        this.connectionIdentity = this.getConnectionIdentity();
     }
 
     public updateSettings(settings: SemantixSettings, vaultId?: string) {
         this.settings = settings;
         if (vaultId) this.vaultId = vaultId;
+        const identity = this.getConnectionIdentity();
+        if (identity !== this.connectionIdentity) {
+            this.connectionIdentity = identity;
+            this.healthRequestId++;
+            this.lastHealthResponse = null;
+        }
+    }
+
+    private getConnectionIdentity(): string {
+        return [this.baseUrl, this.settings.apiToken, this.vaultId].join('\0');
     }
 
     private get baseUrl(): string {
@@ -61,7 +78,9 @@ export class ApiClient {
      * Õ╝òÕàÑ 5 þºÆþí¼ÞÂàµùÂµ£║ÕêÂ´╝îÚÿ▓µ¡ó Obsidian requestUrl µîéÞÁÀÕ»╝Þç┤ UI µùáÕôìÕ║ö
      */
     async checkFullHealth(): Promise<HealthStatus> {
+        const requestId = ++this.healthRequestId;
         const fetchStatus = async (): Promise<HealthStatus> => {
+            const identity = this.connectionIdentity;
             try {
                 const url = `${this.baseUrl}/health`;
                 const req: RequestUrlParam = {
@@ -73,6 +92,7 @@ export class ApiClient {
                 };
                 
                 const res: RequestUrlResponse = await requestUrl(req);
+                if (identity !== this.connectionIdentity || requestId !== this.healthRequestId) return HealthStatus.NONE;
                 
                 if (res.status === 200 && res.json) {
                     const healthData = res.json as HealthResponse;
@@ -93,7 +113,9 @@ export class ApiClient {
                 this.lastHealthResponse = null;
                 return HealthStatus.CONFLICT;
             } catch {
-                this.lastHealthResponse = null;
+                if (identity === this.connectionIdentity && requestId === this.healthRequestId) {
+                    this.lastHealthResponse = null;
+                }
                 return HealthStatus.NONE;
             }
         };

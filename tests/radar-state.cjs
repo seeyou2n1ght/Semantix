@@ -1,4 +1,6 @@
 require('./highlights.cjs');
+require('./settings-adaptive.cjs');
+require('./adaptive-preparation.cjs');
 require('./source-location.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -61,17 +63,38 @@ vm.runInNewContext(code, { exports: exported, require: name => modules[name] || 
             getActiveFile: () => markdownView.file,
             getLeavesOfType: type => type === 'markdown' ? [{ view: markdownView }] : [{ view }, { view: secondView }, { view: {} }]
         } },
-        apiClient: { radarSearch: async request => {
+        apiClient: { supportsAdaptiveSoftFiltering: () => true, radarSearch: async request => {
             requests.push(request);
             return fail ? null : { context_id: request.context_id, related: [], discover: [] };
-        } }
+        } },
+        isAdaptiveFilteringEffective() {
+            return this.settings.enableAdaptiveFiltering && this.apiClient.supportsAdaptiveSoftFiltering();
+        }
     };
     const radar = new exported.RadarEngine(plugin);
     const snapshot = { contextId: 'ctx', context: { path: 'current.md', scope: 'focus' }, cleanedText: 'query', transitionType: 'NEW_FILE' };
     await radar.executeRadarSearch(snapshot);
     assert.equal(requests[0].enable_adaptive_filtering, false);
     assert.deepEqual(Array.from(requests[0].custom_stopwords), ['示例', 'Example', '模板']);
-    assert.equal(view.errors, 1);
+    plugin.settings.enableAdaptiveFiltering = true;
+    await radar.executeRadarSearch(snapshot);
+    assert.equal(requests.at(-1).enable_adaptive_filtering, true, 'supported engine must receive on');
+    plugin.apiClient.supportsAdaptiveSoftFiltering = () => false;
+    await radar.executeRadarSearch(snapshot);
+    assert.equal(requests.at(-1).enable_adaptive_filtering, false, 'older engine must not hard-remove adaptive terms');
+    plugin.settings.enableAdaptiveFiltering = false;
+    plugin.apiClient.supportsAdaptiveSoftFiltering = () => true;
+    await radar.executeRadarSearch(snapshot);
+    assert.equal(requests.at(-1).enable_adaptive_filtering, false, 'turning off must send false');
+    const scopeProbe = new exported.RadarEngine(plugin);
+    const refreshedScopes = [];
+    scopeProbe.activeSearch = { id: 1, scope: 'note' };
+    scopeProbe.triggerNoteScan = async () => { refreshedScopes.push('note'); };
+    scopeProbe.triggerFocusScan = async () => { refreshedScopes.push('focus'); };
+    scopeProbe.invalidateForSettingsChange();
+    await scopeProbe.refreshCurrentScope();
+    assert.deepEqual(refreshedScopes, ['note'], 'settings change during first note scan must retain note scope');
+    assert.equal(view.errors, 4);
     assert.equal(view.results, 0);
 
     fail = false;

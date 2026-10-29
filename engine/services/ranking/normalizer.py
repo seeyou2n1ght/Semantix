@@ -5,7 +5,7 @@ from typing import List
 class ScoreNormalizer:
     """
     负责将不同量纲与分布的打分（Cosine 向量相似度、CrossEncoder Logits、BM25 词面分）
-    归一化校准至 [0, 1] 相对概率空间，避免不同特征间直接硬加权导致失真。
+    映射至 [0, 1] 的启发式排序特征，不代表跨查询稳定的匹配概率。
     """
 
     @staticmethod
@@ -34,3 +34,25 @@ class ScoreNormalizer:
         if max_s <= 0:
             return [0.0] * len(scores)
         return [max(0.0, s) / max_s for s in scores]
+
+    @staticmethod
+    def normalize_evidence_lexical(
+        scores: List[float], evidence_strengths: List[float],
+    ) -> List[float]:
+        """Keep weaker BM25 outliers out of stronger evidence's scale.
+
+        Each positive evidence tier uses matches of equal or greater strength
+        as its reference. Zero-evidence rows cannot set a reference. The caller
+        still applies the evidence-strength cap after normalization. Batches
+        with one positive strength tier retain the original relative scale.
+        """
+        if len(scores) != len(evidence_strengths):
+            raise ValueError("Lexical scores and evidence strengths must align")
+        references = {
+            strength: max((score for score, other in zip(scores, evidence_strengths)
+                           if other >= strength), default=0.0)
+            for strength in set(evidence_strengths) if strength > 0
+        }
+        return [max(0.0, score) / references[strength]
+                if strength > 0 and references[strength] > 0 else 0.0
+                for score, strength in zip(scores, evidence_strengths)]

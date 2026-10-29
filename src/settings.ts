@@ -87,6 +87,8 @@ export class SemantixSettingTab extends PluginSettingTab {
     private engineManageSlotEl: HTMLElement | null = null;
     private backendStatusTextEl: HTMLElement | null = null;
     private debounceSettingEl: HTMLElement | null = null;
+    private adaptiveStatusEl: HTMLElement | null = null;
+    private refreshStopwordsList: (() => void) | null = null;
 
     // DB Metrics 缓存
     private dbMetrics: {
@@ -139,6 +141,7 @@ export class SemantixSettingTab extends PluginSettingTab {
     }
 
     public refreshStatusDisplay(): void {
+        this.updateAdaptiveStatus();
         if (this.statusBannerSlotEl) {
             this.statusBannerSlotEl.empty();
             this.renderStatusHeader(this.statusBannerSlotEl);
@@ -151,6 +154,19 @@ export class SemantixSettingTab extends PluginSettingTab {
             this.engineManageSlotEl.empty();
             this.renderEngineBranch(this.engineManageSlotEl);
         }
+    }
+
+    private updateAdaptiveStatus(): void {
+        if (!this.adaptiveStatusEl) return;
+        const enabled = this.plugin.settings.enableAdaptiveFiltering;
+        this.adaptiveStatusEl.setText(enabled
+            ? t(this.plugin.isAdaptiveFilteringEffective() ? 'ADAPTIVE_ACTIVE'
+                : this.plugin.isAdaptiveFilteringPreparing() ? 'ADAPTIVE_PREPARING' : 'ADAPTIVE_INACTIVE') : '');
+        this.adaptiveStatusEl.toggleClass('is-hidden', !enabled);
+    }
+
+    public refreshAdaptiveStopwordsDisplay(): void {
+        this.refreshStopwordsList?.();
     }
 
     private formatBytes(bytes?: number): string {
@@ -591,19 +607,27 @@ export class SemantixSettingTab extends PluginSettingTab {
         const slotEl = containerEl.createDiv({ cls: 'semantix-stopwords-slot' });
 
         const renderDrawer = () => {
+            this.adaptiveStatusEl = null;
+            this.refreshStopwordsList = null;
             slotEl.empty();
-            const count = this.plugin.vaultStopwords?.length || 0;
+            let updatePanelButton = () => {};
             new Setting(slotEl)
                 .setName(t('STOPWORDS_PANEL_TITLE'))
                 .setDesc(t('STOPWORDS_PANEL_DESC'))
-                .addButton(btn => btn
-                    .setButtonText(this.isStopwordsOpen 
-                        ? t('STOPWORDS_BUTTON_COLLAPSE') 
-                        : t('STOPWORDS_BUTTON_EXPAND', { count }))
-                    .onClick(() => {
+                .addButton(btn => {
+                    updatePanelButton = () => {
+                        btn.setButtonText(this.isStopwordsOpen
+                            ? t('STOPWORDS_BUTTON_COLLAPSE')
+                            : t('STOPWORDS_BUTTON_EXPAND', { count: this.plugin.vaultStopwords?.length || 0 }));
+                    };
+                    updatePanelButton();
+                    btn.onClick(() => {
                         this.isStopwordsOpen = !this.isStopwordsOpen;
                         renderDrawer();
-                    }));
+                    });
+                });
+
+            this.refreshStopwordsList = () => updatePanelButton();
 
             if (this.isStopwordsOpen) {
                 const drawerEl = slotEl.createDiv({ cls: 'semantix-exclusion-drawer' });
@@ -614,22 +638,8 @@ export class SemantixSettingTab extends PluginSettingTab {
                     .addToggle(toggle => toggle
                         .setValue(this.plugin.settings.enableAdaptiveFiltering)
                         .onChange(async (val) => {
-                            this.plugin.settings.enableAdaptiveFiltering = val;
-                            await this.plugin.saveSettings();
-                            if (val && this.plugin.apiClient) {
-                                const res = await this.plugin.apiClient.computeStopwords();
-                                if (res?.words) {
-                                    this.plugin.vaultStopwords = res.words;
-                                    if (res.total_docs !== undefined && res.min_doc_freq !== undefined && res.threshold !== undefined) {
-                                        this.stopwordDetails = { total_docs: res.total_docs, min_doc_freq: res.min_doc_freq, threshold: res.threshold };
-                                    }
-                                    renderStopwordsChips();
-                                }
-                                void this.plugin.checkConnection({ silent: true });
-                                if (this.plugin.radar) {
-                                    void this.plugin.radar.triggerNoteScan();
-                                }
-                            }
+                            await this.applyAdaptiveFiltering(val);
+                            renderDrawer();
                         }))
                     .addButton(btn => btn
                         .setButtonText(t('BTN_CALCULATE_STOPWORDS'))
@@ -637,22 +647,18 @@ export class SemantixSettingTab extends PluginSettingTab {
                             btn.setDisabled(true);
                             btn.setButtonText(t('STOPWORDS_CALCULATING'));
                             try {
-                                const res = await this.plugin.apiClient.computeStopwords();
+                                const res = await this.plugin.recalculateAdaptiveFiltering();
                                 if (res) {
-                                    if (res.words) {
-                                        this.plugin.vaultStopwords = res.words;
-                                    }
                                     if (res.total_docs !== undefined && res.min_doc_freq !== undefined && res.threshold !== undefined) {
                                         this.stopwordDetails = { total_docs: res.total_docs, min_doc_freq: res.min_doc_freq, threshold: res.threshold };
                                     }
                                     const wordsPreview = res.words && res.words.length > 0 ? ` (${res.words.join(', ')})` : "";
                                     new Notice(t('ADAPTIVE_SUCCESS', { count: res.count }) + wordsPreview);
                                     renderStopwordsChips();
+                                    this.plugin.radar?.invalidateForSettingsChange();
+                                    this.plugin.queueAdaptiveRefresh();
                                     await this.plugin.checkConnection({ silent: true });
-                                    if (this.plugin.radar) {
-                                        void this.plugin.radar.triggerNoteScan();
-                                    }
-                                } else {
+                                } else if (res === null) {
                                     new Notice(t('STOPWORDS_FAILED'));
                                 }
                             } finally {
@@ -660,6 +666,9 @@ export class SemantixSettingTab extends PluginSettingTab {
                                 btn.setDisabled(false);
                             }
                         }));
+
+                this.adaptiveStatusEl = drawerEl.createDiv({ cls: 'semantix-adaptive-status', attr: { role: 'status' } });
+                this.updateAdaptiveStatus();
 
                 const chipsContainer = drawerEl.createDiv({ cls: 'semantix-stopwords-container' });
                 const renderStopwordsChips = () => {
@@ -692,6 +701,10 @@ export class SemantixSettingTab extends PluginSettingTab {
                     }
                 };
                 renderStopwordsChips();
+                this.refreshStopwordsList = () => {
+                    updatePanelButton();
+                    renderStopwordsChips();
+                };
 
                 new Setting(drawerEl)
                     .setName(t('CUSTOM_STOPWORDS_NAME'))
@@ -707,6 +720,17 @@ export class SemantixSettingTab extends PluginSettingTab {
         };
 
         renderDrawer();
+    }
+
+    private async applyAdaptiveFiltering(val: boolean): Promise<void> {
+        this.plugin.radar?.invalidateForSettingsChange();
+        this.plugin.queueAdaptiveRefresh();
+        this.plugin.settings.enableAdaptiveFiltering = val;
+        this.plugin.resetAdaptiveFilteringPreparation();
+        await this.plugin.saveSettings();
+        await this.plugin.checkConnection({ silent: true });
+        if (val && !this.plugin.isAdaptiveFilteringEffective()
+            && !this.plugin.isAdaptiveFilteringPreparing()) new Notice(t('ADAPTIVE_INACTIVE'));
     }
 
     /**

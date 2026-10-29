@@ -16,6 +16,8 @@ export type IndexingState = {
     label?: string;
 };
 
+type AdaptiveStopwordsResult = NonNullable<Awaited<ReturnType<ApiClient['computeStopwords']>>>;
+
 class FullIndexConfirmModal extends Modal {
     private onConfirm: () => void;
     private fileCount: number;
@@ -74,6 +76,12 @@ export default class SemantixPlugin extends Plugin {
     private settingTab: SemantixSettingTab | null = null;
     private statusBarItem: HTMLElement | null = null;
     public vaultStopwords: string[] = [];
+    private adaptivePreparation: 'idle' | 'pending' | 'ready' | 'failed' = 'idle';
+    private adaptivePreparationTask: Promise<AdaptiveStopwordsResult | null | undefined> | null = null;
+    private adaptivePreparationKey = '';
+    private adaptivePreparationGeneration = 0;
+    private connectionCheckId = 0;
+    private adaptiveRefreshPending = false;
 
     async onload() {
         // 1. 加载配置
@@ -307,12 +315,15 @@ export default class SemantixPlugin extends Plugin {
 
     async checkConnection(options: { silent?: boolean; manual?: boolean } = {}) {
         if (this.unloaded) return;
+        const checkId = ++this.connectionCheckId;
         const { silent = false, manual = false } = options;
 
         // 1. 判断是否处于“未启用”或“休眠”状态
         if (this.isMobileHibernating) {
+            this.resetAdaptiveFilteringPreparation();
             this.syncManager.setConnectionReady(false);
             this.updateAllViewStatus('disabled');
+            this.flushAdaptiveRefresh();
             return;
         }
 
@@ -322,30 +333,38 @@ export default class SemantixPlugin extends Plugin {
                 this.updateAllViewStatus('syncing');
             } else if (this.serviceManager.isUserStopped()) {
                 // 用户主动点击停止，保持禁用状态
+                this.resetAdaptiveFilteringPreparation();
                 this.syncManager.setConnectionReady(false);
                 this.updateAllViewStatus('disabled');
+                this.flushAdaptiveRefresh();
                 return;
             }
         }
 
         // 2. 探活心跳检测（解耦进程归属与连接可用性，支持外部手动启动的本地引擎）
         const health = await this.apiClient.checkFullHealth();
-        if (this.unloaded) return;
+        if (this.unloaded || checkId !== this.connectionCheckId) return;
         if (Platform.isDesktop && this.settings.backendMode === 'local' && this.serviceManager.isUserStopped()) {
+            this.resetAdaptiveFilteringPreparation();
             this.syncManager.setConnectionReady(false);
             this.updateAllViewStatus('disabled');
+            this.flushAdaptiveRefresh();
             return;
         }
         this.syncManager.setConnectionReady(health === HealthStatus.READY);
         if (health === HealthStatus.LOADING) {
+            this.resetAdaptiveFilteringPreparation();
             this.updateAllViewStatus('syncing');
+            this.flushAdaptiveRefresh();
             return;
         }
         if (health === HealthStatus.ERROR) {
+            this.resetAdaptiveFilteringPreparation();
             if (manual || (!silent && this.lastConnectionStatus !== 'disconnected')) {
                 new Notice(this.apiClient.lastHealthResponse?.message || t('STARTUP_FAILED'));
             }
             this.updateAllViewStatus('disconnected');
+            this.flushAdaptiveRefresh();
             return;
         }
         const isConnected = health === HealthStatus.READY;
@@ -374,12 +393,23 @@ export default class SemantixPlugin extends Plugin {
                 noticeToClose.hide();
             }
 
+            const statusGeneration = this.adaptivePreparationGeneration;
+            const statusKey = this.currentAdaptivePreparationKey();
+            const wordsBeforeStatus = this.vaultStopwords;
             const status = await this.apiClient.getIndexStatus();
+            if (this.unloaded || checkId !== this.connectionCheckId) return;
             if (status) {
                 this.updateAllViewIndexStatus(status.total_notes, status.last_updated);
-                this.vaultStopwords = status.vault_stopwords || [];
+                if (statusGeneration === this.adaptivePreparationGeneration
+                    && statusKey === this.currentAdaptivePreparationKey()
+                    && wordsBeforeStatus === this.vaultStopwords) {
+                    this.setVaultStopwords(status.vault_stopwords || []);
+                }
             }
+            await this.prepareAdaptiveFiltering();
+            if (this.unloaded || checkId !== this.connectionCheckId) return;
         } else {
+            this.resetAdaptiveFilteringPreparation();
             // 连接中断时若符合自愈条件，触发自愈机制
             if (Platform.isDesktop && this.settings.backendMode === 'local' && this.settings.autoStartServer && !this.serviceManager.isUserStopped()) {
                 this.serviceManager.triggerSelfHealing("心跳无响应");
@@ -398,6 +428,7 @@ export default class SemantixPlugin extends Plugin {
 
         // 4. 更新 UI 状态
         this.updateAllViewStatus(nextStatus);
+        this.flushAdaptiveRefresh();
     }
 
     /**
@@ -662,6 +693,88 @@ export default class SemantixPlugin extends Plugin {
         // 更新防抖设置
         if (this.radar) {
             this.radar.setupDebounce();
+        }
+    }
+
+    public resetAdaptiveFilteringPreparation(): void {
+        this.adaptivePreparationGeneration++;
+        this.adaptivePreparation = 'idle';
+        this.adaptivePreparationTask = null;
+        this.adaptivePreparationKey = this.currentAdaptivePreparationKey();
+    }
+
+    public queueAdaptiveRefresh(): void {
+        this.adaptiveRefreshPending = true;
+    }
+
+    private setVaultStopwords(words: string[]): void {
+        this.vaultStopwords = words;
+        this.settingTab?.refreshAdaptiveStopwordsDisplay();
+    }
+
+    private flushAdaptiveRefresh(): void {
+        if (!this.adaptiveRefreshPending || this.adaptivePreparation === 'pending') return;
+        this.adaptiveRefreshPending = false;
+        if (this.radar) void this.radar.refreshCurrentScope();
+    }
+
+    public isAdaptiveFilteringEffective(): boolean {
+        return this.settings.enableAdaptiveFiltering
+            && this.getConnectionStatus() === 'connected'
+            && this.apiClient.supportsAdaptiveSoftFiltering()
+            && this.adaptivePreparationKey === this.currentAdaptivePreparationKey()
+            && this.adaptivePreparation === 'ready';
+    }
+
+    public isAdaptiveFilteringPreparing(): boolean {
+        return this.settings.enableAdaptiveFiltering && this.adaptivePreparation === 'pending';
+    }
+
+    private currentAdaptivePreparationKey(): string {
+        return [this.settings.backendMode, this.settings.backendUrl, this.settings.apiToken, this.vaultId].join('\0');
+    }
+
+    private async prepareAdaptiveFiltering(): Promise<void> {
+        if (this.adaptivePreparationKey !== this.currentAdaptivePreparationKey()) {
+            this.resetAdaptiveFilteringPreparation();
+        }
+        if (!this.settings.enableAdaptiveFiltering || !this.apiClient.supportsAdaptiveSoftFiltering()) return;
+        if (this.adaptivePreparationTask) {
+            await this.adaptivePreparationTask;
+            return;
+        }
+        if (this.adaptivePreparation !== 'idle') return;
+        await this.runAdaptivePreparation(true);
+    }
+
+    public async recalculateAdaptiveFiltering(): Promise<AdaptiveStopwordsResult | null | undefined> {
+        this.resetAdaptiveFilteringPreparation();
+        return this.runAdaptivePreparation(false);
+    }
+
+    private async runAdaptivePreparation(notifyFailure: boolean): Promise<AdaptiveStopwordsResult | null | undefined> {
+        const generation = this.adaptivePreparationGeneration;
+        const key = this.adaptivePreparationKey;
+        this.adaptivePreparation = 'pending';
+        const task = (async () => {
+            const result = await this.apiClient.computeStopwords();
+            if (generation !== this.adaptivePreparationGeneration
+                || key !== this.currentAdaptivePreparationKey()) return undefined;
+            if (result?.words) {
+                this.setVaultStopwords(result.words);
+                this.adaptivePreparation = 'ready';
+                return result;
+            } else {
+                this.adaptivePreparation = 'failed';
+                if (notifyFailure) new Notice(t('STOPWORDS_FAILED'));
+                return null;
+            }
+        })();
+        this.adaptivePreparationTask = task;
+        try {
+            return await task;
+        } finally {
+            if (this.adaptivePreparationTask === task) this.adaptivePreparationTask = null;
         }
     }
 

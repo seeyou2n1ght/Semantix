@@ -18,6 +18,8 @@ export class RadarEngine {
 
     private currentSearchId: number = 0;
     private activeSearch: { id: number; scope: string | undefined } | null = null;
+    private lastRenderedScope: string | undefined;
+    private refreshScopeAfterSettingsChange: string | undefined;
     private requestInFlight: Promise<RadarSearchResponse | null> | null = null;
     private cursorActivityTimer: number | null = null;
     public debouncedSearch: () => void;
@@ -65,6 +67,8 @@ export class RadarEngine {
         // 同步失效当前在途请求并清理状态
         this.currentSearchId++;
         this.activeSearch = null;
+        this.lastRenderedScope = undefined;
+        this.refreshScopeAfterSettingsChange = undefined;
         this.clearLoading();
         this.queryGate.reset();
         this.contextEngine.reset();
@@ -160,6 +164,21 @@ export class RadarEngine {
         await this.executeRadarSearch(snapshot);
     }
 
+    /** Re-run the visible scope after a search setting changes. */
+    public async refreshCurrentScope() {
+        const scope = this.refreshScopeAfterSettingsChange || this.activeSearch?.scope || this.lastRenderedScope;
+        this.refreshScopeAfterSettingsChange = undefined;
+        if (scope === 'note') await this.triggerNoteScan();
+        else await this.triggerFocusScan();
+    }
+
+    public invalidateForSettingsChange() {
+        this.refreshScopeAfterSettingsChange = this.activeSearch?.scope || this.lastRenderedScope;
+        this.currentSearchId++;
+        this.activeSearch = null;
+        this.clearLoading();
+    }
+
     public cancelSearch(): void {
         this.invalidateActiveSearch();
         this.forEachView(view => view.showScanCancelled());
@@ -233,7 +252,7 @@ export class RadarEngine {
                     top_k_discover: this.plugin.settings.topNResults || 4,
                     ranking_mode: this.plugin.settings.rankingMode || 'balanced',
                     exclude_paths: excludes,
-                    enable_adaptive_filtering: this.plugin.settings.enableAdaptiveFiltering,
+                    enable_adaptive_filtering: this.plugin.isAdaptiveFilteringEffective(),
                     custom_stopwords: (this.plugin.settings.customStopwords || '').split(/[\s,，]+/).filter(Boolean),
                     mmr_lambda: this.plugin.settings.mmrLambda ?? 0.65
                 }, searchId);
@@ -254,7 +273,7 @@ export class RadarEngine {
                     if (index + 1 < queries.length) {
                         const partial = mergeNoteResults(responses, this.plugin.settings.topNResults || 4);
                         this.renderResults(partial.related, partial.discover, snapshot.context.path,
-                            snapshot.context.heading, undefined, partial.warnings, true);
+                            snapshot.context.heading, undefined, partial.warnings, true, snapshot.sourceKind);
                     }
                     this.showNoteScanProgress(index + 1, queries.length);
                 }
@@ -277,6 +296,7 @@ export class RadarEngine {
             }
 
             if (response) {
+                this.lastRenderedScope = snapshot.context.scope;
                 // Keep current cards in stable positions without retaining old evidence.
                 const stabilized = this.stabilizer.stabilize(
                     response.related || [],
@@ -290,7 +310,9 @@ export class RadarEngine {
                     snapshot.context.path,
                     snapshot.context.heading,
                     snapshot.context.scope === 'note' ? undefined : snapshot.cleanedText,
-                    response.warnings
+                    response.warnings,
+                    false,
+                    snapshot.sourceKind
                 );
             }
         } catch (e) {
@@ -334,7 +356,8 @@ export class RadarEngine {
         contextHeading?: string,
         queryText?: string,
         warnings?: string[],
-        partial = false
+        partial = false,
+        sourceKind?: ContextSnapshot['sourceKind']
     ) {
         this.forEachView(view => {
             view.renderRadarResults(
@@ -344,7 +367,8 @@ export class RadarEngine {
                 contextHeading,
                 queryText,
                 warnings,
-                partial
+                partial,
+                sourceKind
             );
         });
     }

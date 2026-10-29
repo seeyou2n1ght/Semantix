@@ -75,27 +75,6 @@ export class PopoverPreview {
         titleLeft.createSpan({ cls: "semantix-popover-title", text: cleanTitle });
         const headingEl = titleLeft.createSpan({ cls: "semantix-popover-heading", text: "" });
 
-        // 红绿灯分数徽标
-        if (typeof item.score === 'number' && !isNaN(item.score)) {
-            let tierText = "●●○";
-            let tierCls = "mid";
-            let tierLabel = t('SCORE_LEVEL_MID');
-            if (item.score >= 0.75) {
-                tierText = "●●●";
-                tierCls = "high";
-                tierLabel = t('SCORE_LEVEL_HIGH');
-            } else if (item.score < 0.50) {
-                tierText = "●○○";
-                tierCls = "low";
-                tierLabel = t('SCORE_LEVEL_LOW');
-            }
-            titleRow.createSpan({ 
-                cls: `semantix-card-score mod-${tierCls} semantix-popover-score-badge`, 
-                text: tierText,
-                attr: { "aria-label": tierLabel }
-            });
-        }
-
         // 文件物理路径
         if (item.path) {
             const metaBar = header.createDiv({ cls: "semantix-popover-meta" });
@@ -114,7 +93,7 @@ export class PopoverPreview {
             });
         }
 
-        // 2. 完整段落上下文内容阅读区 (异步扩展，支持滚动)
+        // 2. 来源片段；唯一匹配当前文件时再扩展为所在段落
         const body = this.popoverEl.createDiv({ cls: "semantix-popover-body" });
         const textEl = body.createEl("p", { text: item.snippet, cls: "semantix-popover-text" });
 

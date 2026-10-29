@@ -20,6 +20,24 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    min-width: 0;
+    flex: 1;
+    flex-wrap: wrap;
+}
+
+.semantix-context-source {
+    color: var(--text-muted);
+    font-size: 0.75em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+
+.semantix-adaptive-status {
+    color: var(--text-muted);
+    font-size: 0.85em;
+    margin: 0 0 8px 12px;
 }
 
 .semantix-status-indicator {
@@ -52,6 +70,7 @@
 }
 
 .semantix-btn-scan-note {
+    flex-shrink: 0;
     font-size: 0.75em;
     padding: 2px 8px;
     border-radius: 4px;
@@ -268,28 +287,6 @@
     .semantix-popover-preview { animation: none; }
 }
 
-.semantix-card-score {
-    font-size: 0.72em;
-    font-family: var(--font-monospace);
-    font-weight: 700;
-    color: var(--color-green, #10b981);
-    background: rgba(16, 185, 129, 0.12);
-    padding: 1px 4px;
-    border-radius: 3px;
-    line-height: 1.2;
-    letter-spacing: 0.5px;
-}
-
-.semantix-card-score.mod-mid {
-    color: var(--color-yellow, #eab308);
-    background: rgba(234, 179, 8, 0.12);
-}
-
-.semantix-card-score.mod-low {
-    color: var(--text-muted);
-    background: var(--background-modifier-form-field);
-}
-
 .semantix-card-snippet {
     font-size: 0.78em;
     color: var(--text-muted);
@@ -445,11 +442,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-
-.semantix-popover-score-badge {
-    flex-shrink: 0;
-    font-size: 0.72em;
 }
 
 .semantix-popover-meta {

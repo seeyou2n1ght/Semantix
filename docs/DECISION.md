@@ -14,7 +14,9 @@ This file records durable decisions and their trade-offs. Current implementation
 | ADR-0006 | Position Obsidian Plugin as repository root product with Engine companion | Accepted | 2026-09-15 |
 | ADR-0007 | Flatten built plugin assets to root and enforce desktop-only contract | Accepted | 2026-09-18 |
 | ADR-0008 | Keep retrieval evidence and incomplete-result states explicit | Accepted | 2026-10-02 |
-| ADR-0012 | Retain a bounded history window during database maintenance | Accepted for local implementation | 2026-10-29 |
+| ADR-0009 | Use a pinned M3 reranker with an explicit legacy resource option | Accepted | 2026-10-28 |
+| ADR-0010 | Discount adaptive frequent-term evidence without deleting FTS terms | Accepted | 2026-10-28 |
+| ADR-0011 | Use strength-aware lexical normalization and preserve alphanumeric query tokens | Accepted as a bounded invariant repair | 2026-10-28 |
 
 ## ADR-0001: Local sidecar with explicit private-remote option
 
@@ -174,6 +176,53 @@ The legacy base reranker preferred a same-person park event over a useful recove
 Use the standard official `BAAI/bge-reranker-v2-m3` at tested revision `953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e`, safetensors with remote code disabled. Share identity and loading options between the model service and pre-downloader. Keep the previous 512-token pair budget rather than adopting M3's much larger default context; long pairs can be truncated. Preserve existing embedding/profile/index and ranking parameters, requiring no index rebuild.
 
 Retain only an explicit environment choice of the legacy base model for resource compatibility, rather than silently substituting a cheaper model on failure or adding a new UI selector. GPU failure retries the same model on CPU. Loading or terminal inference failure remains visible through health state and `reranker_unavailable` semantic fallback, with no repeated automatic model loading after failure. Top-level health `ok` continues to mean semantic availability for old clients, while additive fields and the message state actual reranker availability.
+
+
+## ADR-0010: Discount adaptive frequent-term evidence without deleting FTS terms
+
+**Status:** Accepted
+
+**Date:** 2026-10-28
+
+**Nature:** Retrieval-quality behavior; no wire or index migration.
+
+### Context
+
+Removing every term found in at least 30% of a Vault's notes can erase useful topic signals, especially in focused or small Vaults. The existing adaptive-filter control should reduce generic lexical influence while preserving those terms as searchable evidence.
+
+### Alternatives considered
+
+1. Keep adaptive terms as hard FTS exclusions: simple, but can remove useful lexical recall.
+2. Change global lexical/BM25/RRF weights: broad side effects without labeled cross-topic evidence.
+3. Keep adaptive terms in FTS and discount their per-candidate lexical evidence: preserves recall and bounds the change to matched terms in the selected passage.
+
+### Decision and consequences
+
+Choose option 3. Base function words and custom stopwords remain hard FTS exclusions; adaptive terms meeting the per-Vault 30% document-frequency cutoff remain searchable. For the candidate's selected indexed FTS tokens (note title, heading ancestry, and child passage; excluding directory names and expanded parent context), use the maximum matched-term strength: generic/function-like terms that remain after exact filtering receive 0.25, adaptive frequent terms 0.5, and any informative term 1.0. Apply the factor after batch lexical normalization. Raw BM25/RRF inputs remain unchanged, and highlight selection is evaluated separately from score qualification. Preserve existing setting and wire names, requiring no migration or index rebuild. These values are conservative heuristics, not calibrated probabilities or evidence of real-Vault relevance gains; acceptance requires controlled regression and separate relevance evaluation.
+
+Compatibility clarification (2026-10-28): an older engine interprets adaptive=true as hard FTS removal, so health now declares the soft-discount capability explicitly. The plugin keeps the saved preference but sends false and shows inactive status until the connected endpoint declares capability and a bounded Vault recalculation succeeds. This avoids deleting lexical recall on older engines while preserving connection compatibility. A failed preparation remains inactive until a manual recalculation, setting change, or later reconnection; endpoint and request generations reject stale results.
+
+## ADR-0011: Use strength-aware lexical normalization and preserve alphanumeric query tokens
+
+**Status:** Accepted as a bounded invariant repair
+
+**Date:** 2026-10-28
+
+**Nature:** Retrieval candidate behavior; no global weights, model, index, version, or deployment change.
+
+### Context
+
+Applying lexical strength only after the previous shared normalization let weak-evidence rows influence normalization for stronger-evidence rows. Adaptive token extraction could also fragment full alphanumeric names. A separate proposed reservation of 25%/50% of the fixed 16/20 reranker candidate budget for semantic results needed scrutiny for starvation and useful exact matches.
+
+### Alternatives considered
+
+1. Keep shared normalization and current token splitting: weak rows can set stronger rows' scale, and alphanumeric names can be split.
+2. Normalize each positive strength against the maximum raw BM25 of rows at least as strong, exclude zero-strength rows from denominators, and reuse full alphanumeric query terms: bounded normalization change with the existing final caps and display rules retained.
+3. Reserve part of the fixed reranker budget for semantic candidates: synthetic checks reduced the useful exact count from 1 to 0, radar_service source file was byte-equal to baseline after the rejected code was removed, and starvation remained unresolved.
+
+### Decision and consequences
+
+Accept option 2 as a bounded invariant repair, supported by deterministic defect reproduction and controlled real-model nonregression. Final lexical contribution caps remain 0.25/0.5/1.0; raw BM25/RRF ordering, global weights, model, index, version, and deployment do not change. Single ASCII `C` and `R` may contribute rank evidence only when they equal complete whitespace-delimited indexed tokens; `C++` and `C#` do not qualify as `C` evidence. Display retains the minimum two-character rule for all terms. Adaptive extraction reuses full alphanumeric query terms such as `GPT4o`, `Python3`, and `Go`. Existing stored snapshots require normal recalculation; no automatic production change or migration is performed. `C++`/`C#` conflation with `C` is deferred, and full strength from one ordinary informative word remains a known limitation. Evidence and probe JSON are recorded at `C:/Users/seeyo/Documents/Codex/2026-10-28/semantix-lexical-validation`; the final 89-test engine run passed without pytest warnings in 8.93 seconds. A frozen 12-query/28-note real-model comparison retained identical useful/irrelevant/missing counts (fast 11/31/0; balanced 11/3/0), card order and scores. It shows no measured relevance improvement; the final single-letter boundary repair is separately covered by real-FTS tests and the full suite, since no frozen input exercises that branch. No real-Vault or latency acceptance is claimed.
 
 ## ADR-0012: Retain a bounded history window during database maintenance
 

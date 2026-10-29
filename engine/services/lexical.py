@@ -1,8 +1,12 @@
 """Request-scoped lexical filtering shared by recall and snippet evidence."""
 import re
+from functools import lru_cache
 from typing import Iterable, List
 
 import jieba
+import jieba.posseg
+
+from config import ranking_config
 
 
 # Function words only: domain vocabulary remains eligible for recall.
@@ -29,6 +33,67 @@ WEAK_STANDALONE_MODIFIERS = frozenset("""
 灵活 高效 可靠 重要 简单 复杂 良好 明显 有效 最终
 """.split())
 
+# Ranking policy is independent of which terms the UI chooses to display.
+WEAK_LEXICAL_TERMS = frozenset("""
+需要 通过 问题 方法 使用 进行 解决 作为 一种 我们 这个 不是 没有 时候 其他 之后 然后
+灵活 高效 可靠 重要 简单 复杂 良好 明显 有效 最终
+""".split())
+
+# Established compounds whose dictionary POS is ambiguous (派=v, 高=a).
+# This bounded glossary preserves existing technical examples; it is not a
+# general rule that arbitrary adjacent Chinese tokens form a meaningful term.
+DOMAIN_COMPOUNDS = frozenset({'树莓派', '高可用'})
+
+
+@lru_cache(maxsize=4096)
+def _term_flag(term: str) -> str:
+    parts = list(jieba.posseg.cut(term))
+    return parts[0].flag if len(parts) == 1 else ''
+
+
+def _basic_weak_term(term: str) -> bool:
+    flag = _term_flag(term)
+    return (term in BASE_STOPWORDS | WEAK_LEXICAL_TERMS
+            or flag in {'d', 'ad', 'p', 'c', 'e', 'y', 'o'}
+            or flag.startswith(('r', 'm', 'q', 'u')))
+
+
+def is_weak_lexical_term(term: str) -> bool:
+    if _basic_weak_term(term):
+        return True
+    # Jieba can emit a whole generic expression as a noun (解决问题).
+    # Require every proper component to be weak; never remove substrings from
+    # an informative word such as 操作系统.
+    components = {part for part in jieba.cut_for_search(term)
+                  if part != term and len(part) >= 2}
+    if not components or not all(_basic_weak_term(part) for part in components):
+        return False
+    # A proper substring alone does not establish the meaning of the whole
+    # term (一致 is tagged ad, but does not cover the noun 一致性).
+    covered = {0}
+    for start in range(len(term)):
+        if start in covered:
+            covered.update(start + len(part) for part in components
+                           if term.startswith(part, start))
+    return len(term) in covered
+
+
+def lexical_evidence_strength(text: str, terms: Iterable[str],
+                              frequent_terms: Iterable[str] = ()) -> float:
+    """Qualify final lexical credit without changing BM25 recall or its score."""
+    matches = matching_terms(text, terms, include_single_ascii=True)
+    if not matches:
+        return 0.0
+    frequent = {term.strip().lower() for term in frequent_terms}
+    strengths = [ranking_config.LEXICAL_WEAK_TERM_STRENGTH
+                 if is_weak_lexical_term(term)
+                 else ranking_config.LEXICAL_FREQUENT_TERM_STRENGTH
+                 if term in frequent else 1.0 for term in matches]
+    # Additional weak overlaps must not reduce already informative evidence.
+    # One informative overlap is enough for ordinary BM25 credit; this is an
+    # evidence cap, not a calibrated measure of whole-note relevance.
+    return max(strengths)
+
 
 def query_terms(text: str, stopwords: Iterable[str] = ()) -> List[str]:
     stops = BASE_STOPWORDS | {word.strip().lower() for word in stopwords}
@@ -47,14 +112,24 @@ def query_terms(text: str, stopwords: Iterable[str] = ()) -> List[str]:
     return terms
 
 
-def matching_terms(snippet: str, terms: Iterable[str]) -> List[str]:
+def matching_terms(snippet: str, terms: Iterable[str], *,
+                   include_single_ascii: bool = False) -> List[str]:
     # Chinese segmentation can differ between query and snippet. Match the
     # visible text, while ASCII boundaries prevent art matching partial.
-    terms = [term for term in terms if len(term) >= 2]
+    # Single-letter identifiers are valid recall evidence (C, R), while the
+    # card display retains its two-character minimum. Never relax Hanzi.
+    terms = [term for term in terms if len(term) >= 2
+             or (include_single_ascii and re.fullmatch(r'[a-zA-Z]', term))]
     if not terms:
         return []
     matches = []
     for term in terms:
+        if len(term) == 1:
+            # Ranking reads pretokenized FTS evidence. Its analyzer conflates
+            # C/C++/C#, so require the exact whitespace-delimited source token.
+            if re.search(r'(?<!\S)' + re.escape(term) + r'(?!\S)', snippet, re.IGNORECASE):
+                matches.append(term)
+            continue
         left = r'(?<![a-zA-Z0-9_])' if re.match(r'[a-zA-Z0-9_]', term[0]) else ''
         right = r'(?![a-zA-Z0-9_])' if re.match(r'[a-zA-Z0-9_]', term[-1]) else ''
         if re.search(left + re.escape(term) + right, snippet, re.IGNORECASE):
@@ -65,21 +140,29 @@ def matching_terms(snippet: str, terms: Iterable[str]) -> List[str]:
 def highlight_terms(query: str, snippet: str, terms: Iterable[str]) -> List[str]:
     """Choose a small set of truthful, informative overlaps for the card UI.
 
-    Adjacent 2+1-character Chinese tokens may represent one term absent from
-    jieba's dictionary (for example 树莓派 or 阿里云). Promote the complete
-    span only when it occurs in both query and displayed snippet.
+    Promote noun/name compounds and a bounded technical glossary only when
+    the complete span occurs in both query and displayed snippet. Adjacency
+    alone does not justify joining a function word or an arbitrary verb.
     """
     effective = set(terms)
     matches = [term for term in matching_terms(snippet, effective)
-               if term not in LOW_VALUE_HIGHLIGHTS | WEAK_STANDALONE_MODIFIERS]
+               if term not in LOW_VALUE_HIGHLIGHTS
+               and not is_weak_lexical_term(term)]
     promoted = []
     parts = list(jieba.tokenize(query))
     for (left, _, left_end), (right, right_start, _) in zip(parts, parts[1:]):
         if left_end != right_start:
             continue
-        is_compound = sorted((len(left), len(right))) == [1, 2]
+        phrase = left + right
+        noun_pair = (_term_flag(left).startswith('n')
+                     and _term_flag(right).startswith('n'))
+        is_compound = (sorted((len(left), len(right))) == [1, 2]
+                       and (phrase in DOMAIN_COMPOUNDS
+                            or (noun_pair and not is_weak_lexical_term(left)
+                                and not is_weak_lexical_term(right))))
         is_modified_term = (left in WEAK_STANDALONE_MODIFIERS
-                            and right not in LOW_VALUE_HIGHLIGHTS | WEAK_STANDALONE_MODIFIERS
+                            and not is_weak_lexical_term(right)
+                            and _term_flag(right).startswith(('n', 'v'))
                             and 2 <= len(right) <= 5)
         if not (is_compound or is_modified_term):
             continue
@@ -87,7 +170,6 @@ def highlight_terms(query: str, snippet: str, terms: Iterable[str]) -> List[str]
             continue
         if not effective.issuperset((left.lower(), right.lower())):
             continue
-        phrase = left + right
         if phrase in snippet and phrase not in promoted:
             promoted.append(phrase)
 

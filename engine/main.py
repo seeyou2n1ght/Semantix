@@ -213,10 +213,12 @@ def health_check():
         "reranker_status": reranker_service.status,
         "reranker_device": reranker_service.active_device,
     }
+    capabilities = ["adaptive_lexical_soft_discount"]
 
     if embedding_service.load_error is not None:
         return {
             **reranker_info,
+            "capabilities": capabilities,
             "status": "error",
             "message": "Embedding model failed to load. Check the engine logs and restart after correcting the cause.",
             "engine_version": ENGINE_VERSION,
@@ -228,6 +230,7 @@ def health_check():
     if not embedding_service.is_ready:
         return {
             **reranker_info,
+            "capabilities": capabilities,
             "status": "loading",
             "message": "Model is loading...",
             "engine_version": ENGINE_VERSION,
@@ -238,6 +241,7 @@ def health_check():
         }
     return {
         **reranker_info,
+        "capabilities": capabilities,
         "status": "ok",
         "message": ("Semantix backend is ready." if reranker_service.is_ready else
                     f"Semantic retrieval is ready; reranker is {reranker_service.status}. Reranking requests use degraded semantic results until it is ready."),

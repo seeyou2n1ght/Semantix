@@ -61,7 +61,9 @@ class FeatureBuilder:
 
         # 1. 词面分批次归一化
         raw_lexicals = [c.lexical_score for c in candidates]
-        norm_lexicals = ScoreNormalizer.normalize_batch_lexical(raw_lexicals)
+        norm_lexicals = ScoreNormalizer.normalize_evidence_lexical(
+            raw_lexicals, [c.lexical_evidence_strength for c in candidates],
+        )
 
         current_dir = os.path.dirname(current_path).replace("\\", "/").strip("/") if current_path else None
         current_tags_set = {t.lstrip("#").lower() for t in (current_tags or []) if t}
@@ -93,7 +95,8 @@ class FeatureBuilder:
             else:
                 rr_norm = sem_norm
 
-            lex_norm = norm_lexicals[i] if i < len(norm_lexicals) else 0.0
+            lex_norm = (norm_lexicals[i] * c.lexical_evidence_strength
+                        if i < len(norm_lexicals) else 0.0)
 
             # 链接关系检测：精准规范路径优先，无路径别名才允许 basename 兜底
             cand_links_exact = set(c.links or [])

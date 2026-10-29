@@ -18,6 +18,7 @@ export class RadarView extends ItemView implements HoverParent {
     private scanBarEl!: HTMLElement;
     private searchErrorEl!: HTMLElement;
     private searchInfoEl!: HTMLElement;
+    private contextSourceEl!: HTMLElement;
     private isSearching = false;
     private isScanningNote = false;
     private renderedItems = new WeakMap<HTMLElement, string>();
@@ -76,6 +77,7 @@ export class RadarView extends ItemView implements HoverParent {
             text: t('TESTING'),
             cls: "semantix-status-text"
         });
+        this.contextSourceEl = statusGroup.createSpan({ cls: 'semantix-context-source is-hidden' });
 
         // 临时 Note Mode 扫描按钮
         this.scanNoteBtnEl = topBar.createEl("button", {
@@ -150,8 +152,13 @@ export class RadarView extends ItemView implements HoverParent {
         this.popoverPreview.destroy();
     }
 
-    public updateContextBreadcrumb(_filePath?: string, _heading?: string) {
-        // 顶部栏已精简化，移除 Connected 右侧冗余文件名，保持接口兼容
+    public updateContextBreadcrumb(filePath?: string, heading?: string,
+        sourceKind?: 'selection' | 'line' | 'paragraph' | 'note') {
+        if (!this.contextSourceEl) return;
+        const source = filePath ? [filePath, heading].filter(Boolean).join(' › ') : '';
+        const kind = sourceKind ? t(`CONTEXT_${sourceKind.toUpperCase()}` as 'CONTEXT_SELECTION') : '';
+        this.contextSourceEl.setText(source ? `${t('CONTEXT_SOURCE')}: ${source}${kind ? ` · ${kind}` : ''}` : '');
+        this.contextSourceEl.toggleClass('is-hidden', !source);
     }
 
     public renderRadarResults(
@@ -161,13 +168,14 @@ export class RadarView extends ItemView implements HoverParent {
         contextHeading?: string,
         _queryText?: string,
         warnings: string[] = [],
-        partial = false
+        partial = false,
+        sourceKind?: 'selection' | 'line' | 'paragraph' | 'note'
     ) {
         if (!partial) this.clearLoading();
         this.searchErrorEl?.addClass("is-hidden");
         this.relatedContainerEl?.removeClass("is-stale");
         this.discoverContainerEl?.removeClass("is-stale");
-        this.updateContextBreadcrumb(contextPath, contextHeading);
+        this.updateContextBreadcrumb(contextPath, contextHeading, sourceKind);
         if (this.searchInfoEl) {
             const messages = warnings.length ? [t('SEARCH_DEGRADED')] : [];
             if (partial) messages.unshift(t('SEARCH_PARTIAL'));
@@ -198,6 +206,7 @@ export class RadarView extends ItemView implements HoverParent {
         if (this.relatedContainerEl) this.renderedItems.delete(this.relatedContainerEl);
         if (this.discoverContainerEl) this.renderedItems.delete(this.discoverContainerEl);
         this.searchInfoEl?.addClass('is-hidden');
+        this.updateContextBreadcrumb();
         this.searchErrorEl?.addClass('is-hidden');
         this.relatedContainerEl?.removeClass('is-stale');
         this.discoverContainerEl?.removeClass('is-stale');
@@ -257,7 +266,7 @@ export class RadarView extends ItemView implements HoverParent {
             card.setAttribute("tabindex", "0");
             card.setAttribute("role", "button");
 
-            // 顶行：左侧笔记名称，右侧快捷操作（单个引用按钮）+ 红绿灯分值点
+            // 顶行：左侧笔记名称，右侧快捷操作
             const headerRow = card.createDiv({ cls: "semantix-card-header-row" });
             const titleText = item.title ? item.title.replace(/\.md$/i, '') : item.path.split('/').pop()?.replace(/\.md$/i, '') || '';
             card.setAttribute("aria-label", `${titleText} (${item.path}). ${t('CARD_CLICK_OPEN')}`);
@@ -280,27 +289,6 @@ export class RadarView extends ItemView implements HoverParent {
                 e.stopPropagation();
                 this.handleInsertLink(item);
             });
-
-            // 红绿灯分数 Badge
-            if (typeof item.score === 'number' && !isNaN(item.score)) {
-                let tierText = "●●○";
-                let tierCls = "mid";
-                let tierLabel = t('SCORE_LEVEL_MID');
-                if (item.score >= 0.75) {
-                    tierText = "●●●";
-                    tierCls = "high";
-                    tierLabel = t('SCORE_LEVEL_HIGH');
-                } else if (item.score < 0.50) {
-                    tierText = "●○○";
-                    tierCls = "low";
-                    tierLabel = t('SCORE_LEVEL_LOW');
-                }
-                rightGroup.createSpan({
-                    cls: `semantix-card-score mod-${tierCls}`,
-                    text: tierText,
-                    attr: { "aria-label": tierLabel }
-                });
-            }
 
             // 内容行 (摘要行，高亮关键词与自适应降噪)
             this.renderHighlightedSnippet(card, item.snippet, item.matched_terms || []);

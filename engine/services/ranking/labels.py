@@ -25,15 +25,10 @@ class LabelResolver:
                 labels.append(f"CONCEPT_BRIDGE:{feat.concept_bridge_target}")
             else:
                 labels.append("CONCEPT_BRIDGE")
-        # 4. 语义共鸣 (纯语义暗线，极低字面重合)
-        elif feat.lexical_norm <= ranking_config.LABEL_DEEP_ECHO_MAX_LEXICAL and (
-            feat.rerank_norm >= ranking_config.LABEL_DEEP_ECHO_MIN_RERANK or feat.semantic_norm >= 0.75
-        ):
-            labels.append("DEEP_ECHO")
-        # 5. 跨顶层目录跨域
+        # 4. 跨顶层目录跨域
         elif feat.is_cross_domain and feat.relevance_score >= ranking_config.LABEL_CROSS_DOMAIN_MIN_REL:
             labels.append("CROSS_DOMAIN")
-        # 6. 标签关联
+        # 5. 标签关联
         elif feat.tag_overlap > 0:
             labels.append("TOPIC_TAG")
 
@@ -59,12 +54,7 @@ class LabelResolver:
         # 4. 跨域灵感 (不同顶层分类目录)
         elif feat.is_cross_domain and feat.relevance_score >= ranking_config.LABEL_CROSS_DOMAIN_MIN_REL:
             labels.append("CROSS_DOMAIN")
-        # 5. 语义共鸣
-        elif feat.lexical_norm <= ranking_config.LABEL_DEEP_ECHO_MAX_LEXICAL and (
-            feat.rerank_norm >= ranking_config.LABEL_DEEP_ECHO_MIN_RERANK or feat.semantic_norm >= 0.75
-        ):
-            labels.append("DEEP_ECHO")
-        # 6. 标签关联
+        # 5. 标签关联
         elif feat.tag_overlap > 0:
             labels.append("TOPIC_TAG")
 

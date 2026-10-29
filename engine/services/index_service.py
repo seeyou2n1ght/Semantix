@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Set, Optional
 from utils.chunker import split_into_chunks, _sliding_window_split
 from storage.lancedb_storage import LanceDBStorage
 from services.embedding_service import EmbeddingService, embedding_service
+from services.lexical import query_terms
 
 logger = logging.getLogger("semantix")
 
@@ -121,18 +122,16 @@ class IndexService:
 
     def _extract_tokens(self, text: str) -> List[str]:
         tokens: List[str] = []
-        # 英文词汇提取（至少 3 字符）
-        for en_word in re.findall(r'[a-zA-Z]{3,}', text):
-            tokens.append(en_word.lower())
-
         # 中文词汇提取：优先 jieba 分词，未安装时回退至标点分句的 2~4 字符 n-gram
         try:
             import jieba  # type: ignore
-            for w in jieba.cut(text):
-                w_strip = w.strip()
-                if len(w_strip) >= 2 and re.match(r'^[\u4e00-\u9fa5]+$', w_strip):
-                    tokens.append(w_strip)
+            # Keep query identities intact (GPT4o, Python3, Go, C), while
+            # preserving the existing minimum for Chinese adaptive terms.
+            return [term for term in query_terms(text)
+                    if len(term) >= 2 or re.fullmatch(r'[a-z]', term)]
         except ImportError:
+            for en_word in re.findall(r'[a-zA-Z]{3,}', text):
+                tokens.append(en_word.lower())
             clauses = re.findall(r'[\u4e00-\u9fa5]+', text)
             for clause in clauses:
                 n = len(clause)
