@@ -435,9 +435,7 @@
     font-weight: 600;
     font-size: 0.95em;
     color: var(--text-normal);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
 }
 
 .semantix-popover-heading {
@@ -458,9 +456,7 @@
     font-size: 0.72em;
     color: var(--text-faint);
     font-family: var(--font-monospace);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
 }
 
 .semantix-popover-path {

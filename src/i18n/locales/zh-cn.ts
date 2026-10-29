@@ -301,7 +301,7 @@ export default {
     POPOVER_COPY: "复制",
     POPOVER_COPIED: "已复制",
     POPOVER_INSERT: "引用",
-    POPOVER_CLICK_HINT: "点击在当前窗口打开 · Shift+点击在新标签页打开",
+    POPOVER_CLICK_HINT: "点击在当前窗口打开 · Shift+点击在新标签页打开 · Mod+悬停使用 Obsidian 预览 · 🔗 在光标处插入链接",
     INDEXED_COUNT: "已索引: ",
     LAST_UPDATE: "上次更新: ",
     INDEXING_PROGRESS: "索引进度: ",

@@ -299,7 +299,7 @@ export default {
     POPOVER_COPY: "Copy",
     POPOVER_COPIED: "Copied",
     POPOVER_INSERT: "Reference",
-    POPOVER_CLICK_HINT: "Click to open in current leaf · Shift+Click in new tab",
+    POPOVER_CLICK_HINT: "Click to open in current leaf · Shift+Click in new tab · Mod+Hover for Obsidian preview · 🔗 inserts link at cursor",
     INDEXED_COUNT: "Indexed: ",
     LAST_UPDATE: "Last update: ",
     INDEXING_PROGRESS: "Indexing: ",

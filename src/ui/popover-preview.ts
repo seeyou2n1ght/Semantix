@@ -92,7 +92,7 @@ export class PopoverPreview {
             titleRow.createSpan({ 
                 cls: `semantix-card-score mod-${tierCls} semantix-popover-score-badge`, 
                 text: tierText,
-                attr: { "title": `${tierLabel} · ${t('SCORE_RELATIVE_HINT')}`, "aria-label": tierLabel }
+                attr: { "aria-label": tierLabel }
             });
         }
 
@@ -100,7 +100,6 @@ export class PopoverPreview {
         if (item.path) {
             const metaBar = header.createDiv({ cls: "semantix-popover-meta" });
             const pathEl = metaBar.createSpan({ cls: "semantix-popover-path", text: `📁 ${item.path}` });
-            pathEl.setAttribute("title", t('CARD_CLICK_OPEN'));
             pathEl.addEventListener("mouseover", (e: MouseEvent) => {
                 if (Keymap.isModifier(e, 'Mod') && app) {
                     this.hide();

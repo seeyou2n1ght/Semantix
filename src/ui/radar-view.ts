@@ -253,7 +253,6 @@ export class RadarView extends ItemView implements HoverParent {
 
         for (const item of items) {
             const card = container.createDiv({ cls: "semantix-radar-card" });
-            card.setAttribute("title", t('CARD_CLICK_OPEN'));
             // A11y: 支持键盘导航与屏幕阅读器
             card.setAttribute("tabindex", "0");
             card.setAttribute("role", "button");
@@ -261,10 +260,10 @@ export class RadarView extends ItemView implements HoverParent {
             // 顶行：左侧笔记名称，右侧快捷操作（单个引用按钮）+ 红绿灯分值点
             const headerRow = card.createDiv({ cls: "semantix-card-header-row" });
             const titleText = item.title ? item.title.replace(/\.md$/i, '') : item.path.split('/').pop()?.replace(/\.md$/i, '') || '';
+            card.setAttribute("aria-label", `${titleText} (${item.path}). ${t('CARD_CLICK_OPEN')}`);
             headerRow.createSpan({
                 cls: "semantix-card-title",
-                text: titleText,
-                attr: { "title": `${item.title} (${item.path})` }
+                text: titleText
             });
 
             const rightGroup = headerRow.createDiv({ cls: "semantix-card-header-right" });
@@ -274,7 +273,6 @@ export class RadarView extends ItemView implements HoverParent {
                 cls: "semantix-card-action-btn mod-insert",
                 text: "🔗",
                 attr: {
-                    "title": t('CARD_INSERT_LINK'),
                     "aria-label": t('CARD_INSERT_LINK')
                 }
             });
@@ -300,7 +298,7 @@ export class RadarView extends ItemView implements HoverParent {
                 rightGroup.createSpan({
                     cls: `semantix-card-score mod-${tierCls}`,
                     text: tierText,
-                    attr: { "title": `${tierLabel} · ${t('SCORE_RELATIVE_HINT')}`, "aria-label": tierLabel }
+                    attr: { "aria-label": tierLabel }
                 });
             }
 
