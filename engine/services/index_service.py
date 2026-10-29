@@ -117,32 +117,10 @@ class IndexService:
             "failed_docs": failed_docs
         }
 
-    def delete_by_paths(self, vault_id: str, paths: List[str]):
-        self.storage.delete_by_paths(vault_id, paths)
-
     def _extract_tokens(self, text: str) -> List[str]:
-        tokens: List[str] = []
-        # 中文词汇提取：优先 jieba 分词，未安装时回退至标点分句的 2~4 字符 n-gram
-        try:
-            import jieba  # type: ignore
-            # Keep query identities intact (GPT4o, Python3, Go, C), while
-            # preserving the existing minimum for Chinese adaptive terms.
-            return [term for term in query_terms(text)
-                    if len(term) >= 2 or re.fullmatch(r'[a-z]', term)]
-        except ImportError:
-            for en_word in re.findall(r'[a-zA-Z]{3,}', text):
-                tokens.append(en_word.lower())
-            clauses = re.findall(r'[\u4e00-\u9fa5]+', text)
-            for clause in clauses:
-                n = len(clause)
-                for length in (2, 3, 4):
-                    for i in range(n - length + 1):
-                        tokens.append(clause[i:i + length])
-        return tokens
-
-    def compute_vault_stopwords(self, vault_id: str, threshold: float = 0.3) -> List[str]:
-        """计算 Vault 自适应停用词并按 vault_id 物理隔离存储。"""
-        return self.compute_vault_stopword_details(vault_id, threshold)["words"]
+        # Preserve whole query identities and the Chinese adaptive-term minimum.
+        return [term for term in query_terms(text)
+                if len(term) >= 2 or re.fullmatch(r'[a-z]', term)]
 
     def compute_vault_stopword_details(self, vault_id: str, threshold: float = 0.3) -> Dict[str, Any]:
         """Return the exact denominator and cutoff used by this calculation."""

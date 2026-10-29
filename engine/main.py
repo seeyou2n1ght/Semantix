@@ -122,7 +122,7 @@ def verify_token(x_semantix_token: str | None = Header(default=None)):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
-ENGINE_VERSION = "0.11.6"
+ENGINE_VERSION = "0.11.7"
 API_VERSION = "1"
 INDEX_VERSION = "1"
 

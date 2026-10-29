@@ -8,6 +8,8 @@ This document defines the smallest reliable checks for frontend, backend, Harnes
 - Use deterministic synthetic notes and mocked model outputs in automated tests; tests must not depend on model downloads or external networks.
 - Compilation is necessary but does not prove Vault isolation, index preservation, stale-response rejection, or truthful ranking degradation.
 - Report commands actually executed, skipped checks, and any environment-specific warnings separately.
+- Reuse successful checks while their relevant code, configuration, dependencies and inputs remain unchanged; completing a later tier does not require repeating an unchanged earlier check.
+- Engine pytest setup assigns a session-temporary `SEMANTIX_DB_PATH` before test collection, overriding any inherited database path. Application imports must use that isolated shared database; storage-specific fixtures continue to use their own temporary directories.
 
 ## 2. Verification tiers
 
@@ -47,6 +49,7 @@ Use `npm run version -- minor` for a minor release; the script also synchronizes
 - Document aggregation keeps semantic/lexical scores, vectors, displayed source and highlights on the same selected passage. Other passages contribute to recall ordering but not synthetic final-score maxima; FTS-only evidence retains its actual cosine and lexical score.
 - An unavailable reranker does not create a synthetic normalized reranker score.
 - CrossEncoder returns raw logits on normal and CPU-fallback paths; normalization is applied once. Candidates outside a successful rerank shortlist cannot bypass rejection.
+- A reranker score-count mismatch degrades the whole batch with `reranker_unavailable`; feature construction relies on the pipeline's aligned-score contract and does not mix partial reranker output with per-candidate defaults.
 - Real temporary LanceDB tests prove bounded document refill, Vault/exclusion isolation on refill, and FTS-only cosine evidence. A failed channel reports degradation; loss of every eligible recall channel produces HTTP failure rather than an empty success.
 
 - Base function/custom stopwords are hard FTS exclusions and honor request settings and Vault isolation; empty effective queries skip FTS without restoring excluded terms or changing semantic input. Adaptive filtering is a soft evidence discount: qualifying frequent terms remain searchable, and disabling the option removes that discount without changing the terms sent to semantic search.

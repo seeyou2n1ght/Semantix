@@ -127,6 +127,26 @@ def test_unscored_candidates_cannot_bypass_reranker(monkeypatch):
     assert pipeline.execute('a', 'query')['warnings'] == ['reranker_unavailable']
 
 
+@pytest.mark.parametrize('scores', [[], [-10.], [-10., -10., -10.]])
+def test_misaligned_reranker_scores_degrade_the_whole_batch(monkeypatch, scores):
+    from services.radar_service import RadarPipeline
+    import services.radar_service as radar
+
+    candidates = [RetrievalCandidate(f'{i}.md', str(i), 'text', [1., 0.],
+                                     0.8, 0., 0, [], [], '') for i in range(2)]
+    retrieval = SimpleNamespace(retrieve_candidates=lambda **kwargs: candidates)
+    monkeypatch.setattr(radar.embedding_service, 'encode_query', lambda text: [1., 0.])
+    monkeypatch.setattr(radar.reranker_service, 'predict_scores', lambda *args: scores)
+    pipeline = RadarPipeline(retrieval)
+
+    fallback = pipeline.execute('a', 'query')
+    semantic = pipeline.execute('a', 'query', ranking_mode='fast')
+    assert fallback['warnings'] == ['reranker_unavailable']
+    assert fallback['related'] == semantic['related']
+    assert fallback['discover'] == semantic['discover']
+    assert fallback['related']
+
+
 def test_channel_failure_is_distinct_from_empty_results():
     def search(query, **kwargs):
         if kwargs.get('query_type') == 'fts':

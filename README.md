@@ -135,7 +135,7 @@ Navigation uses the complete matched text, including Markdown formatting and lin
 
 Semantix 是面向 Obsidian 的本地语义检索与灵感发现插件，在写作过程中提供强相关内容（Related）和跨主题关联（Discover）。
 
-当前版本：`v0.11.6`。正式发布限定桌面端，支持本地 Sidecar 或用户配置的远程引擎；移动端相关代码保留用于后续支持工作，当前不属于已支持的发布能力。
+当前版本：`v0.11.7`。正式发布限定桌面端，支持本地 Sidecar 或用户配置的远程引擎；移动端相关代码保留用于后续支持工作，当前不属于已支持的发布能力。
 
 ### 核心能力
 

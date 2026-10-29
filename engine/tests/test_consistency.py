@@ -3,7 +3,7 @@ import os
 import sys
 from typing import List, Dict, Any
 from datetime import timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -119,24 +119,6 @@ def test_multi_vault_stopwords_isolation(tmp_path):
     assert storage.get_vault_stopwords("vault_A") == {"新词"}
 
 
-def test_stopword_fallback_uses_two_to_four_character_ngrams():
-    """jieba 不可用时仍应覆盖 2、3、4 字滑窗，且不能把整句当成一个巨型词。"""
-    index_svc = IndexService(storage=MagicMock(), embedding_svc=MagicMock())
-    original_import = __import__
-
-    def import_without_jieba(name, *args, **kwargs):
-        if name == "jieba":
-            raise ImportError("jieba unavailable")
-        return original_import(name, *args, **kwargs)
-
-    with patch("builtins.__import__", side_effect=import_without_jieba):
-        tokens = index_svc._extract_tokens("这是一个关于笔记系统的测试")
-
-    assert "这是" in tokens
-    assert "这是一个" in tokens
-    assert "这是一个关于笔记系统的测试" not in tokens
-
-
 def test_stopword_threshold_uses_ceiling_document_frequency():
     """30% 阈值必须向上取整，避免 7 篇语料中仅出现 2 次的词被误判为噪音。"""
     rows = [
@@ -159,12 +141,10 @@ def test_stopword_threshold_uses_ceiling_document_frequency():
     storage._escape_sql_string.return_value = "vault"
     index_svc = IndexService(storage=storage, embedding_svc=MagicMock())
 
-    result = index_svc.compute_vault_stopwords("vault")
-
-    assert result == ["beta"]
-    storage.set_vault_stopwords.assert_called_once_with("vault", ["beta"])
-
     details = index_svc.compute_vault_stopword_details("vault")
+
+    assert details["words"] == ["beta"]
+    storage.set_vault_stopwords.assert_called_once_with("vault", ["beta"])
     assert details == {"words": ["beta"], "total_docs": 7, "min_doc_freq": 3, "threshold": 0.3}
 
 

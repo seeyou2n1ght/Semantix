@@ -56,6 +56,7 @@ class FeatureBuilder:
         rerank_scores: Optional[List[float]] = None,
         query_text: Optional[str] = None,
     ) -> List[CandidateFeatures]:
+        """Build features from aligned scores; RadarPipeline validates reranker output."""
         if not candidates:
             return []
 
@@ -90,13 +91,12 @@ class FeatureBuilder:
             sem_norm = ScoreNormalizer.normalize_cosine(c.semantic_score)
             
             # 如果有精排得分，使用精排归一化；否则回退为语义分
-            if rerank_scores and i < len(rerank_scores):
+            if rerank_scores is not None:
                 rr_norm = ScoreNormalizer.normalize_rerank_logit(rerank_scores[i])
             else:
                 rr_norm = sem_norm
 
-            lex_norm = (norm_lexicals[i] * c.lexical_evidence_strength
-                        if i < len(norm_lexicals) else 0.0)
+            lex_norm = norm_lexicals[i] * c.lexical_evidence_strength
 
             # 链接关系检测：精准规范路径优先，无路径别名才允许 basename 兜底
             cand_links_exact = set(c.links or [])

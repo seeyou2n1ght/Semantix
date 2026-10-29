@@ -369,7 +369,6 @@ export default class SemantixPlugin extends Plugin {
         }
         const isConnected = health === HealthStatus.READY;
         if (isConnected) {
-            void this.apiClient.ping(); // 同时发送后端存活心跳（异步执行，不阻塞 UI）
             this.serviceManager.onHealthyStable(); // 重置连续失败熔断计数
         }
         const nextStatus = isConnected ? 'connected' : 'disconnected';

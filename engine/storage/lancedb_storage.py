@@ -68,16 +68,7 @@ class LanceDBStorage:
                 pa.field("fts_tokens", pa.string()),   # 全文检索分词内容 (支持中英文词级召回)
             ]
         )
-        # 获取现有表名集合，优先使用现代 list_tables 接口避免 DeprecationWarning
-        existing_tables: list[str] = []
-        if hasattr(self.db, "list_tables"):
-            tables_res = self.db.list_tables()
-            if hasattr(tables_res, "tables"):
-                existing_tables = list(tables_res.tables)
-            elif isinstance(tables_res, (list, tuple)):
-                existing_tables = [t for t in tables_res if isinstance(t, str)]
-        elif hasattr(self.db, "table_names"):
-            existing_tables = list(self.db.table_names())
+        existing_tables = self.db.list_tables().tables
 
         if COLLECTION_NAME in existing_tables:
             self.table = self.db.open_table(COLLECTION_NAME)
@@ -202,17 +193,6 @@ class LanceDBStorage:
             logger.info("Cleared all notes for vault_id=%s", vault_id)
         except Exception as e:
             logger.error("Error clearing vault: %s", e)
-            raise
-
-    def insert_rows(self, rows: List[Dict[str, Any]]):
-        if not rows or self.table is None:
-            logger.warning("insert_rows skipped: rows=%s, table_is_none=%s", bool(rows), self.table is None)
-            return
-        try:
-            self.table.add(rows)
-            logger.info("insert_rows: successfully added %d rows, current table rows=%d", len(rows), self.table.count_rows())
-        except Exception as e:
-            logger.error("Error inserting rows to table: %s", e)
             raise
 
     def replace_documents(self, rows: List[Dict[str, Any]], paths_by_vault: Dict[str, Set[str]]):
