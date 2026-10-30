@@ -170,6 +170,22 @@ class LanceDBStorage:
             logger.error("Error counting notes: %s", e)
             raise
 
+    def get_indexed_paths(self, vault_id: str) -> List[str]:
+        self._validate_identifier(vault_id, "vault_id")
+        if self.table is None:
+            raise RuntimeError("Search index is unavailable")
+        try:
+            import pyarrow.compute as pc
+
+            escaped_vid = self._escape_sql_string(vault_id)
+            arrow_tbl = self.table.search().where(f"vault_id = '{escaped_vid}'").select(["path"]).limit(None).to_arrow()
+            if arrow_tbl.num_rows == 0:
+                return []
+            return [p for p in pc.unique(arrow_tbl.column("path")).to_pylist() if p]
+        except Exception as e:
+            logger.error("Error getting indexed paths: %s", e)
+            raise
+
     def delete_by_paths(self, vault_id: str, paths: List[str]):
         if not paths or self.table is None:
             return

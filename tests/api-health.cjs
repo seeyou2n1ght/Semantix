@@ -7,7 +7,7 @@ const ts = require('typescript');
 let body = { status: 'ok' };
 let delayedRequest = null;
 const source = fs.readFileSync(path.join(__dirname, '../src/api/client.ts'), 'utf8');
-const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
+const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
 const apiExports = {};
 vm.runInNewContext(code, {
     exports: apiExports,
@@ -63,5 +63,18 @@ vm.runInNewContext(code, {
     resolveSameEndpoint({ status: 200, json: { status: 'loading', engine_version: 'stale', api_version: '1' } });
     assert.equal(await olderHealth, apiExports.HealthStatus.NONE);
     assert.equal(client.lastHealthResponse.engine_version, 'current', 'older health cannot overwrite same-endpoint capability');
+    body = { vault_id: 'other', paths: ['private.md'] };
+    assert.equal(await client.getIndexedPaths(), null, 'wrong Vault inventory is rejected');
+    body = { vault_id: 'vault', paths: [17] };
+    assert.equal(await client.getIndexedPaths(), null, 'non-string paths are rejected');
+    body = { vault_id: 'vault', paths: ['a.md', 'a.md'] };
+    assert.deepEqual(Array.from(await client.getIndexedPaths()), ['a.md']);
+    let resolveInventory;
+    delayedRequest = new Promise(resolve => { resolveInventory = resolve; });
+    const oldInventory = client.getIndexedPaths();
+    client.updateSettings({ backendUrl: 'http://new-engine:9000', apiToken: '' }, 'vault');
+    delayedRequest = null;
+    resolveInventory({status: 200, json: {vault_id: 'vault', paths: ['stale.md']}});
+    assert.equal(await oldInventory, null, 'late previous endpoint inventory is rejected');
     console.log('health identity check passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

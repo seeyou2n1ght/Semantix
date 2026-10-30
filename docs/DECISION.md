@@ -17,6 +17,8 @@ This file records durable decisions and their trade-offs. Current implementation
 | ADR-0009 | Use a pinned M3 reranker with an explicit legacy resource option | Accepted | 2026-10-28 |
 | ADR-0010 | Discount adaptive frequent-term evidence without deleting FTS terms | Accepted | 2026-10-28 |
 | ADR-0011 | Use strength-aware lexical normalization and preserve alphanumeric query tokens | Accepted as a bounded invariant repair | 2026-10-28 |
+| ADR-0012 | Retain a bounded history window during database maintenance | Accepted for local implementation | 2026-10-29 |
+| ADR-0013 | Reconcile indexed paths without clearing valid documents first | Accepted for local implementation | 2026-10-30 |
 
 ## ADR-0001: Local sidecar with explicit private-remote option
 
@@ -237,3 +239,21 @@ The maintenance button sent a selected retention period but the engine always op
 ### Decision and consequences
 
 Manual maintenance uses the requested retention, or the current retention when the body is omitted; scheduled maintenance uses the same policy. The minimum is one day, the default remains seven days, and saved zero-day settings migrate to one day. Leave `delete_unverified=False`, retaining LanceDB's age protection for files from incomplete writes. The nonzero window allows ordinary readers on recent snapshots to finish while older history remains eligible for pruning; it is not a guarantee for arbitrarily long reads or independent processes. Do not use disk-size reduction as the correctness criterion. Heading-only text is split into bounded overlapping chunks instead of being truncated; body-bearing notes retain their existing chunking path.
+
+## ADR-0013: Reconcile indexed paths without clearing valid documents first
+
+**Status:** Accepted for local implementation
+
+**Date:** 2026-10-30
+
+### Context and alternatives
+
+File events received only while the plugin is loaded cannot describe changes made while Obsidian is closed. Replacing the currently visible files alone also leaves deleted, renamed or newly excluded paths in storage. Clearing the Vault before rebuilding would destroy valid indexes when a subsequent read, embedding or submission fails. Re-embedding every note on every health poll would impose unnecessary model work.
+
+### Decision and consequences
+
+Expose an explicitly Vault-scoped indexed-path inventory, keep successful local file signatures, and reconcile at connection/lifecycle boundaries and when exclusions change. Expand exclusions to concrete known paths for the exact-path search API, and apply the same matcher to displayed cards. Missing/failed inventory must remain distinguishable from an empty index; destructive cleanup requires a successful inventory and current local file enumeration. Full rebuild replaces eligible files individually and removes obsolete paths without clearing the valid indexes of current files first.
+
+Coordinate reconciliation, full rebuild and clear within the plugin instance, and wait for in-flight incremental work before the clear boundary. A successful clear may discard earlier queued work, while later file events remain eligible for sync. Failed clear retains pending work. This coordination is not a distributed lock for independent clients or processes.
+
+Local mtime/size signatures detect ordinary filesystem changes; they do not prove content identity when another tool preserves both values. An explicit full rebuild remains the repair path for that case. Host acceptance and representative real-Vault cost must be measured separately from controlled regression tests. The shared rerank shortlist and relevance gates remain unchanged; whole-note stream identity is repaired without claiming a new global semantic MMR pass.

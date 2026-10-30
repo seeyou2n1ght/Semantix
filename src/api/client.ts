@@ -6,6 +6,7 @@ import {
     DeleteIndexRequest,
     DeleteIndexResponse,
     IndexStatusResponse,
+    IndexPathsResponse,
     RadarSearchRequest,
     RadarSearchResponse,
     HealthResponse,
@@ -26,6 +27,10 @@ export class ApiClient {
     public lastHealthResponse: HealthResponse | null = null;
     private connectionIdentity: string;
     private healthRequestId = 0;
+
+    supportsIndexedPaths(): boolean {
+        return this.lastHealthResponse?.capabilities?.includes('vault_indexed_paths') === true;
+    }
 
     supportsAdaptiveSoftFiltering(): boolean {
         return this.lastHealthResponse?.capabilities?.includes('adaptive_lexical_soft_discount') === true;
@@ -135,7 +140,7 @@ export class ApiClient {
         try {
             const payload: BatchIndexRequest = {
                 documents: request.documents.map(doc => ({
-                    ...doc,
+                    path: doc.path, text: doc.text, tags: doc.tags, links: doc.links,
                     vault_id: doc.vault_id || this.vaultId
                 }))
             };
@@ -228,6 +233,34 @@ export class ApiClient {
             return null;
         } catch (error) {
             console.error("Semantix: Index status failed.", error);
+            return null;
+        }
+    }
+
+    /**
+     * Get all indexed document paths for the vault
+     */
+    async getIndexedPaths(vaultId?: string): Promise<string[] | null> {
+        const targetVault = vaultId || this.vaultId;
+        const identity = this.connectionIdentity;
+        try {
+            const url = `${this.baseUrl}/index/paths?vault_id=${encodeURIComponent(targetVault)}`;
+            const res = await requestUrl({
+                url,
+                method: 'GET',
+                contentType: 'application/json',
+                headers: this.getAuthHeaders()
+            });
+            if (res.status === 200 && res.json) {
+                const data = res.json as IndexPathsResponse;
+                if (identity === this.connectionIdentity && data.vault_id === targetVault
+                    && Array.isArray(data.paths) && data.paths.every(path => typeof path === 'string' && path.length > 0)) {
+                    return [...new Set(data.paths)];
+                }
+            }
+            return null;
+        } catch (error) {
+            console.error("Semantix: Get indexed paths failed.", error);
             return null;
         }
     }

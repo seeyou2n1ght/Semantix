@@ -29,6 +29,7 @@ class RadarView {
     showScanCancelled() { this.cancelled++; }
 }
 class MarkdownView {}
+class TFile {}
 
 const source = fs.readFileSync(path.join(__dirname, '../src/core/radar.ts'), 'utf8');
 const code = ts.transpileModule(source, { compilerOptions: {
@@ -37,7 +38,7 @@ const code = ts.transpileModule(source, { compilerOptions: {
 const exported = {};
 const noteScan = require('./note-scan.cjs');
 const modules = {
-    obsidian: { MarkdownView, debounce: fn => fn },
+    obsidian: { MarkdownView, TFile, debounce: fn => Object.assign(fn, { cancel() {} }) },
     '@codemirror/view': {},
     '../ui/radar-view': { RADAR_VIEW_TYPE: 'radar', RadarView },
     './context': { ContextEngine: class {} },
@@ -56,9 +57,11 @@ vm.runInNewContext(code, { exports: exported, require: name => modules[name] || 
     const requests = [];
     const plugin = {
         settings: { debounceDelay: 400, topNResults: 4, rankingMode: 'fast', enableAdaptiveFiltering: false, customStopwords: '示例，Example\n模板' },
+        getExcludedPathsForQuery: () => [],
+        getExclusionMatcher: () => ({ isExcluded: () => false }),
         vaultId: 'v',
         getConnectionStatus: () => 'connected',
-        app: { workspace: {
+        app: { vault: { getAbstractFileByPath: () => new TFile() }, workspace: {
             getActiveViewOfType: () => null,
             getActiveFile: () => markdownView.file,
             getLeavesOfType: type => type === 'markdown' ? [{ view: markdownView }] : [{ view }, { view: secondView }, { view: {} }]
@@ -115,7 +118,7 @@ vm.runInNewContext(code, { exports: exported, require: name => modules[name] || 
     await radar.triggerNoteScan();
     assert.equal(view.results, 1, 'edited note must not render old scan results');
 
-    radar.debouncedSearch = () => {}; // Leave the next request inside its debounce window.
+    radar.debouncedSearch = Object.assign(() => {}, { cancel() {} }); // Leave the next request inside its debounce window.
     for (const event of ['edit', 'cursor', 'selection']) {
         let complete;
         plugin.apiClient.radarSearch = () => new Promise(resolve => { complete = resolve; });

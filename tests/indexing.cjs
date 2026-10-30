@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const ts = require('typescript');
 
 class TFile {
-    constructor(path) { this.path = path; this.extension = 'md'; }
+    constructor(path) { this.path = path; this.extension = 'md'; this.stat = {mtime:1,size:1}; }
 }
 const notices = [];
 const timers = [];
@@ -27,19 +27,22 @@ function load(file, modules) {
 }
 const markdown = load('src/utils/markdown.ts', {});
 const batch = load('src/core/index-batch.ts', { '../utils/markdown': markdown });
+const exclusion = load('src/core/exclusion.ts', { picomatch: () => () => false });
 const SyncManager = load('src/core/sync.ts', { obsidian, './index-batch': batch,
-    picomatch: () => () => false }).SyncManager;
+    './exclusion': exclusion, picomatch: () => () => false }).SyncManager;
 const HealthStatus = { READY: 'ready', LOADING: 'loading', ERROR: 'error', NONE: 'none' };
 const Semantix = load('src/main.ts', { obsidian, './core/index-batch': batch,
+    './core/exclusion': exclusion,
     './api/client': { HealthStatus } }).default;
 function stub(files, read) {
     const batches = [];
     const plugin = { settings: { syncBatchInterval: 60, exclusionRules: '' }, vaultId: 'test',
         app: { vault: { getAbstractFileByPath: path => files.find(f => f.path === path),
             cachedRead: read, getMarkdownFiles: () => files } },
-        apiClient: { checkHealth: async () => true,
+        apiClient: { checkHealth: async () => true, getIndexedPaths: async () => [],
             indexBatch: async request => { batches.push(request.documents); return { status: 'success' }; },
             indexDelete: async () => ({ status: 'success' }), rebuildFtsIndex: async () => true },
+        saveData: async () => {}, onPathsIndexed() {}, onPathsDeleted() {}, getIndexIdentity: () => 'test',
         getFileContext: () => ({ tags: [], links: [] }), getIndexingState: () => ({ active: false }),
         updateIndexingProgress() {}, clearIndexingProgress() {}, checkConnection: async () => {},
         updateAllViewStatus() {} };
@@ -53,7 +56,7 @@ function readySync(plugin) {
 async function fullIndex(fixture) {
     const plugin = new Semantix();
     Object.assign(plugin, fixture.plugin);
-    plugin.syncManager = { pause: async () => {}, resume() {}, isExcludedPath: () => false };
+    plugin.syncManager = { pause: async () => {}, resume() {}, isExcludedPath: () => false, queueUpdate() {} };
     await plugin.startFullIndexing({ skipConfirm: true });
 }
 (async () => {

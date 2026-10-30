@@ -159,7 +159,7 @@ vm.runInNewContext(code, { exports: exported, require: name => {
     assert.equal(racing.isAdaptiveFilteringEffective(), true);
 
     const displayedWords = [];
-    racing.settingTab = { refreshAdaptiveStopwordsDisplay: () => displayedWords.push(racing.vaultStopwords.slice()) };
+    racing.settingTab = { updateIndexSnapshot() {}, refreshAdaptiveStopwordsDisplay: () => displayedWords.push(racing.vaultStopwords.slice()) };
     let resolveOldStatus;
     racing.apiClient.getIndexStatus = () => new Promise(resolve => { resolveOldStatus = resolve; });
     const oldStatusCheck = racing.checkConnection({ silent: true });

@@ -2,7 +2,7 @@ import { TFile, TFolder, TAbstractFile } from 'obsidian';
 import SemantixPlugin from '../main';
 import { IndexDocument } from '../api/types';
 import { readIndexDocument, indexBatches } from './index-batch';
-import picomatch from 'picomatch';
+import { ExclusionMatcher } from './exclusion';
 
 export class SyncManager {
     plugin: SemantixPlugin;
@@ -21,7 +21,7 @@ export class SyncManager {
     private retryAttempts: number = 0;
 
     private cachedRulesStr: string | null = null;
-    private cachedMatchers: ((path: string) => boolean)[] = [];
+    private exclusionMatcher: ExclusionMatcher | null = null;
 
     constructor(plugin: SemantixPlugin) {
         this.plugin = plugin;
@@ -60,6 +60,54 @@ export class SyncManager {
         if (this.pendingUpdates.size > 0 || this.pendingDeletes.size > 0) {
             this.startTimerIfNeeded();
         }
+    }
+
+    public getCurrentRevision(): number {
+        return this.revision;
+    }
+
+    public getPendingCount(): number {
+        return this.pendingUpdates.size + this.pendingDeletes.size;
+    }
+
+    public dropWorkBefore(boundaryRevision: number): void {
+        for (const [path, rev] of Array.from(this.pendingUpdates.entries())) {
+            if (rev <= boundaryRevision) {
+                this.pendingUpdates.delete(path);
+            }
+        }
+        for (const [path, rev] of Array.from(this.pendingDeletes.entries())) {
+            if (rev <= boundaryRevision) {
+                this.pendingDeletes.delete(path);
+            }
+        }
+    }
+
+    public dropNewlyExcludedUpdates(): string[] {
+        const dropped: string[] = [];
+        for (const path of Array.from(this.pendingUpdates.keys())) {
+            if (this.isExcluded(path)) {
+                this.pendingUpdates.delete(path);
+                dropped.push(path);
+            }
+        }
+        return dropped;
+    }
+
+    public queueReconciliation(filesToUpdate: TFile[], pathsToDelete: string[]): void {
+        for (const p of pathsToDelete) {
+            if (!this.pendingUpdates.has(p)) {
+                this.pendingDeletes.set(p, ++this.revision);
+            }
+        }
+        for (const f of filesToUpdate) {
+            if (!this.pendingDeletes.has(f.path) && !this.pendingUpdates.has(f.path)) {
+                if (!this.isExcluded(f.path)) {
+                    this.pendingUpdates.set(f.path, ++this.revision);
+                }
+            }
+        }
+        this.startTimerIfNeeded();
     }
 
     /**
@@ -122,11 +170,8 @@ export class SyncManager {
                 this.pendingDeletes.set(oldPath, ++this.revision);
                 this.pendingUpdates.delete(oldPath);
             }
-            if (file.extension === 'md') {
-                this.queueUpdate(file);
-            } else {
-                this.startTimerIfNeeded();
-            }
+            if (file.extension === 'md') this.queueUpdate(file);
+            this.startTimerIfNeeded();
         } else if (file instanceof TFolder) {
             // 递归处理文件夹重命名中的所有 markdown 文件
             const queueFolderFiles = (folder: TFolder, currentOldPrefix: string) => {
@@ -149,41 +194,11 @@ export class SyncManager {
      */
     private isExcluded(path: string): boolean {
         const rulesStr = this.plugin.settings.exclusionRules || "";
-        
-        if (this.cachedRulesStr !== rulesStr) {
+        if (this.cachedRulesStr !== rulesStr || !this.exclusionMatcher) {
             this.cachedRulesStr = rulesStr;
-            this.cachedMatchers = [];
-            const rules = rulesStr.split('\n').map(r => r.trim()).filter(r => r.length > 0);
-            
-            for (const r of rules) {
-                let globRule = r;
-                // Downward compatibility: If rule doesn't contain glob characters, make it a prefix match
-                if (!r.includes('*') && !r.includes('?') && !r.includes('[') && !r.includes(']')) {
-                    if (r.endsWith('/')) {
-                        globRule = `${r}**`;
-                    } else if (r.includes('.')) {
-                        // Keep as is for file matches (picomatch natively handles it or we could use **/${r})
-                    } else {
-                        globRule = `${r}/**`;
-                    }
-                }
-
-                try {
-                    this.cachedMatchers.push(picomatch(globRule));
-                } catch (e) {
-                    console.error(`Semantix: Invalid glob matching rule "${globRule}":`, e);
-                }
-            }
+            this.exclusionMatcher = new ExclusionMatcher(rulesStr);
         }
-        
-        for (const isMatch of this.cachedMatchers) {
-            try {
-                if (isMatch(path)) return true;
-            } catch {
-                // Ignore matching errors for invalid paths against a rule
-            }
-        }
-        return false;
+        return this.exclusionMatcher.isExcluded(path);
     }
 
     public isExcludedPath(path: string): boolean {
@@ -236,6 +251,8 @@ export class SyncManager {
     }
 
     private async doFlush(): Promise<void> {
+        const identity = this.plugin.getIndexIdentity();
+        const current = () => this.connectionReady && identity === this.plugin.getIndexIdentity();
         try {
             // 提取当前待处理项快照及当前版本号，待服务端确认成功后再比对移除
             const inFlightUpdates = new Map(this.pendingUpdates);
@@ -247,7 +264,13 @@ export class SyncManager {
             const documents: IndexDocument[] = [];
 
             for (const path of currentUpdates) {
-                if (!this.connectionReady) return;
+                if (!current()) return;
+                if (this.isExcluded(path)) {
+                    if (this.pendingUpdates.get(path) === inFlightUpdates.get(path)) {
+                        this.pendingUpdates.delete(path);
+                    }
+                    continue;
+                }
                 const file = this.plugin.app.vault.getAbstractFileByPath(path);
                 if (file instanceof TFile && file.extension === 'md') {
                     try {
@@ -261,8 +284,8 @@ export class SyncManager {
                 }
             }
 
-            const allDeletes = currentDeletes;
-            if (!this.connectionReady) return;
+            const allDeletes = currentDeletes.filter(path => !this.pendingUpdates.has(path));
+            if (!current()) return;
             const totalTasks = documents.length + allDeletes.length;
             let processed = 0;
 
@@ -275,38 +298,46 @@ export class SyncManager {
             }
 
             // 1. 处理明确删除的文件；空文档由批量更新原子删除。
-            if (allDeletes.length > 0) {
-                const delRes = await this.plugin.apiClient.indexDelete({ vault_id: this.plugin.vaultId, paths: allDeletes });
-                if (delRes && delRes.status === 'success') {
-                    for (const p of currentDeletes) {
-                        if (this.pendingDeletes.get(p) === inFlightDeletes.get(p)) {
-                            this.pendingDeletes.delete(p);
-                        }
+            for (let offset = 0; offset < allDeletes.length; offset += 25) {
+                if (!current()) return;
+                const paths = allDeletes.slice(offset, offset + 25).filter(path => !this.pendingUpdates.has(path));
+                if (!paths.length) continue;
+                const response = await this.plugin.apiClient.indexDelete({ vault_id: this.plugin.vaultId, paths });
+                if (!current()) return;
+                if (response?.status === 'success') {
+                    for (const path of paths) {
+                        if (this.pendingDeletes.get(path) === inFlightDeletes.get(path)) this.pendingDeletes.delete(path);
                     }
+                    this.plugin.onPathsDeleted(paths);
                 } else {
                     anyFailure = true;
-                    console.warn("Semantix Sync: Delete batch failed, will retry.");
+                    console.warn('Semantix Sync: Delete batch failed; retaining paths for retry.');
                 }
-                processed += allDeletes.length;
-                if (canReportProgress()) {
-                    this.plugin.updateIndexingProgress(processed, totalTasks, true, "sync");
-                }
+                processed += paths.length;
+                if (canReportProgress()) this.plugin.updateIndexingProgress(processed, totalTasks, true, 'sync');
             }
 
             // 2. 处理更新任务
             for (const batch of indexBatches(documents)) {
-                if (!this.connectionReady) return;
-                const batchRes = await this.plugin.apiClient.indexBatch({ documents: batch });
+                if (!current()) return;
+                const eligible = batch.filter(doc => !this.isExcluded(doc.path)
+                    && this.pendingUpdates.get(doc.path) === inFlightUpdates.get(doc.path));
+                if (!eligible.length) continue;
+                const batchRes = await this.plugin.apiClient.indexBatch({ documents: eligible });
+                if (!current()) return;
                 if (batchRes && batchRes.status === 'success') {
                     const failedSet = new Set(batchRes.failed_paths || []);
-                    for (const doc of batch) {
+                    const successDocs: IndexDocument[] = [];
+                    for (const doc of eligible) {
                         if (!failedSet.has(doc.path)) {
+                            successDocs.push(doc);
                             // 仅当文件在网络请求期间没有发生新修改时才从队列移除
                             if (this.pendingUpdates.get(doc.path) === inFlightUpdates.get(doc.path)) {
                                 this.pendingUpdates.delete(doc.path);
                             }
                         }
                     }
+                    if (successDocs.length > 0) this.plugin.onPathsIndexed(successDocs);
                     if (failedSet.size > 0) {
                         anyFailure = true;
                     }

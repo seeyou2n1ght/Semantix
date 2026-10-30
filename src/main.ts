@@ -7,7 +7,13 @@ import { SyncManager } from './core/sync';
 import { RadarEngine } from './core/radar';
 import { ServiceManager } from './core/service-manager';
 import { readIndexDocument, indexBatchWouldOverflow } from './core/index-batch';
+import { ExclusionMatcher } from './core/exclusion';
 import { t } from './i18n/helpers';
+
+export interface FileSignature {
+    mtime: number;
+    size: number;
+}
 
 export type IndexingState = {
     active: boolean;
@@ -82,11 +88,21 @@ export default class SemantixPlugin extends Plugin {
     private adaptivePreparationGeneration = 0;
     private connectionCheckId = 0;
     private adaptiveRefreshPending = false;
+    public fileSignatures: Record<string, FileSignature> = {};
+    private reconciliationPending = true;
+    private indexedPaths = new Set<string>();
+    public reconciliationStatus: 'unknown' | 'checking' | 'checked' | 'unavailable' | 'failed' = 'unknown';
+    private indexGeneration = 0;
+    private signatureKey = '';
+    private signatureSnapshots: Record<string, Record<string, FileSignature>> = {};
+    private dataSave: Promise<void> = Promise.resolve();
+    private searchSettingsTimer: number | null = null;
+    public writeCoordinationState: 'idle' | 'full_rebuild' | 'reconciliation' | 'clear' = 'idle';
 
     async onload() {
         // 1. 加载配置
-        await this.loadSettings();
         this.vaultId = this.computeVaultId();
+        await this.loadSettings();
         this.updateMobileMode();
 
         // 2. 初始化 API Client & Engines
@@ -351,6 +367,11 @@ export default class SemantixPlugin extends Plugin {
             this.flushAdaptiveRefresh();
             return;
         }
+        if (health !== HealthStatus.READY) {
+            this.indexGeneration++;
+            this.reconciliationPending = true;
+            this.reconciliationStatus = 'unknown';
+        }
         this.syncManager.setConnectionReady(health === HealthStatus.READY);
         if (health === HealthStatus.LOADING) {
             this.resetAdaptiveFilteringPreparation();
@@ -378,9 +399,11 @@ export default class SemantixPlugin extends Plugin {
             // 情况 A: 连接恢复 (从断连状态转为连接成功)
             if (this.lastConnectionStatus === 'disconnected') {
                 new Notice(t('NOTICE_RECOVERED'));
+                this.reconciliationPending = true;
             }
             // 情况 B: 手动测试成功 (排除本身已经在连接状态的情形，除非是手动点击)
             else if (manual) {
+                this.reconciliationPending = true;
                 new Notice(t('NOTICE_HEALTHY'));
             }
             
@@ -399,6 +422,7 @@ export default class SemantixPlugin extends Plugin {
             if (this.unloaded || checkId !== this.connectionCheckId) return;
             if (status) {
                 this.updateAllViewIndexStatus(status.total_notes, status.last_updated);
+                this.settingTab?.updateIndexSnapshot(status.total_notes, status.last_updated);
                 if (statusGeneration === this.adaptivePreparationGeneration
                     && statusKey === this.currentAdaptivePreparationKey()
                     && wordsBeforeStatus === this.vaultStopwords) {
@@ -427,6 +451,7 @@ export default class SemantixPlugin extends Plugin {
 
         // 4. 更新 UI 状态
         this.updateAllViewStatus(nextStatus);
+        if (isConnected && this.reconciliationPending) void this.reconcileVaultIndex();
         this.flushAdaptiveRefresh();
     }
 
@@ -516,153 +541,129 @@ export default class SemantixPlugin extends Plugin {
     }
 
     public async startFullIndexing(options?: { skipConfirm?: boolean }) {
-        if (this.isFullIndexing) {
-            new Notice("Semantix: 全量索引正在进行中。");
+        if (this.writeCoordinationState !== 'idle' || this.isMobileHibernating) {
+            new Notice('Semantix: 索引操作忙碌或当前平台已休眠，请稍后再试。');
             return;
         }
-        if (this.isMobileHibernating) {
-            new Notice("Semantix: 移动端休眠中，无法执行全量索引。");
-            return;
-        }
-
-        const isConnected = await this.apiClient.checkHealth();
-        if (!isConnected) {
-            new Notice("Semantix: 后端未连接，无法开始索引。");
-            return;
-        }
-
-        const allFiles = this.app.vault.getMarkdownFiles();
-        const files = allFiles.filter(file => !this.syncManager.isExcludedPath(file.path));
-        if (files.length === 0) {
-            new Notice("Semantix: 没有可索引的笔记。");
-            return;
-        }
-
         if (!options?.skipConfirm) {
-            new FullIndexConfirmModal(this.app, files.length, () => {
-                void this.startFullIndexing({ skipConfirm: true });
-            }).open();
+            const count = this.app.vault.getMarkdownFiles().filter(file => !this.syncManager.isExcludedPath(file.path)).length;
+            new FullIndexConfirmModal(this.app, count, () => { void this.startFullIndexing({ skipConfirm: true }); }).open();
             return;
         }
-
+        this.writeCoordinationState = 'full_rebuild';
         this.isFullIndexing = true;
         this.fullIndexCancelRequested = false;
-        this.updateAllViewStatus('syncing');
-        this.updateIndexingProgress(0, files.length, true, "full");
-
-        let indexingNotice: Notice | null = new Notice(`Semantix: 开始全量索引 (共 ${files.length} 篇)...`, 0);
-
-        let processed = 0;
-        let canceled = false;
-        let submissionFailed = false;
-        let completed = false;
+        this.reconciliationStatus = 'checking';
+        const identity = this.getIndexIdentity();
+        const current = () => identity === this.getIndexIdentity() && !this.unloaded;
         const failedPaths: string[] = [];
-
-        // 微任务与帧间空闲让渡函数，确保 UI 60fps 平滑不卡顿
-        const yieldToMain = (): Promise<void> => {
-            return new Promise((resolve) => {
-                const win = window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => void };
-                if (typeof win.requestIdleCallback === 'function') {
-                    win.requestIdleCallback(() => resolve(), { timeout: 30 });
-                } else {
-                    window.setTimeout(resolve, 16);
-                }
-            });
-        };
-
-        await this.syncManager.pause();
+        let completed = false;
+        let canceled = false;
+        let total = 0;
         try {
-            let currentBatchDocs: IndexDocument[] = [];
-
-            const flushBatch = async (): Promise<boolean> => {
-                if (currentBatchDocs.length === 0) return true;
-                const result = await this.apiClient.indexBatch({ documents: currentBatchDocs });
-                if (!result || result.status !== 'success') {
-                    new Notice("Semantix: 索引批次提交失败，请检查后端日志。");
-                    return false;
-                }
-                if (result.failed_paths && result.failed_paths.length > 0) {
-                    failedPaths.push(...result.failed_paths);
-                }
-                return true;
+            await this.syncManager.pause();
+            if (!current() || !await this.apiClient.checkHealth()) throw new Error('后端未连接或连接已变更');
+            const indexedPaths = await this.apiClient.getIndexedPaths();
+            if (!current()) throw new Error('索引连接已变更');
+            if (indexedPaths === null) throw new Error('无法获取完整索引路径清单，请更新或检查 Engine 后重试');
+            this.indexedPaths = new Set(indexedPaths);
+            const files = this.app.vault.getMarkdownFiles().filter(file => !this.syncManager.isExcludedPath(file.path));
+            total = files.length;
+            let processed = 0;
+            let batch: IndexDocument[] = [];
+            const flush = async () => {
+                if (!current()) throw new Error('索引连接已变更');
+                const eligible = batch.filter(doc => !this.syncManager.isExcludedPath(doc.path));
+                batch = [];
+                if (!eligible.length) return;
+                const response = await this.apiClient.indexBatch({ documents: eligible });
+                if (!current()) throw new Error('索引连接已变更');
+                if (!response || response.status !== 'success') throw new Error('批次提交失败');
+                const failed = new Set(response.failed_paths || []);
+                failedPaths.push(...failed);
+                this.onPathsIndexed(eligible.filter(doc => !failed.has(doc.path)));
             };
-
             for (const file of files) {
-                if (this.fullIndexCancelRequested) {
-                    canceled = true;
-                    break;
-                }
-
-                try {
-                    const doc = await readIndexDocument(this, file);
-                    if (indexBatchWouldOverflow(currentBatchDocs, doc)) {
-                        const success = await flushBatch();
-                        if (!success) {
-                            submissionFailed = true;
-                            break;
-                        }
-                        currentBatchDocs = [];
+                if (!current()) throw new Error('索引连接已变更');
+                if (this.fullIndexCancelRequested) { canceled = true; break; }
+                if (!this.syncManager.isExcludedPath(file.path)) {
+                    let doc: IndexDocument | null = null;
+                    try { doc = await readIndexDocument(this, file); }
+                    catch (error) {
+                        failedPaths.push(file.path);
+                        console.warn('Semantix: Full-index document read failed.', error);
                     }
-                    currentBatchDocs.push(doc);
-                } catch {
-                    failedPaths.push(file.path);
+                    if (doc) {
+                        if (indexBatchWouldOverflow(batch, doc)) await flush();
+                        batch.push(doc);
+                    }
                 }
-
-                processed++;
-                this.updateIndexingProgress(processed, files.length, true, "full");
-
-                // 每处理 5 个文件让渡一次主线程，避免界面顿挫
-                if (processed % 5 === 0) {
-                    await yieldToMain();
+                this.updateIndexingProgress(++processed, total, true, 'full');
+                if (processed % 5 === 0) await new Promise<void>(resolve => {
+                    const win = window as Window & { requestIdleCallback?: (cb: () => void) => void };
+                    if (win.requestIdleCallback) win.requestIdleCallback(resolve);
+                    else window.setTimeout(resolve, 0);
+                });
+            }
+            if (this.fullIndexCancelRequested) canceled = true;
+            if (!canceled) {
+                await flush();
+                // Enumerate again after updates: newer create/rename events must not be deleted by an old snapshot.
+                const eligiblePaths = new Set(this.app.vault.getMarkdownFiles()
+                    .filter(file => !this.syncManager.isExcludedPath(file.path)).map(file => file.path));
+                const obsolete = indexedPaths.filter(path => !eligiblePaths.has(path));
+                for (let offset = 0; offset < obsolete.length; offset += 25) {
+                    if (!current()) throw new Error('索引连接已变更');
+                    if (this.fullIndexCancelRequested) { canceled = true; break; }
+                    const paths = obsolete.slice(offset, offset + 25).filter(path => {
+                        const file = this.app.vault.getAbstractFileByPath(path);
+                        return !(file instanceof TFile) || this.syncManager.isExcludedPath(path);
+                    });
+                    if (!paths.length) continue;
+                    const deleted = await this.apiClient.indexDelete({ vault_id: this.vaultId, paths });
+                    if (!current()) throw new Error('索引连接已变更');
+                    if (!deleted || deleted.status !== 'success') throw new Error('旧索引路径清理失败');
+                    this.onPathsDeleted(paths);
+                }
+                if (!canceled) {
+                    const ftsReady = await this.apiClient.rebuildFtsIndex();
+                    if (!current()) throw new Error('索引连接已变更');
+                    if (!ftsReady) throw new Error('全文索引构建失败');
+                    completed = true;
+                    this.reconciliationPending = false;
+                    await this.dataSave;
+                    this.reconciliationStatus = 'checked';
                 }
             }
-
-            // 刷写剩余未提交文档
-            if (!canceled && !submissionFailed && currentBatchDocs.length > 0) {
-                const success = await flushBatch();
-                if (!success) submissionFailed = true;
-            }
-
-            completed = !canceled && !submissionFailed && processed >= files.length;
+            if (completed) new Notice(failedPaths.length
+                ? `Semantix: 全量索引部分完成：失败 ${failedPaths.length} 篇，旧索引保留并排队重试。`
+                : `Semantix: 全量索引完成 ✅ (共 ${total} 篇，旧路径已核对，全文索引已就绪)`);
+            else new Notice('Semantix: 索引已取消；已提交索引保留，完整核对尚未完成。');
         } catch (error) {
-            console.error("Semantix: Full index failed.", error);
-            new Notice("Semantix: 全量索引失败，请检查后端日志。");
+            this.reconciliationStatus = 'failed';
+            console.error('Semantix: Full indexing incomplete.', error);
+            new Notice(`Semantix: 全量索引未完成：${error instanceof Error ? error.message : String(error)}。已有效写入的索引保留。`);
         } finally {
-            if (indexingNotice) {
-                indexingNotice.hide();
-                indexingNotice = null;
+            for (const path of failedPaths) {
+                const file = this.app.vault.getAbstractFileByPath(path);
+                if (file instanceof TFile) this.syncManager.queueUpdate(file);
             }
+            if (!completed && this.reconciliationStatus === 'checking') this.reconciliationStatus = 'unknown';
             this.isFullIndexing = false;
             this.fullIndexCancelRequested = false;
+            this.writeCoordinationState = 'idle';
             this.clearIndexingProgress();
             this.syncManager.resume();
             await this.checkConnection();
-
-            if (completed) {
-                // 显式触发 FTS 倒排索引构建，实现即时全文检索支持
-                const ftsSuccess = await this.apiClient.rebuildFtsIndex();
-                if (failedPaths.length > 0) {
-                    const failCount = failedPaths.length;
-                    const successCount = files.length - failCount;
-                    new Notice(`Semantix: 全量索引部分完成 ⚠️ (成功 ${successCount} 篇，失败 ${failCount} 篇${ftsSuccess ? "，全文索引已就绪" : "，全文索引构建失败"})`);
-                } else if (!ftsSuccess) {
-                    new Notice(`Semantix: 全量索引已写入 (共 ${files.length} 篇)，但全文索引构建失败 ⚠️`);
-                } else {
-                    new Notice(`Semantix: 全量索引完成 ✅ (共 ${files.length} 篇笔记，全文索引已就绪)`);
-                }
-                if (this.radar) {
-                    void this.radar.triggerNoteScan();
-                }
-            } else if (submissionFailed) {
-                new Notice("Semantix: 全量索引未完成，批次提交失败。已提交的索引保留，请检查连接后重试。");
-            } else if (canceled) {
-                new Notice("Semantix: 索引已取消。");
-            }
+            if (completed && this.radar) void this.radar.refreshCurrentScope();
         }
     }
 
     onunload() {
         this.unloaded = true;
+        this.indexGeneration++;
+        if (this.searchSettingsTimer !== null) window.clearTimeout(this.searchSettingsTimer);
+        this.radar?.cancelDebounceTimers();
         this.syncManager.setConnectionReady(false);
         this.syncManager.clearTimer();
         this.clearHealthTimer();
@@ -670,15 +671,70 @@ export default class SemantixPlugin extends Plugin {
     }
 
     async loadSettings() {
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, (await this.loadData()) as Partial<SemantixSettings>);
-        if (this.settings.dbRetentionDays < 1) {
-            this.settings.dbRetentionDays = 1;
-            await this.saveData(this.settings);
+        const raw = (await this.loadData()) as Record<string, unknown> | null;
+        const saved = (raw?.settings || raw || {}) as Partial<SemantixSettings>;
+        this.settings = { ...DEFAULT_SETTINGS };
+        for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof SemantixSettings)[]) {
+            if (saved[key] !== undefined) Object.assign(this.settings, { [key]: saved[key] });
         }
+        this.settings.dbRetentionDays = Math.max(1, this.settings.dbRetentionDays);
+        const snapshots = raw?.indexSignatures;
+        if (snapshots && typeof snapshots === 'object' && !Array.isArray(snapshots)) {
+            for (const [key, value] of Object.entries(snapshots)) {
+                if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+                const valid: Record<string, FileSignature> = {};
+                for (const [path, signature] of Object.entries(value as Record<string, unknown>)) {
+                    const sig = signature as FileSignature | null;
+                    if (sig && Number.isFinite(sig.mtime) && Number.isFinite(sig.size)) valid[path] = { ...sig };
+                }
+                this.signatureSnapshots[key] = valid;
+            }
+        }
+        this.signatureKey = '';
+        this.selectSignatureSnapshot();
+    }
+
+    private indexEndpointKey(): string {
+        return [this.settings.backendMode, this.settings.backendUrl.replace(/\/$/, ''), this.vaultId].join('\0');
+    }
+
+    public getIndexIdentity(): string {
+        return [this.indexEndpointKey(), this.settings.apiToken, this.indexGeneration].join('\0');
+    }
+
+    private selectSignatureSnapshot(): void {
+        const key = this.indexEndpointKey();
+        if (this.signatureKey === key) return;
+        this.signatureKey = key;
+        this.fileSignatures = this.signatureSnapshots[key] || {};
+        this.signatureSnapshots[key] = this.fileSignatures;
+        this.indexedPaths = new Set();
+        this.reconciliationPending = true;
+        this.reconciliationStatus = 'unknown';
+        this.indexGeneration++;
+        this.radar?.invalidateForSettingsChange();
+        this.syncManager?.setConnectionReady(false);
+    }
+
+    public savePluginData(): Promise<void> {
+        this.signatureSnapshots[this.signatureKey] = this.fileSignatures;
+        const snapshot = JSON.parse(JSON.stringify({ ...this.settings, indexSignatures: this.signatureSnapshots })) as unknown;
+        const save = this.dataSave.catch(() => undefined).then(() => this.saveData(snapshot));
+        this.dataSave = save;
+        return save;
+    }
+
+    private persistIndexState(): void {
+        void this.savePluginData().catch(error => {
+            this.reconciliationStatus = 'failed';
+            console.error('Semantix: Could not persist successful index signatures.', error);
+            new Notice('Semantix: 索引同步记录保存失败；下次连接将重新核对。');
+        });
     }
 
     async saveSettings() {
-        await this.saveData(this.settings);
+        this.selectSignatureSnapshot();
+        await this.savePluginData();
         this.updateMobileMode();
         // 通知 apiClient 更新配置 URL
         this.apiClient.updateSettings(this.settings, this.vaultId);
@@ -744,6 +800,145 @@ export default class SemantixPlugin extends Plugin {
         }
         if (this.adaptivePreparation !== 'idle') return;
         await this.runAdaptivePreparation(true);
+    }
+
+
+    public getExclusionMatcher(): ExclusionMatcher {
+        return new ExclusionMatcher(this.settings.exclusionRules || '');
+    }
+
+    public getExcludedPathsForQuery(): string[] {
+        const matcher = this.getExclusionMatcher();
+        const knownPaths = new Set<string>();
+        for (const f of this.app.vault.getMarkdownFiles()) {
+            knownPaths.add(f.path);
+        }
+        for (const p of new Set([...Object.keys(this.fileSignatures), ...this.indexedPaths])) {
+            knownPaths.add(p);
+        }
+        return matcher.expandToPaths(knownPaths);
+    }
+
+    public onPathsIndexed(documents: IndexDocument[]): void {
+        for (const doc of documents) {
+            if (doc.sourceSignature) this.fileSignatures[doc.path] = { ...doc.sourceSignature };
+            if (doc.text) this.indexedPaths.add(doc.path);
+            else this.indexedPaths.delete(doc.path);
+        }
+        this.persistIndexState();
+    }
+
+    public onPathsDeleted(paths: string[]): void {
+        const deleted = new Set(paths);
+        for (const path of paths) {
+            delete this.fileSignatures[path];
+            this.indexedPaths.delete(path);
+        }
+        for (const leaf of this.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE)) {
+            if (leaf.view instanceof RadarView) leaf.view.filterExcludedCards(path => deleted.has(path));
+        }
+        this.persistIndexState();
+    }
+
+    public async clearVaultIndex(): Promise<boolean> {
+        if (this.writeCoordinationState !== 'idle') {
+            new Notice('Semantix: 索引操作正在进行中，无法清空。');
+            return false;
+        }
+        this.writeCoordinationState = 'clear';
+        const identity = this.getIndexIdentity();
+        try {
+            await this.syncManager.pause();
+            if (identity !== this.getIndexIdentity() || this.unloaded) return false;
+            const boundary = this.syncManager.getCurrentRevision();
+            const success = await this.apiClient.clearIndex(this.vaultId);
+            if (!success || identity !== this.getIndexIdentity() || this.unloaded) return false;
+            this.syncManager.dropWorkBefore(boundary);
+            this.fileSignatures = {};
+            this.indexedPaths.clear();
+            this.signatureSnapshots[this.signatureKey] = this.fileSignatures;
+            // A deliberate clear stays clear until later file events or explicit rebuild.
+            this.reconciliationPending = false;
+            this.reconciliationStatus = 'checked';
+            this.radar.onFileOpen(null);
+            try { await this.savePluginData(); }
+            catch (error) {
+                this.reconciliationStatus = 'failed';
+                console.error('Semantix: Index was cleared but sync record persistence failed.', error);
+                new Notice('Semantix: 索引已清空，但同步记录保存失败。');
+            }
+            return true;
+        } finally {
+            this.writeCoordinationState = 'idle';
+            this.syncManager.resume();
+        }
+    }
+
+    public async reconcileVaultIndex(): Promise<void> {
+        if (this.unloaded || this.writeCoordinationState !== 'idle' || this.getConnectionStatus() !== 'connected') return;
+        this.writeCoordinationState = 'reconciliation';
+        this.reconciliationPending = false;
+        this.reconciliationStatus = 'checking';
+        const identity = this.getIndexIdentity();
+        try {
+            await this.syncManager.pause();
+            if (identity !== this.getIndexIdentity() || this.unloaded) return;
+            if (!this.apiClient.supportsIndexedPaths()) {
+                this.reconciliationStatus = 'unavailable';
+                return;
+            }
+            const paths = await this.apiClient.getIndexedPaths();
+            if (identity !== this.getIndexIdentity() || this.unloaded) return;
+            if (paths === null) {
+                this.reconciliationStatus = 'failed';
+                return;
+            }
+            this.indexedPaths = new Set(paths);
+            const files = this.app.vault.getMarkdownFiles();
+            const validPaths = new Set(files.filter(file => !this.syncManager.isExcludedPath(file.path)).map(file => file.path));
+            const deletes = paths.filter(path => !validPaths.has(path));
+            const updates = files.filter(file => {
+                if (!validPaths.has(file.path)) return false;
+                const signature = this.fileSignatures[file.path];
+                return !this.indexedPaths.has(file.path) || !signature
+                    || signature.mtime !== file.stat.mtime || signature.size !== file.stat.size;
+            });
+            this.syncManager.dropNewlyExcludedUpdates();
+            this.syncManager.queueReconciliation(updates, deletes);
+            this.reconciliationStatus = 'checked';
+        } catch (error) {
+            this.reconciliationStatus = 'failed';
+            console.error('Semantix: Vault index reconciliation failed.', error);
+        } finally {
+            this.writeCoordinationState = 'idle';
+            this.syncManager.resume();
+            this.settingTab?.refreshStatusDisplay();
+        }
+    }
+
+    public async onSearchSettingChanged(settingKey?: string): Promise<void> {
+        this.radar.invalidateForSettingsChange();
+        this.radar.cancelDebounceTimers();
+        if (settingKey === 'exclusionRules') {
+            const matcher = this.getExclusionMatcher();
+            for (const leaf of this.app.workspace.getLeavesOfType(RADAR_VIEW_TYPE)) {
+                if (leaf.view instanceof RadarView) leaf.view.filterExcludedCards(path => matcher.isExcluded(path));
+            }
+            this.syncManager.dropNewlyExcludedUpdates();
+            this.indexGeneration++;
+            this.reconciliationPending = true;
+            this.reconciliationStatus = 'unknown';
+        }
+        if (this.searchSettingsTimer !== null) window.clearTimeout(this.searchSettingsTimer);
+        // Invalidate immediately, then coalesce text/slider input before health preparation and refresh.
+        this.searchSettingsTimer = window.setTimeout(() => {
+            this.searchSettingsTimer = null;
+            this.queueAdaptiveRefresh();
+            void this.saveSettings().then(() => this.flushAdaptiveRefresh()).catch(error => {
+                console.error('Semantix: Could not apply search settings.', error);
+                new Notice('Semantix: 搜索设置保存失败，请重试。');
+            });
+        }, 250);
     }
 
     public async recalculateAdaptiveFiltering(): Promise<AdaptiveStopwordsResult | null | undefined> {

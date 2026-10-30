@@ -89,6 +89,9 @@ export class SemantixSettingTab extends PluginSettingTab {
     private debounceSettingEl: HTMLElement | null = null;
     private adaptiveStatusEl: HTMLElement | null = null;
     private refreshStopwordsList: (() => void) | null = null;
+    private metricsRequest = 0;
+    private indexSnapshotRevision = 0;
+    private storageSetting: Setting | null = null;
 
     // DB Metrics 缓存
     private dbMetrics: {
@@ -256,10 +259,25 @@ export class SemantixSettingTab extends PluginSettingTab {
         }
     }
 
-    async onOpen(): Promise<void> {
-        if (this.plugin.apiClient) {
-            this.dbMetrics = await this.plugin.apiClient.getMetrics();
-        }
+    public updateIndexSnapshot(totalNotes: number, lastUpdated?: string): void {
+        this.indexSnapshotRevision++;
+        this.dbMetrics = { ...this.dbMetrics, total_indexed_docs: totalNotes, last_index_at: lastUpdated };
+    }
+
+    private async refreshMetrics(): Promise<void> {
+        const request = ++this.metricsRequest;
+        const identity = this.plugin.getIndexIdentity();
+        const revision = this.indexSnapshotRevision;
+        const metrics = await this.plugin.apiClient.getMetrics();
+        if (!metrics || request !== this.metricsRequest || identity !== this.plugin.getIndexIdentity()) return;
+        const latestIndex = revision === this.indexSnapshotRevision ? {} : {
+            total_indexed_docs: this.dbMetrics?.total_indexed_docs,
+            last_index_at: this.dbMetrics?.last_index_at
+        };
+        this.dbMetrics = { ...metrics, ...latestIndex };
+        // Only refresh state slots; keep focused setting inputs and drawers intact.
+        this.refreshStatusDisplay();
+        this.storageSetting?.setDesc(this.getStorageDescription());
     }
 
     private armConfirm(btn: ButtonComponent, actionLabel: string, onConfirm: () => Promise<void> | void): void {
@@ -323,6 +341,7 @@ export class SemantixSettingTab extends PluginSettingTab {
         this.renderMaintenanceCard(containerEl);
 
         containerEl.scrollTop = savedScrollTop;
+        void this.refreshMetrics();
     }
 
     /**
@@ -413,7 +432,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                 .setValue(this.plugin.settings.rankingMode || 'balanced')
                 .onChange(async (val) => {
                     this.plugin.settings.rankingMode = val as 'fast' | 'balanced' | 'high_quality';
-                    await this.plugin.saveSettings();
+                    await this.plugin.onSearchSettingChanged('rankingMode');
                 }));
 
         // 2.2 呈现数量上限
@@ -426,7 +445,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                 .setDynamicTooltip()
                 .onChange(async (val) => {
                     this.plugin.settings.topNResults = val;
-                    await this.plugin.saveSettings();
+                    await this.plugin.onSearchSettingChanged('topNResults');
                 }));
 
         // 2.3 发现流跨界探索度
@@ -439,7 +458,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                 .setDynamicTooltip()
                 .onChange(async (val) => {
                     this.plugin.settings.mmrLambda = val;
-                    await this.plugin.saveSettings();
+                    await this.plugin.onSearchSettingChanged('mmrLambda');
                 }));
 
         // 2.4 写作实时自动联想
@@ -450,6 +469,9 @@ export class SemantixSettingTab extends PluginSettingTab {
                 .setValue(this.plugin.settings.autoTrigger ?? true)
                 .onChange(async (val) => {
                     this.plugin.settings.autoTrigger = val;
+                    if (!val) {
+                        this.plugin.radar?.onAutoTriggerDisabled();
+                    }
                     await this.plugin.saveSettings();
                     if (this.debounceSettingEl) {
                         if (val) {
@@ -516,7 +538,7 @@ export class SemantixSettingTab extends PluginSettingTab {
     private renderVaultIndexStatus(slotEl: HTMLElement): void {
         const isIndexing = this.plugin.isFullIndexingActive();
         const indexingState = this.plugin.getIndexingState();
-        const docsCount = this.dbMetrics?.total_indexed_docs ?? 0;
+        const docsCount = this.dbMetrics?.total_indexed_docs;
         const relativeTime = this.formatRelativeTime(this.dbMetrics?.last_index_at);
         const isConnected = this.plugin.getConnectionStatus() === 'connected';
 
@@ -541,17 +563,25 @@ export class SemantixSettingTab extends PluginSettingTab {
                 .setDisabled(true));
         } else {
             const timeDesc = relativeTime ? ` · 上次更新: ${relativeTime}` : "";
-            indexSetting.setDesc(docsCount === 0 
-                ? t('INDEX_NOT_BUILT')
-                : `${t('INDEX_UP_TO_DATE')} (${docsCount} 篇笔记已索引${timeDesc})`
-            );
+            const pendingCount = this.plugin.syncManager.getPendingCount();
+            if (pendingCount > 0) {
+                indexSetting.setDesc(`${docsCount ?? t('STATUS_UNKNOWN')} 篇笔记已索引 · ${t('INDEX_SYNC_PENDING', { count: pendingCount })}${timeDesc}`);
+            } else if (docsCount === undefined) {
+                indexSetting.setDesc(t('INDEX_UNVERIFIED'));
+            } else if (this.plugin.reconciliationStatus !== 'checked') {
+                indexSetting.setDesc(`${docsCount} 篇笔记已索引 · ${t(this.plugin.reconciliationStatus === 'checking' ? 'INDEX_CHECKING' : 'INDEX_UNVERIFIED')}${timeDesc}`);
+            } else if (docsCount === 0) {
+                indexSetting.setDesc(t('INDEX_NOT_BUILT'));
+            } else {
+                indexSetting.setDesc(`${t('INDEX_UP_TO_DATE')} (${docsCount} 篇笔记已索引${timeDesc})`);
+            }
             indexSetting.addButton(btn => {
                 btn.setButtonText(`🔄 ${t('ARM_ACTION_REBUILD')}`).setWarning();
                 btn.onClick(() => {
                     this.armConfirm(btn, `🔄 ${t('ARM_ACTION_REBUILD')}`, () => {
                         btn.setButtonText(t('REBUILDING'));
                         btn.setDisabled(true);
-                        new Notice(t('CLEAR_SUCCESS_REBUILDING'));
+                        new Notice(t('REBUILDING'));
                         void this.plugin.checkConnection({ silent: true });
                         try {
                             (this.app as unknown as { setting?: { close: () => void } }).setting?.close();
@@ -595,7 +625,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                 textarea.value = this.plugin.settings.exclusionRules || '';
                 textarea.onchange = async () => {
                     this.plugin.settings.exclusionRules = textarea.value;
-                    await this.plugin.saveSettings();
+                    await this.plugin.onSearchSettingChanged('exclusionRules');
                 };
             }
         };
@@ -714,7 +744,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                         .setValue(this.plugin.settings.customStopwords || "")
                         .onChange(async (val) => {
                             this.plugin.settings.customStopwords = val;
-                            await this.plugin.saveSettings();
+                            await this.plugin.onSearchSettingChanged('customStopwords');
                         }));
             }
         };
@@ -884,18 +914,21 @@ export class SemantixSettingTab extends PluginSettingTab {
     /**
      * 5. 模块 4: 存储维护与系统诊断 (Maintenance & Diagnostics)
      */
+    private getStorageDescription(): string {
+        const size = this.dbMetrics?.db_size_bytes === undefined
+            ? t('STATUS_UNKNOWN') : this.formatBytes(this.dbMetrics.db_size_bytes);
+        const last = this.formatRelativeTime(this.dbMetrics?.last_maintenance_at);
+        return `占用存储: ${size}${last ? ` · 上次优化: ${last}` : ''}`;
+    }
+
     private renderMaintenanceCard(containerEl: HTMLElement): void {
         const card = containerEl.createDiv({ cls: 'semantix-settings-card' });
         const header = card.createDiv({ cls: 'semantix-settings-card-header' });
         header.createDiv({ cls: 'semantix-settings-card-title', text: t('SEC_MAINTENANCE_GROUP') });
 
-        const sizeStr = this.formatBytes(this.dbMetrics?.db_size_bytes);
-        const lastOpt = this.formatRelativeTime(this.dbMetrics?.last_maintenance_at);
-        const optDesc = lastOpt ? ` · 上次优化: ${lastOpt}` : "";
-
-        new Setting(card)
+        this.storageSetting = new Setting(card)
             .setName(t('STORAGE_SIZE_NAME'))
-            .setDesc(`占用存储: ${sizeStr}${optDesc}`)
+            .setDesc(this.getStorageDescription())
             .addButton(btn => btn
                 .setButtonText(t('BTN_OPTIMIZE_STORAGE'))
                 .setCta()
@@ -957,7 +990,7 @@ export class SemantixSettingTab extends PluginSettingTab {
                 this.armConfirm(btn, t('ARM_ACTION_CLEAR'), async () => {
                     btn.setDisabled(true);
                     btn.setButtonText(t('REBUILDING'));
-                    const success = await this.plugin.apiClient.clearIndex(this.plugin.vaultId);
+                    const success = await this.plugin.clearVaultIndex();
                     if (success) {
                         new Notice(t('CLEAR_SUCCESS'));
                         await this.plugin.checkConnection({ silent: true });

@@ -4,10 +4,11 @@ import type { IndexDocument } from '../api/types';
 import { cleanMarkdown } from '../utils/markdown';
 
 export async function readIndexDocument(plugin: SemantixPlugin, file: TFile): Promise<IndexDocument> {
+    const sourceSignature = { mtime: file.stat.mtime, size: file.stat.size };
     const text = cleanMarkdown(await plugin.app.vault.cachedRead(file));
     const context = plugin.getFileContext(file);
     // Empty text reaches the engine so its previous index is removed atomically.
-    return { vault_id: plugin.vaultId, path: file.path, text, ...context };
+    return { vault_id: plugin.vaultId, path: file.path, text, sourceSignature, ...context };
 }
 
 export function indexBatchWouldOverflow(batch: IndexDocument[], next: IndexDocument): boolean {

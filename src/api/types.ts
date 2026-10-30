@@ -1,4 +1,5 @@
 export interface IndexDocument {
+    sourceSignature?: { mtime: number; size: number };
     vault_id: string;
     path: string;
     text: string;
@@ -32,6 +33,11 @@ export interface IndexStatusResponse {
     last_updated?: string;
     vault_id?: string;
     vault_stopwords?: string[];
+}
+
+export interface IndexPathsResponse {
+    vault_id: string;
+    paths: string[];
 }
 
 export interface ClearIndexRequestResponse {

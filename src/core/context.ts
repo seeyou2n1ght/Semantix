@@ -18,6 +18,8 @@ export interface ContextSnapshot {
     cleanedText: string;
     paragraphLine: number;
     sourceKind?: 'selection' | 'line' | 'paragraph' | 'note';
+    isTooShort?: boolean;
+    rawExcerpt?: string;
 }
 
 export class ContextEngine {
@@ -53,18 +55,23 @@ export class ContextEngine {
         
         let cleanedText: string;
         let sourceKind: ContextSnapshot['sourceKind'];
+        const currentLineRaw = editor.getLine(cursor.line);
+        const currentLineClean = cleanMarkdown(currentLineRaw).trim();
+        const paragraphClean = cleanMarkdown(paragraphInfo.text).trim();
+
         if (isSelectionActive) {
             cleanedText = selectionClean;
             sourceKind = 'selection';
         } else {
             // 优先以当前光标所在行作为核心语义 Focus，若当前行为空或过短则回退至整段
-            const currentLineRaw = editor.getLine(cursor.line);
-            const currentLineClean = cleanMarkdown(currentLineRaw).trim();
-            const paragraphClean = cleanMarkdown(paragraphInfo.text).trim();
             sourceKind = currentLineClean.length >= 4 ? 'line' : 'paragraph';
             cleanedText = sourceKind === 'line' ? currentLineClean : paragraphClean;
         }
-        if (cleanedText.length < 3) return null;
+
+        const isTooShort = cleanedText.length < 3;
+        const rawExcerpt = isSelectionActive
+            ? selectionClean
+            : (currentLineClean || paragraphClean || currentLineRaw.trim());
 
         const heading = this.findClosestHeading(editor, cursor.line, view);
         const filePath = file.path;
@@ -117,7 +124,9 @@ export class ContextEngine {
             contextId,
             cleanedText,
             paragraphLine: paragraphInfo.startLine,
-            sourceKind
+            sourceKind,
+            isTooShort,
+            rawExcerpt
         };
     }
 
@@ -130,7 +139,8 @@ export class ContextEngine {
 
         const fullText = view.editor.getValue();
         const cleanedText = cleanMarkdown(fullText).trim();
-        if (cleanedText.length < 5) return null;
+        const isTooShort = cleanedText.length < 5;
+        const rawExcerpt = cleanedText.slice(0, 50);
 
         const filePath = file.path;
         const contextId = `${filePath}#full_note`;
@@ -155,7 +165,9 @@ export class ContextEngine {
             contextId,
             cleanedText,
             paragraphLine: 0,
-            sourceKind: 'note'
+            sourceKind: 'note',
+            isTooShort,
+            rawExcerpt
         };
     }
 

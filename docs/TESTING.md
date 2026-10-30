@@ -17,6 +17,7 @@ This document defines the smallest reliable checks for frontend, backend, Harnes
 | --- | --- | --- | --- |
 | 0 | Documentation and whitespace | `git diff --check` | Documentation changes |
 | 1 | Plugin static and radar behavior | `npm run lint`; `npm exec tsc -- --noEmit --skipLibCheck --types obsidian`; `node tests/radar-state.cjs`; `node tests/indexing.cjs` | Plugin UI or search flow changes |
+| 1 | Index consistency and UX regressions | `node tests/index-consistency.cjs`; `node tests/radar-ux.cjs` | Reconciliation, clear/write coordination, exclusions, auto-trigger or search-setting changes |
 | 1 | Service process regression | `node tests/service-manager.cjs`; `node tests/api-health.cjs`; `node tests/plugin-lifecycle.cjs` | Sidecar startup, port handling, restart, shutdown, or sidebar lifecycle changes |
 | 1 | Engine focused tests | `cd engine`; `uv run pytest tests/test_<area>.py` | An engine module changes |
 | 2 | Full plugin | `npm run build`; `npm run lint` | Before completing plugin work |
@@ -31,6 +32,11 @@ Use `npm run version -- minor` for a minor release; the script also synchronizes
 
 ### Indexing and storage
 
+- Startup/reconnect reconciliation must detect files created, edited, deleted or renamed while the plugin was not running. A healthy engine or a nonzero note count alone does not establish index freshness. Verify endpoint changes, incomplete/failed inventory and an empty engine separately; never infer safe deletions from a failed inventory.
+- Successful file signatures reload after restart, remain scoped to Vault/engine address, serialize persistence and record the submitted revision rather than a newer in-flight edit. API inventory validates echoed Vault and path types and rejects a previous endpoint response. Ordinary mtime/size checks do not prove content equality when both values are preserved; explicit rebuild is the repair path.
+- Full rebuilding replaces current eligible notes without clearing their previous valid index first, and removes obsolete/excluded paths only from the current Vault. Cancelled or failed scans must remain visibly incomplete.
+- Exclusion rules use the same interpretation for indexing and displayed results. Test an already-indexed note newly excluded by a directory Glob, a queued update excluded before submission, and a rename into an excluded directory. The search API's exact `exclude_paths` contract must not receive raw Glob patterns.
+- Clearing waits for plugin-owned in-flight writes and excludes concurrent full/reconciliation operations. Failed clear preserves pending work; successful clear discards work from before its boundary while retaining later events. Later edits may legitimately create a new index.
 - A failed document embedding leaves its previous indexed chunks intact and reports the path as failed.
 - A successful shorter replacement deletes obsolete chunks for only that document and Vault.
 - Clear, status, stopword, delete, and search operations cannot cross `vault_id` boundaries.
@@ -67,6 +73,12 @@ Use `npm run version -- minor` for a minor release; the script also synchronizes
 
 ### Frontend and lifecycle
 
+- With writing auto-trigger disabled, typing, cursor/paragraph movement and selection changes do not initiate searches; file switches and explicit scans still work. Previously scheduled automatic callbacks must honor the new preference.
+- Ranking mode, result count, Discover lambda, custom stopwords and exclusions invalidate old settings responses and refresh the current scope. Coalesce continuous settings input. Preserve adaptive preparation and endpoint freshness guards.
+- Settings first display loads actual metrics and accepted index-status snapshots; an unavailable count is not zero/not-indexed. A late metrics response cannot overwrite newer count evidence or another endpoint, and metrics refresh does not rebuild focused controls.
+- Missing source files never render as cards; a confirmed deletion also removes an already displayed card without initiating another search.
+- Insufficient Focus text clears current results or explicitly marks retained results stale. Captured source information makes the query text inspectable without presenting it as current after it becomes invalid.
+- Whole-note merging preserves best evidence per path and excludes every path seen in any Related part from Discover, including paths cut by the final Related limit. Passing this contract does not establish global semantic diversity across the whole-note union.
 - A stale search ID or `context_id` cannot replace current sidebar results.
 - Edits/cursor changes invalidate Focus responses during debounce, before another request is sent. Superseded queued requests do not reach the engine.
 - Whole-note scans show explicitly partial results before completion and stop dispatching further parts after cancellation. Unchanged card payloads preserve DOM; result stabilization retains only current evidence.

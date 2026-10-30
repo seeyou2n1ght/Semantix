@@ -1,4 +1,4 @@
-import { Editor, MarkdownView, TFile, debounce } from 'obsidian';
+import { Editor, MarkdownView, TFile, debounce, Debouncer } from 'obsidian';
 import { ViewPlugin, ViewUpdate } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import SemantixPlugin from '../main';
@@ -22,7 +22,7 @@ export class RadarEngine {
     private refreshScopeAfterSettingsChange: string | undefined;
     private requestInFlight: Promise<RadarSearchResponse | null> | null = null;
     private cursorActivityTimer: number | null = null;
-    public debouncedSearch: () => void;
+    public debouncedSearch: Debouncer<[], void>;
 
     constructor(plugin: SemantixPlugin) {
         this.plugin = plugin;
@@ -33,12 +33,26 @@ export class RadarEngine {
     }
 
     public setupDebounce() {
+        this.cancelDebounceTimers();
         const delay = this.plugin.settings.debounceDelay || 400;
         this.debouncedSearch = debounce(
-            this.handleFocusTrigger.bind(this),
+            () => { void this.handleFocusTrigger(false); },
             delay,
             false
         );
+    }
+
+    public cancelDebounceTimers(): void {
+        if (this.cursorActivityTimer !== null) {
+            window.clearTimeout(this.cursorActivityTimer);
+            this.cursorActivityTimer = null;
+        }
+        this.debouncedSearch?.cancel();
+    }
+
+    public onAutoTriggerDisabled(): void {
+        this.cancelDebounceTimers();
+        if (this.activeSearch?.scope !== 'note') this.invalidateActiveSearch();
     }
 
     public getCursorActivityExtension(): Extension {
@@ -65,6 +79,7 @@ export class RadarEngine {
 
     public onFileOpen(file: TFile | null): void {
         // 同步失效当前在途请求并清理状态
+        this.cancelDebounceTimers();
         this.currentSearchId++;
         this.activeSearch = null;
         this.lastRenderedScope = undefined;
@@ -104,6 +119,10 @@ export class RadarEngine {
     public onEditorChange(_editor: Editor, view: MarkdownView): void {
         if (view !== this.getCurrentMarkdownView()) return;
         this.invalidateActiveSearch();
+        if (this.plugin.settings.autoTrigger === false) {
+            this.cancelDebounceTimers();
+            return;
+        }
         this.debouncedSearch();
     }
 
@@ -113,6 +132,10 @@ export class RadarEngine {
         // Moving the cursor does not change the text of an explicit whole-note scan.
         if (this.activeSearch?.scope === 'note') return;
         this.invalidateActiveSearch();
+        if (this.plugin.settings.autoTrigger === false) {
+            this.cancelDebounceTimers();
+            return;
+        }
 
         if (this.cursorActivityTimer !== null) {
             window.clearTimeout(this.cursorActivityTimer);
@@ -129,16 +152,21 @@ export class RadarEngine {
      */
     private async handleFocusTrigger(isJump: boolean = false) {
         if (this.activeSearch?.scope === 'note') return;
+        if (!isJump && this.plugin.settings.autoTrigger === false) {
+            return;
+        }
         const view = this.getCurrentMarkdownView();
         if (!view || !view.file) return;
 
         const snapshot = this.contextEngine.captureFocusSnapshot(view.editor, view);
         if (!snapshot) return;
 
-        const isContextJump = isJump || snapshot.transitionType !== 'SAME_PARAGRAPH';
-        if (!isContextJump && this.plugin.settings.autoTrigger === false) {
+        if (snapshot.isTooShort) {
+            this.showInsufficientContext(snapshot);
             return;
         }
+
+        const isContextJump = isJump || snapshot.transitionType !== 'SAME_PARAGRAPH';
         const decision = this.queryGate.evaluate(snapshot.cleanedText, isContextJump);
         if (!decision.shouldTrigger) {
             return;
@@ -151,15 +179,17 @@ export class RadarEngine {
      * 用户主动点击“扫描整篇” (Note Mode)
      */
     public async triggerNoteScan() {
-        if (this.cursorActivityTimer !== null) {
-            window.clearTimeout(this.cursorActivityTimer);
-            this.cursorActivityTimer = null;
-        }
+        this.cancelDebounceTimers();
         const view = this.getCurrentMarkdownView();
         if (!view || !view.file) return;
 
         const snapshot = this.contextEngine.captureNoteSnapshot(view);
         if (!snapshot) return;
+
+        if (snapshot.isTooShort) {
+            this.showInsufficientContext(snapshot);
+            return;
+        }
 
         await this.executeRadarSearch(snapshot);
     }
@@ -173,7 +203,7 @@ export class RadarEngine {
     }
 
     public invalidateForSettingsChange() {
-        this.refreshScopeAfterSettingsChange = this.activeSearch?.scope || this.lastRenderedScope;
+        this.refreshScopeAfterSettingsChange = this.refreshScopeAfterSettingsChange || this.activeSearch?.scope || this.lastRenderedScope;
         this.currentSearchId++;
         this.activeSearch = null;
         this.clearLoading();
@@ -210,6 +240,11 @@ export class RadarEngine {
         const snapshot = this.contextEngine.captureFocusSnapshot(view.editor, view);
         if (!snapshot) return;
 
+        if (snapshot.isTooShort) {
+            this.showInsufficientContext(snapshot);
+            return;
+        }
+
         await this.executeRadarSearch(snapshot);
     }
 
@@ -229,12 +264,9 @@ export class RadarEngine {
         this.showLoading();
 
         let excludes: string[] = snapshot.context.path ? [snapshot.context.path] : [];
-        if (this.plugin.settings.exclusionRules) {
-            const extraExcludes = this.plugin.settings.exclusionRules
-                .split('\n')
-                .map(s => s.trim())
-                .filter(Boolean);
-            excludes = excludes.concat(extraExcludes);
+        const extraExcludes = this.plugin.getExcludedPathsForQuery();
+        for (const p of extraExcludes) {
+            if (!excludes.includes(p)) excludes.push(p);
         }
 
         try {
@@ -330,6 +362,21 @@ export class RadarEngine {
         this.forEachView(view => view.updateNoteScanProgress(current, total));
     }
 
+    private showInsufficientContext(snapshot: ContextSnapshot) {
+        this.currentSearchId++;
+        this.activeSearch = null;
+        this.queryGate.reset();
+        this.clearLoading();
+        this.forEachView(view => {
+            view.showInsufficientContext?.(
+                snapshot.context.path,
+                snapshot.context.heading,
+                snapshot.rawExcerpt,
+                snapshot.sourceKind
+            );
+        });
+    }
+
     private showSearchError(snapshot: ContextSnapshot) {
         const activeView = this.getCurrentMarkdownView();
         if (activeView?.file?.path !== snapshot.context.path) return;
@@ -359,6 +406,11 @@ export class RadarEngine {
         partial = false,
         sourceKind?: ContextSnapshot['sourceKind']
     ) {
+        const matcher = this.plugin.getExclusionMatcher();
+        const available = (item: RadarCardItem) => !matcher.isExcluded(item.path)
+            && this.plugin.app.vault.getAbstractFileByPath(item.path) instanceof TFile;
+        related = related.filter(available);
+        discover = discover.filter(available);
         this.forEachView(view => {
             view.renderRadarResults(
                 related,

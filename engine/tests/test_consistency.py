@@ -254,3 +254,65 @@ def test_bridge_strength_features_and_labels():
     f2_disc = next(f for f in selected_discover if f.candidate.path == "DomainB/note2.md")
     assert f2_disc.bridge_score > 0.0
     assert any("CONCEPT" in l for l in f2_disc.labels)
+
+
+def test_indexed_paths_vault_isolation_and_endpoint(tmp_path, monkeypatch):
+    import main
+    from fastapi.testclient import TestClient
+    from types import SimpleNamespace
+    from storage.lancedb_storage import LanceDBStorage
+    from services.index_service import IndexService
+
+    storage = LanceDBStorage(str(tmp_path / "paths_db"), dim=2)
+    service = IndexService(storage, SimpleNamespace(encode=lambda texts: [[1.0, 0.0] for _ in texts]))
+    monkeypatch.setattr(main, "storage", storage)
+    monkeypatch.setattr(main, "index_service", service)
+    monkeypatch.setattr(storage, "maybe_rebuild_fts_index", lambda: None)
+    client = TestClient(main.app)
+
+    # Empty initially
+    assert storage.get_indexed_paths("v1") == []
+
+    # Insert docs in v1 and v2
+    client.post("/index/batch", json={"documents": [
+        {"vault_id": "v1", "path": "notes/a.md", "text": "Content A"},
+        {"vault_id": "v1", "path": "notes/b.md", "text": "Content B"},
+        {"vault_id": "v2", "path": "other/c.md", "text": "Content C"},
+    ]})
+
+    # Storage direct check
+    v1_paths = set(storage.get_indexed_paths("v1"))
+    assert v1_paths == {"notes/a.md", "notes/b.md"}
+    assert set(storage.get_indexed_paths("v2")) == {"other/c.md"}
+    assert storage.get_indexed_paths("v3") == []
+
+    # Endpoint check
+    resp = client.get("/index/paths?vault_id=v1")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["vault_id"] == "v1"
+    assert set(data["paths"]) == {"notes/a.md", "notes/b.md"}
+
+    # Health advertised capability check
+    health_resp = client.get("/health")
+    assert health_resp.status_code == 200
+    assert "vault_indexed_paths" in health_resp.json()["capabilities"]
+
+    # Delete path check
+    storage.delete_by_paths("v1", ["notes/a.md"])
+    assert set(storage.get_indexed_paths("v1")) == {"notes/b.md"}
+    storage.close()
+
+
+def test_indexed_paths_failure_is_not_empty_success(tmp_path, monkeypatch):
+    import main
+    from fastapi.testclient import TestClient
+    from storage.lancedb_storage import LanceDBStorage
+
+    storage = LanceDBStorage(str(tmp_path / "unavailable_paths"), dim=2)
+    storage.close()
+    monkeypatch.setattr(main, "storage", storage)
+    with pytest.raises(RuntimeError, match="unavailable"):
+        storage.get_indexed_paths("v1")
+    response = TestClient(main.app, raise_server_exceptions=False).get("/index/paths?vault_id=v1")
+    assert response.status_code == 500

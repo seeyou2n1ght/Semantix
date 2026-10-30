@@ -153,12 +153,59 @@ export class RadarView extends ItemView implements HoverParent {
     }
 
     public updateContextBreadcrumb(filePath?: string, heading?: string,
-        sourceKind?: 'selection' | 'line' | 'paragraph' | 'note') {
+        sourceKind?: 'selection' | 'line' | 'paragraph' | 'note', excerpt?: string) {
         if (!this.contextSourceEl) return;
         const source = filePath ? [filePath, heading].filter(Boolean).join(' › ') : '';
         const kind = sourceKind ? t(`CONTEXT_${sourceKind.toUpperCase()}` as 'CONTEXT_SELECTION') : '';
-        this.contextSourceEl.setText(source ? `${t('CONTEXT_SOURCE')}: ${source}${kind ? ` · ${kind}` : ''}` : '');
+        const baseText = source ? `${t('CONTEXT_SOURCE')}: ${source}${kind ? ` · ${kind}` : ''}` : '';
+        if (excerpt) {
+            const cleanExcerpt = excerpt.length > 40 ? `${excerpt.slice(0, 40)}...` : excerpt;
+            this.contextSourceEl.setAttribute?.('title', `${t('CONTEXT_EXCERPT_TOOLTIP')}: "${cleanExcerpt}"`);
+            this.contextSourceEl.setAttribute?.('aria-label', `${baseText}. ${t('CONTEXT_EXCERPT_TOOLTIP')}: ${cleanExcerpt}`);
+        } else {
+            this.contextSourceEl.removeAttribute?.('title');
+            this.contextSourceEl.removeAttribute?.('aria-label');
+        }
+        this.contextSourceEl.setText(baseText);
         this.contextSourceEl.toggleClass('is-hidden', !source);
+    }
+
+    public showInsufficientContext(
+        contextPath?: string,
+        contextHeading?: string,
+        excerpt?: string,
+        sourceKind?: 'selection' | 'line' | 'paragraph' | 'note'
+    ) {
+        this.clearLoading();
+        this.searchErrorEl?.addClass('is-hidden');
+        this.relatedContainerEl?.addClass('is-stale');
+        this.discoverContainerEl?.addClass('is-stale');
+        this.updateContextBreadcrumb(contextPath, contextHeading, sourceKind, excerpt);
+        if (this.searchInfoEl) {
+            this.searchInfoEl.setText(t('CONTEXT_TOO_SHORT'));
+            this.searchInfoEl.removeClass('is-hidden');
+        }
+    }
+
+    public filterExcludedCards(isExcluded: (path: string) => boolean) {
+        for (const container of [this.relatedContainerEl, this.discoverContainerEl]) {
+            if (!container) continue;
+            const cards = container.querySelectorAll('.semantix-radar-card');
+            cards.forEach(cardEl => {
+                const p = (cardEl as HTMLElement).dataset?.path || cardEl.getAttribute?.('data-path');
+                if (p && isExcluded(p)) {
+                    cardEl.remove();
+                    this.renderedItems.delete(container);
+                }
+            });
+            if (container.querySelectorAll('.semantix-radar-card').length === 0) {
+                this.renderedItems.delete(container);
+                container.empty();
+                const emptyText = container === this.relatedContainerEl
+                    ? t('STREAM_RELATED_EMPTY') : t('STREAM_DISCOVER_EMPTY');
+                container.createEl("p", { text: emptyText, cls: "semantix-empty-text" });
+            }
+        }
     }
 
     public renderRadarResults(
@@ -166,7 +213,7 @@ export class RadarView extends ItemView implements HoverParent {
         discover: RadarCardItem[],
         contextPath?: string,
         contextHeading?: string,
-        _queryText?: string,
+        queryText?: string,
         warnings: string[] = [],
         partial = false,
         sourceKind?: 'selection' | 'line' | 'paragraph' | 'note'
@@ -175,7 +222,7 @@ export class RadarView extends ItemView implements HoverParent {
         this.searchErrorEl?.addClass("is-hidden");
         this.relatedContainerEl?.removeClass("is-stale");
         this.discoverContainerEl?.removeClass("is-stale");
-        this.updateContextBreadcrumb(contextPath, contextHeading, sourceKind);
+        this.updateContextBreadcrumb(contextPath, contextHeading, sourceKind, queryText);
         if (this.searchInfoEl) {
             const messages = warnings.length ? [t('SEARCH_DEGRADED')] : [];
             if (partial) messages.unshift(t('SEARCH_PARTIAL'));
@@ -262,6 +309,7 @@ export class RadarView extends ItemView implements HoverParent {
 
         for (const item of items) {
             const card = container.createDiv({ cls: "semantix-radar-card" });
+            card.setAttribute('data-path', item.path);
             // A11y: 支持键盘导航与屏幕阅读器
             card.setAttribute("tabindex", "0");
             card.setAttribute("role", "button");

@@ -81,6 +81,11 @@ class IndexStatusResponse(BaseModel):
     vault_stopwords: List[str] = Field(default_factory=list)
 
 
+class IndexPathsResponse(BaseModel):
+    vault_id: str
+    paths: List[str] = Field(default_factory=list)
+
+
 class MetricsResponse(BaseModel):
     total_indexed_docs: int
     total_searches: int

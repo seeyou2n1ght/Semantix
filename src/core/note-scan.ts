@@ -35,10 +35,12 @@ export function mergeNoteResults(responses: RadarSearchResponse[], limit: number
     }
     const sort = (items: Iterable<RadarCardItem>) => [...items].sort((a, b) => b.score - a.score);
     const selectedRelated = sort(related.values()).slice(0, limit);
-    const relatedPaths = new Set(selectedRelated.map(item => item.path));
+    // Any path present in any Related part belongs to Related stream identity
+    // and must not be reclassified as Discover merely because the final limit cuts it.
+    const allRelatedPaths = new Set(related.keys());
     return {
         related: selectedRelated,
-        discover: sort(discover.values()).filter(item => !relatedPaths.has(item.path)).slice(0, limit),
+        discover: sort(discover.values()).filter(item => !allRelatedPaths.has(item.path)).slice(0, limit),
         warnings: [...new Set(responses.flatMap(response => response.warnings || []))]
     };
 }

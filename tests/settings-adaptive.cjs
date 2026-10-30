@@ -123,5 +123,34 @@ vm.runInNewContext(code, { exports: exported, require: name => {
     assert.deepEqual(root.findAll('semantix-stopword-chip').map(el => el.text), ['current', 'manual'],
         'open drawer rerenders accepted words without closing it');
     assert.equal(root.findAll('semantix-stopwords-title')[0].text, 'ADAPTIVE_STOPWORDS_TITLE (2):');
+    // PluginSettingTab uses display(), not onOpen(): opening the tab must request metrics.
+    let identity = 'engine-a';
+    let resolveMetrics;
+    let metricRequests = 0;
+    const metricsPlugin = {
+        getIndexIdentity: () => identity,
+        apiClient: { getMetrics: () => { metricRequests++; return new Promise(resolve => { resolveMetrics = resolve; }); } }
+    };
+    const metricsTab = new exported.SemantixSettingTab({}, metricsPlugin);
+    metricsTab.containerEl = new FakeElement();
+    metricsTab.containerEl.scrollTop = 0;
+    let renders = 0, stateRefreshes = 0;
+    metricsTab.renderStatusHeader = () => { renders++; };
+    for (const name of ['renderRecommendationCard','renderVaultIndexCard','renderEngineCard','renderMaintenanceCard']) metricsTab[name] = () => {};
+    metricsTab.refreshStatusDisplay = () => { stateRefreshes++; };
+    metricsTab.display();
+    assert.equal(metricRequests, 1, 'first display fetches actual metrics');
+    metricsTab.updateIndexSnapshot(3, 'newer-index-status');
+    resolveMetrics({ total_indexed_docs: 0, db_size_bytes: 120, last_index_at: 'old' });
+    await new Promise(setImmediate);
+    assert.equal(metricsTab.dbMetrics.total_indexed_docs, 3, 'late metrics preserve a newer accepted index count');
+    assert.equal(metricsTab.dbMetrics.db_size_bytes, 120);
+    assert.equal(stateRefreshes, 1);
+    assert.equal(renders, 1, 'metric refresh does not rebuild inputs or drawers');
+    metricsTab.display();
+    identity = 'engine-b';
+    resolveMetrics({ total_indexed_docs: 99, db_size_bytes: 999 });
+    await new Promise(setImmediate);
+    assert.equal(metricsTab.dbMetrics.total_indexed_docs, 3, 'old endpoint metrics cannot replace current state');
     console.log('adaptive setting on/off, old engine, offline and compute failure passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

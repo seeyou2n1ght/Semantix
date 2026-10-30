@@ -18,6 +18,7 @@ from models import (
     BatchIndexRequest,
     DeleteIndexRequest,
     IndexStatusResponse,
+    IndexPathsResponse,
     MetricsResponse,
     ClearIndexConfirmRequest,
     MaintenanceRequest,
@@ -122,7 +123,7 @@ def verify_token(x_semantix_token: str | None = Header(default=None)):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
-ENGINE_VERSION = "0.11.7"
+ENGINE_VERSION = "0.12.0"
 API_VERSION = "1"
 INDEX_VERSION = "1"
 
@@ -213,7 +214,7 @@ def health_check():
         "reranker_status": reranker_service.status,
         "reranker_device": reranker_service.active_device,
     }
-    capabilities = ["adaptive_lexical_soft_discount"]
+    capabilities = ["adaptive_lexical_soft_discount", "vault_indexed_paths"]
 
     if embedding_service.load_error is not None:
         return {
@@ -275,8 +276,15 @@ def get_index_status(vault_id: str = "default"):
         total_notes=count, 
         last_updated=METRICS["last_index_at"], 
         vault_id=vault_id,
-        vault_stopwords=list(storage.get_vault_stopwords(vault_id))
+        vault_stopwords=list(storage.get_vault_stopwords(vault_id)),
     )
+
+
+@app.get("/index/paths", response_model=IndexPathsResponse, tags=["Index"])
+def get_indexed_paths(vault_id: str = "default"):
+    """Get all indexed document paths for a specific vault."""
+    paths = storage.get_indexed_paths(vault_id=vault_id)
+    return IndexPathsResponse(vault_id=vault_id, paths=paths)
 
 
 @app.get("/metrics", response_model=MetricsResponse, tags=["Status"])
